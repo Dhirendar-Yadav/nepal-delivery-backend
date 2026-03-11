@@ -1,13 +1,15 @@
 // 1. Load Environment Variables
 require('dotenv').config();
 
-// 2. DNS Bypass for MongoDB Connection
+// 2. DNS Bypass & Security Packages
 const dns = require('dns');
 dns.setServers(['8.8.8.8', '8.8.4.4']);
 
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const bcrypt = require('bcryptjs'); 
+const jwt = require('jsonwebtoken'); 
 
 const app = express();
 app.use(express.json()); 
@@ -20,10 +22,16 @@ mongoose.connect(dbURI)
 .catch(err => console.error("❌ DB ERROR:", err.message));
 
 // ==========================================
-// 4. DATABASE SCHEMAS (The Business Logic)
+// 4. DATABASE SCHEMAS
 // ==========================================
+const userSchema = new mongoose.Schema({
+    name: { type: String, required: true },
+    email: { type: String, required: true, unique: true }, 
+    password: { type: String, required: true }, 
+    role: { type: String, enum: ['Customer', 'Seller'], default: 'Customer' }
+});
+const User = mongoose.model('User', userSchema);
 
-// A. Restaurant Schema
 const restaurantSchema = new mongoose.Schema({
     name: { type: String, required: true },
     location: { type: String, required: true },
@@ -31,7 +39,6 @@ const restaurantSchema = new mongoose.Schema({
 });
 const Restaurant = mongoose.model('Restaurant', restaurantSchema);
 
-// B. Menu Schema (For Sellers to manage their products)
 const menuItemSchema = new mongoose.Schema({
     restaurantId: { type: mongoose.Schema.Types.ObjectId, ref: 'Restaurant', required: true },
     name: { type: String, required: true },
@@ -41,7 +48,6 @@ const menuItemSchema = new mongoose.Schema({
 });
 const MenuItem = mongoose.model('MenuItem', menuItemSchema);
 
-// C. Order Schema (The Bridge between Customer & Seller)
 const orderSchema = new mongoose.Schema({
     restaurantId: { type: mongoose.Schema.Types.ObjectId, ref: 'Restaurant', required: true },
     items: [{
@@ -51,90 +57,104 @@ const orderSchema = new mongoose.Schema({
         price: Number
     }],
     totalAmount: { type: Number, required: true },
-    customerInfo: {
-        name: String,
-        address: String,
-        phone: String
-    },
-    status: { 
-        type: String, 
-        enum: ['Pending', 'Accepted', 'Cooking', 'Out for Delivery', 'Delivered'], 
-        default: 'Pending' 
-    },
+    customerInfo: { name: String, address: String, phone: String },
+    status: { type: String, enum: ['Pending', 'Accepted', 'Cooking', 'Out for Delivery', 'Delivered'], default: 'Pending' },
     createdAt: { type: Date, default: Date.now }
 });
 const Order = mongoose.model('Order', orderSchema);
 
 // ==========================================
-// 5. API ROUTES
+// 5. SECURITY BOUNCER (Middleware) 🛡️
+// ==========================================
+const verifyToken = (req, res, next) => {
+    // Check karo ki header mein pass (token) hai ya nahi
+    const authHeader = req.header('Authorization');
+    if (!authHeader) return res.status(401).json({ message: "Access Denied! VIP Pass (Token) missing." });
+
+    try {
+        // "Bearer eyJhb..." se sirf token nikalna
+        const token = authHeader.split(" ")[1]; 
+        const verified = jwt.verify(token, process.env.JWT_SECRET || 'nepaldelivery_super_secret_key');
+        req.user = verified; // User ki detail request mein daal do
+        next(); // Sab theek hai, aage jaane do!
+    } catch (err) {
+        res.status(400).json({ message: "Invalid Token! Pass galat hai." });
+    }
+};
+
+// ==========================================
+// 6. API ROUTES
 // ==========================================
 
-// --- SELLER ROUTES (Management) ---
-
-// 1. Add Restaurant
-app.post('/api/add-restaurant', async (req, res) => {
+// --- SECURITY ROUTES ---
+app.post('/api/register', async (req, res) => {
     try {
-        const newRest = new Restaurant(req.body);
-        await newRest.save();
-        res.status(201).json(newRest);
+        const { name, email, password, role } = req.body;
+        const existingUser = await User.findOne({ email });
+        if (existingUser) return res.status(400).json({ message: "Email already exists!" });
+
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+
+        const newUser = new User({ name, email, password: hashedPassword, role });
+        await newUser.save();
+        
+        console.log(`👤 New ${role} registered: ${name}`);
+        res.status(201).json({ message: "Account created successfully!" });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// 2. Seller Adds Menu Items
-app.post('/api/add-menu-item', async (req, res) => {
+app.post('/api/login', async (req, res) => {
     try {
+        const { email, password } = req.body;
+        const user = await User.findOne({ email });
+        if (!user) return res.status(404).json({ message: "Account nahi mila! Pehle register karein." });
+
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) return res.status(400).json({ message: "Password galat hai bhai!" });
+
+        const token = jwt.sign(
+            { id: user._id, role: user.role }, 
+            process.env.JWT_SECRET || 'nepaldelivery_super_secret_key', 
+            { expiresIn: '1d' } 
+        );
+
+        console.log(`🔑 Login successful for: ${user.name}`);
+        res.status(200).json({ message: "Login Successful!", token: token, role: user.role });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// --- PROTECTED SELLER ROUTES (Bouncer lag gaya yahan) 🛡️ ---
+
+// Dhyan de: URL ke baad 'verifyToken' likha hai
+app.post('/api/add-menu-item', verifyToken, async (req, res) => {
+    try {
+        // Sirf Seller hi menu add kar sakta hai
+        if (req.user.role !== 'Seller') return res.status(403).json({ message: "Sirf Sellers menu add kar sakte hain!" });
+
         const newItem = new MenuItem(req.body);
         await newItem.save();
-        res.status(201).json({ message: "Item added to your shop!", data: newItem });
+        res.status(201).json({ message: "Item added securely!", data: newItem });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// 3. Seller Updates Item (Price change, etc.)
-app.put('/api/update-item/:id', async (req, res) => {
+// Update aur Delete par bhi bouncer lagaya hai
+app.put('/api/update-item/:id', verifyToken, async (req, res) => {
     try {
+        if (req.user.role !== 'Seller') return res.status(403).json({ message: "Access Denied!" });
         const updatedItem = await MenuItem.findByIdAndUpdate(req.params.id, req.body, { new: true });
         res.status(200).json(updatedItem);
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// 4. Seller Deletes Item
-app.delete('/api/delete-item/:id', async (req, res) => {
-    try {
-        await MenuItem.findByIdAndDelete(req.params.id);
-        res.status(200).json({ message: "Item removed from menu." });
-    } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-// --- CUSTOMER & ORDER ROUTES ---
-
-// 5. Customer places an Order
-app.post('/api/place-order', async (req, res) => {
-    try {
-        const newOrder = new Order(req.body);
-        await newOrder.save();
-        console.log("🔔 New Order Received for Restaurant:", req.body.restaurantId);
-        res.status(201).json({ message: "Order placed successfully!", order: newOrder });
-    } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-// 6. Seller checks their Orders
-app.get('/api/orders/:restaurantId', async (req, res) => {
-    try {
-        const orders = await Order.find({ restaurantId: req.params.restaurantId });
-        res.status(200).json(orders);
-    } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-// 6. Get All Restaurants (For Customer App)
+// --- PUBLIC ROUTES (Inke liye pass nahi chahiye) ---
 app.get('/api/restaurants', async (req, res) => {
     const list = await Restaurant.find();
     res.json(list);
 });
 
 // ==========================================
-// 6. START SERVER
+// 7. START SERVER
 // ==========================================
 const PORT = 5000;
-app.listen(PORT, () => {
-    console.log(`🚀 Nepal Delivery Engine Running on Port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`🚀 Nepal Delivery Engine Running on Port ${PORT}`));
