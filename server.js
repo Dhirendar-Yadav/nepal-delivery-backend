@@ -1,7 +1,7 @@
-// 1. Load Environment Variables (Secure configuration)
+// 1. Load Environment Variables
 require('dotenv').config();
 
-// 2. DNS Bypass (Temporary fix for local network restrictions)
+// 2. DNS Bypass for MongoDB Connection
 const dns = require('dns');
 dns.setServers(['8.8.8.8', '8.8.4.4']);
 
@@ -10,74 +10,131 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 
 const app = express();
-
-// Middleware to parse incoming JSON requests
 app.use(express.json()); 
 app.use(cors());
 
-// 3. MongoDB Atlas Database Connection
+// 3. Database Connection
 const dbURI = process.env.MONGO_URI;
-
 mongoose.connect(dbURI)
-.then(() => {
-    console.log("*****************************************");
-    console.log("✅ MONGOOSE CONNECTED SUCCESSFULLY!");
-    console.log("🚀 Nepal Delivery Backend is officially LIVE!");
-    console.log("*****************************************");
-})
-.catch(err => console.error("Database connection error: ", err.message));
+.then(() => console.log("✅ SYSTEM ONLINE: MongoDB Connected"))
+.catch(err => console.error("❌ DB ERROR:", err.message));
 
 // ==========================================
-// 4. DATABASE SCHEMA (Data Models)
+// 4. DATABASE SCHEMAS (The Business Logic)
 // ==========================================
 
-// Blueprint for Restaurant data
+// A. Restaurant Schema
 const restaurantSchema = new mongoose.Schema({
     name: { type: String, required: true },
     location: { type: String, required: true },
     foodType: { type: String, required: true }
 });
-
 const Restaurant = mongoose.model('Restaurant', restaurantSchema);
 
+// B. Menu Schema (For Sellers to manage their products)
+const menuItemSchema = new mongoose.Schema({
+    restaurantId: { type: mongoose.Schema.Types.ObjectId, ref: 'Restaurant', required: true },
+    name: { type: String, required: true },
+    price: { type: Number, required: true },
+    category: { type: String, enum: ['Veg', 'Non-Veg'], default: 'Veg' },
+    description: { type: String }
+});
+const MenuItem = mongoose.model('MenuItem', menuItemSchema);
+
+// C. Order Schema (The Bridge between Customer & Seller)
+const orderSchema = new mongoose.Schema({
+    restaurantId: { type: mongoose.Schema.Types.ObjectId, ref: 'Restaurant', required: true },
+    items: [{
+        menuItemId: { type: mongoose.Schema.Types.ObjectId, ref: 'MenuItem' },
+        name: String,
+        quantity: Number,
+        price: Number
+    }],
+    totalAmount: { type: Number, required: true },
+    customerInfo: {
+        name: String,
+        address: String,
+        phone: String
+    },
+    status: { 
+        type: String, 
+        enum: ['Pending', 'Accepted', 'Cooking', 'Out for Delivery', 'Delivered'], 
+        default: 'Pending' 
+    },
+    createdAt: { type: Date, default: Date.now }
+});
+const Order = mongoose.model('Order', orderSchema);
+
 // ==========================================
-// 5. API ROUTES (Endpoints)
+// 5. API ROUTES
 // ==========================================
 
-// Root endpoint for server health check
-app.get('/', (req, res) => res.send("Nepal Delivery API is running smoothly! 🚀"));
+// --- SELLER ROUTES (Management) ---
 
-// (A) POST: Add a new restaurant to the database
+// 1. Add Restaurant
 app.post('/api/add-restaurant', async (req, res) => {
     try {
-        const { name, location, foodType } = req.body;
-        
-        const newRestaurant = new Restaurant({ name, location, foodType });
-        await newRestaurant.save();
-        
-        console.log(`New restaurant registered: ${name} 🍕`);
-        res.status(201).json({ message: "Restaurant successfully registered in the cloud!", data: newRestaurant });
-    } catch (err) {
-        console.error("Error saving data:", err.message);
-        res.status(500).json({ error: "Failed to register the restaurant." });
-    }
+        const newRest = new Restaurant(req.body);
+        await newRest.save();
+        res.status(201).json(newRest);
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// (B) GET: Fetch all restaurants from the database
-app.get('/api/restaurants', async (req, res) => {
+// 2. Seller Adds Menu Items
+app.post('/api/add-menu-item', async (req, res) => {
     try {
-        const allRestaurants = await Restaurant.find();
-        
-        console.log("Client requested the list of all restaurants. 🛵");
-        res.status(200).json(allRestaurants);
-    } catch (err) {
-        console.error("Error fetching data:", err.message);
-        res.status(500).json({ error: "Failed to fetch restaurant data." });
-    }
+        const newItem = new MenuItem(req.body);
+        await newItem.save();
+        res.status(201).json({ message: "Item added to your shop!", data: newItem });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// 3. Seller Updates Item (Price change, etc.)
+app.put('/api/update-item/:id', async (req, res) => {
+    try {
+        const updatedItem = await MenuItem.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        res.status(200).json(updatedItem);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// 4. Seller Deletes Item
+app.delete('/api/delete-item/:id', async (req, res) => {
+    try {
+        await MenuItem.findByIdAndDelete(req.params.id);
+        res.status(200).json({ message: "Item removed from menu." });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// --- CUSTOMER & ORDER ROUTES ---
+
+// 5. Customer places an Order
+app.post('/api/place-order', async (req, res) => {
+    try {
+        const newOrder = new Order(req.body);
+        await newOrder.save();
+        console.log("🔔 New Order Received for Restaurant:", req.body.restaurantId);
+        res.status(201).json({ message: "Order placed successfully!", order: newOrder });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// 6. Seller checks their Orders
+app.get('/api/orders/:restaurantId', async (req, res) => {
+    try {
+        const orders = await Order.find({ restaurantId: req.params.restaurantId });
+        res.status(200).json(orders);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// 6. Get All Restaurants (For Customer App)
+app.get('/api/restaurants', async (req, res) => {
+    const list = await Restaurant.find();
+    res.json(list);
 });
 
 // ==========================================
-// 6. SERVER INITIALIZATION
+// 6. START SERVER
 // ==========================================
 const PORT = 5000;
-app.listen(PORT, () => console.log(`Server is running on port ${PORT}...`));
+app.listen(PORT, () => {
+    console.log(`🚀 Nepal Delivery Engine Running on Port ${PORT}`);
+});
