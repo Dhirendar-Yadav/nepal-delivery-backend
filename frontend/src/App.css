@@ -1,0 +1,13 @@
+/* Purana sara kachra hata kar sirf ye rakho */
+#root {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  text-align: left; /* Center se Left kar diya taaki layout na bigde */
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden; /* Side scrolling rokne ke liye */
+}
