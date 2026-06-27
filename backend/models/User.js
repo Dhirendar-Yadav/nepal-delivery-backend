@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
 
 /**
  * @description User Schema for Food Samundar (Titanium Fintech & Logistics Edition)
@@ -8,17 +9,57 @@ const mongoose = require('mongoose');
  */
 const userSchema = new mongoose.Schema({
     // --- 👤 IDENTITY & AUTH ---
-    name: { type: String, required: true },
-    email: { type: String, required: true, unique: true, index: true }, 
-    password: { type: String, required: true, select: false }, // 🔒 Hidden by default to prevent API leaks
-    phone: { type: String, required: true, unique: true, index: true }, 
+    name: {
+    type: String,
+    required: [true, 'Name is required'],
+    trim: true,
+    minlength: [2, 'Name must be at least 2 characters'],
+    maxlength: [80, 'Name cannot exceed 80 characters']
+},
+    email: {
+    type: String,
+    required: [true, 'Email is required'],
+    unique: true,
+    index: true,
+    trim: true,
+    lowercase: true
+}, 
+   password: {
+    type: String,
+    required: [true, 'Password is required'],
+    minlength: [8, 'Password must be at least 8 characters long'],
+    select: false
+},
+    phone: {
+    type: String,
+    required: [true, 'Phone number is required'],
+    unique: true,
+    index: true,
+    trim: true,
+    validate: {
+        validator: function (value) {
+            return /^(98|97)\d{8}$/.test(value);
+        },
+        message: 'Please enter a valid Nepal mobile number.'
+    }
+}, 
     role: { 
         type: String, 
         enum: ['Customer', 'Seller', 'Rider', 'Admin'], 
         default: 'Customer',
         index: true 
     },
-    businessName: { type: String }, // For Sellers
+   businessName: {
+    type: String,
+    trim: true,
+    required: [
+        function () {
+            return this.role === 'Seller';
+        },
+        'Business name is required for sellers.'
+    ],
+    maxlength: [120, 'Business name cannot exceed 120 characters']
+},
     
     // --- 🛡️ ACCOUNT STATUS & COMPLIANCE ---
     isActive: { type: Boolean, default: true },
