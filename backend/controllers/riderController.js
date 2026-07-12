@@ -666,8 +666,8 @@ exports.completeOrder = async (req, res) => {
             order.restaurantId,
             {
                 $inc: {
-                    "wallet.balance": order.foodCost,
-                    "wallet.totalEarnings": order.foodCost,
+                    "walletBalance": order.foodCost,
+                    "totalEarnings": order.foodCost,
                     "transactionCount": 1,
                     "walletVersion": 1
                 },
