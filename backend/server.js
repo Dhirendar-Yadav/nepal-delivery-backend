@@ -305,11 +305,19 @@ io.on('connection', (socket) => {
     }
 
     // ✨ NEW: Seller dashboard room join
-    socket.on('joinRestaurantDashboard', (restaurantId) => {
-        if (socket.user.role === 'Seller' || socket.user.role === 'Admin') {
-            socket.join(restaurantId.toString());
-            logger.info({ event: 'SELLER_LIVE_DASHBOARD_CONNECTED', restaurantId });
-        }
+    socket.on('joinRestaurantDashboard', async (restaurantId) => {
+        if (!mongoose.Types.ObjectId.isValid(restaurantId)) return;
+
+        const restaurant = socket.user.role === 'Admin'
+            ? await Restaurant.findById(restaurantId).select('_id').lean()
+            : socket.user.role === 'Seller'
+                ? await Restaurant.findOne({ _id: restaurantId, ownerId: socket.user.id }).select('_id').lean()
+                : null;
+
+        if (!restaurant) return;
+
+        socket.join(restaurantId.toString());
+        logger.info({ event: 'SELLER_LIVE_DASHBOARD_CONNECTED', restaurantId });
     });
 
     socket.on('joinOrderTrack', async (orderId) => {
