@@ -237,9 +237,6 @@ app.post('/api/orders', authMiddleware, orderLimiter, async (req, res, next) => 
                 paymentStatus: 'PENDING'
             });
 
-            const secureOTP = crypto.randomInt(1000, 9999).toString();
-            newOrder.setHashedOTP(secureOTP);
-            
             await newOrder.save({ session, maxTimeMS: 2000 });
             await session.commitTransaction(); 
             session.endSession();
