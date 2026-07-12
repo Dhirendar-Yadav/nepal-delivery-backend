@@ -555,6 +555,8 @@ exports.completeOrder = async (req, res) => {
         // STEP 4: Database unique indexes enforce settlement idempotency.
         // Duplicate settlements are handled via MongoDB duplicate-key (11000).
 
+        const settlementId = crypto.randomUUID();
+
 // STEP 5: Atomic state transition (write barrier - commit point for delivery)
         const updatedOrder = await Order.findOneAndUpdate(
             {
