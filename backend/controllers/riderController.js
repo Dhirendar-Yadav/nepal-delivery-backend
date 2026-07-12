@@ -330,7 +330,7 @@ exports.acceptOrder = async (req, res) => {
                 offeredRiderId: riderId,
                 offerExpiresAt: { $gt: now },
                 assignedRiderId: null,
-                status: { $in: ['Pending', 'Accepted', 'Preparing', 'Ready for Pickup'] }
+                status: 'Ready for Pickup'
             },
             {
                 $set: {
