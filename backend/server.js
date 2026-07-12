@@ -271,6 +271,27 @@ app.post('/api/orders', authMiddleware, orderLimiter, async (req, res, next) => 
     }
 });
 
+app.get('/api/orders/:id', authMiddleware, async (req, res, next) => {
+    try {
+        if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+            return res.status(404).json({ success: false, error: 'ORDER_NOT_FOUND' });
+        }
+
+        const order = await Order.findOne({ _id: req.params.id, customerId: req.user.id })
+            .select('_id status statusUpdatedAt assignedRiderId')
+            .populate('assignedRiderId', 'name phone')
+            .lean();
+
+        if (!order) {
+            return res.status(404).json({ success: false, error: 'ORDER_NOT_FOUND' });
+        }
+
+        return res.json({ success: true, order });
+    } catch (err) {
+        next(err);
+    }
+});
+
 // ==========================================
 // 4. SOCKET ENGINE (DoS Protected)
 // ==========================================
