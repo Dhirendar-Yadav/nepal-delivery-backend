@@ -54,9 +54,12 @@ router.get('/all-riders', verifyAdmin, statsLimiter, async (req, res) => {
         // Fetch specific documents/bike data from Rider/RiderProfile model
         const RiderModel = mongoose.models.Rider || mongoose.models.RiderProfile || RiderProfile;
         const profiles = await RiderModel.find({}).lean();
+        const profilesByUserId = new Map(profiles
+            .filter(profile => profile.userId)
+            .map(profile => [profile.userId.toString(), profile]));
 
         const formattedRiders = riders.map(user => {
-            const profile = profiles.find(p => p.userId && p.userId.toString() === user._id.toString()) || {};
+            const profile = profilesByUserId.get(user._id.toString()) || {};
             return {
                 ...user,      // Original flat user data
                 ...profile,   // Extra KYC/Bike docs from profile (if any)
