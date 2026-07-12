@@ -23,6 +23,16 @@ const adminWalletSchema = new mongoose.Schema({
         validate: { validator: Number.isInteger, message: 'Revenue must be an integer (paisa).' }
     }, 
 
+    totalDigitalDebtRecovery: {
+        type: Number,
+        default: 0,
+        min: [0, "Collected cash cannot be negative."],
+        validate: {
+            validator: Number.isInteger,
+            message: "Collected cash must be an integer (paisa)."
+        }
+    },
+
     totalRiderBonusesPaid: { 
         type: Number, 
         default: 0,
@@ -31,9 +41,9 @@ const adminWalletSchema = new mongoose.Schema({
     }, 
 
     // 📊 OPERATIONAL COUNTERS
-    totalOrdersProcessed: { type: Number, default: 0 },
-    totalRefundsProcessed: { type: Number, default: 0 },
-    transactionCount: { type: Number, default: 0 },
+    totalOrdersProcessed: { type: Number, default: 0, min: 0 },
+    totalRefundsProcessed: { type: Number, default: 0, min: 0 },
+    transactionCount: { type: Number, default: 0, min: 0 },
     
     // 🛡️ LEDGER INTEGRITY
     version: { type: Number, default: 0 }
@@ -48,14 +58,6 @@ const adminWalletSchema = new mongoose.Schema({
 // 🛡️ MIDDLEWARES (GUARDS)
 // ==========================================
 
-// 1. Pre-Validate Guard: Ensure we never pay more in bonuses than we earn in revenue
-adminWalletSchema.pre('validate', function(next) {
-    if (this.totalRiderBonusesPaid > this.totalPlatformRevenue) {
-        return next(new Error('FATAL: Bonuses paid cannot exceed total platform revenue.'));
-    }
-    next();
-});
-
 // 2. Update Guard: Safely handle upserts and increment versioning
 adminWalletSchema.pre(['findOneAndUpdate', 'updateOne', 'updateMany'], async function(next) {
     const update = this.getUpdate();
@@ -63,7 +65,45 @@ adminWalletSchema.pre(['findOneAndUpdate', 'updateOne', 'updateMany'], async fun
 
     // Automatically increment the document version on every financial update
     if (update.$inc) {
-        update.$inc.version = 1;
+        update.$inc.version = (update.$inc.version || 0) + 1;
+    }
+
+
+    if (update.$set && Object.keys(update.$set).some(k =>
+        k.startsWith('total') || k === 'transactionCount' || k === 'version'
+    )) {
+        return next(new Error('CRITICAL: Financial fields must use controlled atomic updates.'));
+    }
+
+    if (update.$unset && Object.keys(update.$unset).some(k =>
+        k.startsWith('total') || k === 'transactionCount' || k === 'version'
+    )) {
+        return next(new Error('CRITICAL: Financial fields cannot be removed.'));
+    }
+
+    if (update.$rename && Object.keys(update.$rename).some(k =>
+        k.startsWith('total') || k === 'transactionCount' || k === 'version'
+    )) {
+        return next(new Error('CRITICAL: Financial fields cannot be renamed.'));
+    }
+
+    if (update.$inc) {
+        const allowedInc = new Set([
+            'totalPlatformRevenue',
+            'totalRiderBonusesPaid',
+            'totalDigitalDebtRecovery',
+            'totalOrdersProcessed',
+            'totalRefundsProcessed',
+            'transactionCount',
+            'version'
+        ]);
+
+        const invalid = Object.keys(update.$inc)
+            .filter(k => !allowedInc.has(k));
+
+        if (invalid.length) {
+            return next(new Error('CRITICAL: Invalid financial increment field.'));
+        }
     }
 
     next();

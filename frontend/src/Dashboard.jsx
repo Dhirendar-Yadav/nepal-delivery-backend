@@ -117,7 +117,7 @@ function Dashboard() {
       });
       const data = await res.json();
       if (res.ok) {
-        setOrders(data);
+        setOrders(data.data || []);
       } else {
         console.error("Orders 400 Error:", data.error || "Restaurant Not Linked");
       }

@@ -38,9 +38,9 @@ const riderProfileSchema = new mongoose.Schema({
         type: { type: String, enum: ['Point'], default: 'Point' },
         coordinates: { 
             type: [Number], 
-            required: true,
+            default: undefined,
             validate: {
-                validator: (v) => Array.isArray(v) && v.length === 2 && 
+                validator: (v) => Array.isArray(v) && v.length === 2 && Number.isFinite(v[0]) && Number.isFinite(v[1]) && 
                                   v[0] >= -180 && v[0] <= 180 && // Longitude
                                   v[1] >= -90 && v[1] <= 90,     // Latitude
                 message: 'Invalid GeoJSON [lng, lat].'
@@ -54,20 +54,20 @@ const riderProfileSchema = new mongoose.Schema({
         balance: { 
             type: Number, 
             default: 0,
-            min: 0,
-            validate: { validator: Number.isInteger, message: 'Balance must be integer (paisa)' }
+                        min: [0, 'Balance cannot be negative'],
+            validate: { validator: Number.isSafeInteger, message: 'Balance must be integer paisa' }
         },
         lastProcessedOrderId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'Order'
         },
-        incentiveEarnings: { type: Number, default: 0 },
-        totalWithdrawn: { type: Number, default: 0 },
+        incentiveEarnings: { type: Number, default: 0, min: 0, validate: Number.isSafeInteger },
+        codPending: { type: Number, default: 0, min: 0, validate: Number.isSafeInteger },
+        totalWithdrawn: { type: Number, default: 0, min: 0, validate: Number.isSafeInteger },
         
         // Audit & Concurrency
-        lastTransactionId: { type: mongoose.Schema.Types.ObjectId, ref: 'WalletTransaction' },
-        transactionCount: { type: Number, default: 0 },
-        walletVersion: { type: Number, default: 0 } 
+        transactionCount: { type: Number, default: 0, min: 0, validate: Number.isSafeInteger },
+        walletVersion: { type: Number, default: 0, min: 0, validate: Number.isSafeInteger } 
     },
 
     // --- 📈 PERFORMANCE & AUDIT ---
@@ -99,7 +99,47 @@ const riderProfileSchema = new mongoose.Schema({
  */
 riderProfileSchema.pre('save', function(next) {
     if (this.isModified('wallet') && !this.isNew) {
-        return next(new Error('CRITICAL: Wallet updates must use atomic $inc operator.'));
+        return next(new Error('CRITICAL: Wallet fields must use controlled atomic updates.'));
+    }
+    next();
+});
+
+
+riderProfileSchema.pre(['findOneAndUpdate','updateOne','updateMany'], function(next) {
+    const update = this.getUpdate();
+
+    const allowedWalletInc = new Set([
+        'wallet.balance',
+        'wallet.incentiveEarnings',
+        'wallet.codPending',
+        'wallet.totalWithdrawn',
+        'wallet.transactionCount',
+        'wallet.walletVersion'
+    ]);
+
+    if (update?.$set && Object.keys(update.$set).some(k => k.startsWith('wallet'))) {
+        return next(new Error('CRITICAL: Wallet fields must use controlled atomic updates.'));
+    }
+
+    if (update?.$unset && Object.keys(update.$unset).some(k => k.startsWith('wallet'))) {
+        return next(new Error('CRITICAL: Wallet fields cannot be removed.'));
+    }
+
+    if (update?.$rename && Object.keys(update.$rename).some(k => k.startsWith('wallet'))) {
+        return next(new Error('CRITICAL: Wallet fields cannot be renamed.'));
+    }
+
+    if (update?.$inc) {
+
+        update.$inc['wallet.walletVersion'] =
+            (update.$inc['wallet.walletVersion'] || 0) + 1;
+
+        const invalid = Object.keys(update.$inc)
+            .filter(k => k.startsWith('wallet') && !allowedWalletInc.has(k));
+
+        if (invalid.length) {
+            return next(new Error('CRITICAL: Invalid wallet increment field.'));
+        }
     }
     next();
 });
@@ -137,3 +177,6 @@ const RiderProfile = mongoose.model('RiderProfile', riderProfileSchema);
 RiderProfile.cleanIndexes().catch(() => {});
 
 module.exports = RiderProfile;
+
+
+

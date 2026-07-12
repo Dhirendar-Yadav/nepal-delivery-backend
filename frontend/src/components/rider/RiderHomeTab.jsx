@@ -4,6 +4,7 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
 // Custom Icons for Preview Map
+// TODO: Replace Leaflet marker URLs with local assets if added to the project.
 const pickupIcon = new L.Icon({
   iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-orange.png',
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
@@ -30,8 +31,13 @@ function RiderHomeTab({
   handleAcceptOrder 
 }) {
   const [previewOrder, setPreviewOrder] = useState(null);
-  const [acceptingId, setAcceptingId] = useState(null); 
-  const [hiddenOrders, setHiddenOrders] = useState(new Set()); // 🚀 CHATGPT FIX: Optimistic Order Removal
+  const [acceptingId, setAcceptingId] = useState(null);
+
+  useEffect(() => {
+    if (acceptingId && !orders?.some(order => order._id === acceptingId)) {
+      setAcceptingId(null);
+    }
+  }, [acceptingId, orders]);
 
   // 🚀 CHATGPT FIX: Safe PopState & Escape Key listener
   useEffect(() => {
@@ -57,7 +63,6 @@ function RiderHomeTab({
     if (!orders) return [];
     
     return orders
-      .filter(order => !hiddenOrders.has(order._id)) // Filter optimistically hidden orders
       .map(order => {
         // Safe Date Parsing
         const createdAtMs = order.createdAt ? new Date(order.createdAt).getTime() : null;
@@ -72,21 +77,15 @@ function RiderHomeTab({
         return { ...order, secondsLeft };
       })
       .filter(order => order.secondsLeft > 0);
-  }, [orders, currentTime, hiddenOrders]);
+  }, [orders, currentTime]);
 
-  // 🚀 ENGINE SYNC: Safe modal trigger without infinite history stack
+  // 🚀 ENGINE SYNC: Safe modal trigger without unnecessary history entries
   const openPreview = useCallback((order) => {
     setPreviewOrder(order);
-    if (!window.history.state?.previewModal) {
-      window.history.pushState({ previewModal: true }, '');
-    }
   }, []);
 
   const closePreview = useCallback(() => {
     setPreviewOrder(null);
-    if (window.history.state?.previewModal) {
-      window.history.back();
-    }
   }, []);
 
   // 🚀 CHATGPT FIX: Safe Try/Catch/Finally for Async Accept Flow
@@ -96,9 +95,6 @@ function RiderHomeTab({
     try {
       setAcceptingId(orderId);
       await handleAcceptOrder(orderId);
-      
-      // Optimistically hide the order to prevent double-clicks or UI staleness
-      setHiddenOrders(prev => new Set(prev).add(orderId));
       closePreview();
     } catch (err) {
       console.error('Accept order failed:', err);
@@ -119,7 +115,7 @@ function RiderHomeTab({
       {!isOnline ? (
         <div className="bg-white dark:bg-gray-900 py-16 px-4 rounded-3xl text-center shadow-sm border border-gray-100 dark:border-gray-800">
           <div className="text-5xl mb-4 grayscale opacity-40">🛵</div>
-          <p className="font-black text-gray-800 dark:text-gray-200 text-lg">You are Offline</p>
+          <p className="font-black text-gray-800 dark:text-gray-200 text-lg">You are offline</p>
           <p className="text-sm text-gray-500 mt-2 font-medium max-w-xs mx-auto">Toggle the switch at the top to go online and start receiving orders in your area.</p>
         </div>
       ) : isLoading ? (
@@ -197,8 +193,8 @@ function RiderHomeTab({
 
       {/* 🚀 INJECTED: Preview Map Modal for Available Orders */}
       {previewOrder && (
-        <div className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-900 rounded-3xl w-full max-w-md overflow-hidden flex flex-col h-[70vh] shadow-2xl border border-gray-200 dark:border-gray-800 transition-all duration-300 transform scale-100">
+        <div className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4">
+          <div className="bg-white dark:bg-gray-900 rounded-3xl w-full max-w-md max-h-[95dvh] overflow-hidden flex flex-col shadow-2xl border border-gray-200 dark:border-gray-800 transition-all duration-300 transform scale-100">
             
             <div className="flex justify-between items-center p-4 border-b border-gray-100 dark:border-gray-800">
               <div>
@@ -214,12 +210,12 @@ function RiderHomeTab({
               </button>
             </div>
 
-            <div className="flex-1 w-full relative z-0">
+            <div className="flex-1 w-full min-h-0 relative z-0 overflow-hidden">
                <MapContainer 
                  center={getSafeCoords(previewOrder.restaurantId?.latitude, previewOrder.restaurantId?.longitude)} 
                  zoom={13} 
                  scrollWheelZoom={true} 
-                 style={{ height: '100%', width: '100%' }}
+                 style={{ height: '100%', width: '100%', minHeight: '240px' }}
                >
                  <TileLayer attribution='© OpenStreetMap' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                  

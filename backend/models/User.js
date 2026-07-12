@@ -22,7 +22,8 @@ const userSchema = new mongoose.Schema({
     unique: true,
     index: true,
     trim: true,
-    lowercase: true
+    lowercase: true,
+    match: [/^[^\s@]+@[^\s@]+\.[^\s@]+$/, 'Please provide a valid email address.']
 }, 
    password: {
     type: String,
@@ -106,7 +107,7 @@ const userSchema = new mongoose.Schema({
             type: [Number], // [longitude, latitude]
             default: undefined,
             validate: {
-                validator: (v) => !v || (v.length === 2 && v[0] >= -180 && v[0] <= 180 && v[1] >= -90 && v[1] <= 90),
+                validator: (v) => !v || (Array.isArray(v) && v.length === 2 && Number.isFinite(v[0]) && Number.isFinite(v[1]) && v[0] >= -180 && v[0] <= 180 && v[1] >= -90 && v[1] <= 90),
                 message: 'Invalid GeoJSON coordinates'
             }
         }
@@ -127,15 +128,23 @@ userSchema.index({ isDeleted: 1 });
 userSchema.index({ isOnline: 1, shiftStartTime: 1, currentActiveOrderId: 1 });
 
 // 🛡️ Middleware: Auto-increment wallet version on financial updates
-userSchema.pre(['findOneAndUpdate', 'updateOne', 'updateMany'], function(next) {
+userSchema.pre(['findOneAndUpdate', 'updateOne', 'updateMany'], function () {
     const update = this.getUpdate();
-    if (update.$inc && update.$inc.walletBalance !== undefined) {
-        // If walletVersion is not manually provided in the update, increment it
-        if (!update.$inc.walletVersion) {
-            update.$inc.walletVersion = 1; 
-        }
-    }
-    next();
-});
 
+    if (update?.$inc?.walletBalance !== undefined) {
+        update.$inc.walletVersion ??= 1;
+    }
+});
+// ==========================================
+// PASSWORD HASHING MIDDLEWARE
+// ==========================================
+
+userSchema.pre('save', async function () {
+    if (!this.isModified('password')) {
+        return;
+    }
+
+    this.password = await bcrypt.hash(this.password, 12);
+});
 module.exports = mongoose.model('User', userSchema);
+

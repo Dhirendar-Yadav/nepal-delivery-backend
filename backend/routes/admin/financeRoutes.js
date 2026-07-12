@@ -41,7 +41,8 @@ router.get('/financial-hub', verifyAdmin, criticalLimiter, async (req, res) => {
     try {
         const riders = await RiderProfile.find({ "wallet.balance": { $gt: 0 } }).select('userId wallet.balance stats isActive cancelCount').populate('userId', 'name phone').lean();
         const sellers = await Restaurant.find({ "walletBalance": { $gt: 0 } }).select('name walletBalance status totalEarnings').lean();
-        const wallet = await AdminWallet.findOne({ walletType: 'MASTER' }).lean();
+        const todayString = new Date().toISOString().split('T')[0];
+        const wallet = await AdminWallet.findOne({ date: todayString }).lean();
 
         res.json({ success: true, data: { pendingRiderPayouts: riders, pendingSellerSettlements: sellers, masterWallet: wallet } });
     } catch (err) { res.status(500).json({ success: false, error: err.message }); }
@@ -98,15 +99,17 @@ router.post('/payouts/bulk-approve', verifyAdmin, criticalLimiter, async (req, r
             const session = await mongoose.startSession();
             session.startTransaction();
             try {
-                const payoutAmount = targetType === 'RIDER' ? entity.wallet.balance : entity.walletBalance;
+                const payoutAmount = targetType === 'RIDER' ? (entity.wallet?.balance ?? 0) : entity.walletBalance;
                 const settlementId = generateHash(chunkHash, entity._id.toString());
+                const todayString = new Date().toISOString().split('T')[0];
                 
                 const adminWalletUpdate = await AdminWallet.findOneAndUpdate(
-                    { walletType: 'MASTER', availableBalance: { $gte: payoutAmount } },
-                    { $inc: { availableBalance: -payoutAmount } }, { session, new: true }
+                    { date: todayString },
+                    { $inc: { totalRiderBonusesPaid: payoutAmount, transactionCount: 1 } },
+                    { session, new: true, upsert: true }
                 );
 
-                if (!adminWalletUpdate) throw new Error("Insufficient funds in Master Wallet.");
+                if (!adminWalletUpdate) throw new Error("Unable to update daily admin wallet.");
 
                 let updatedEntity;
                 if (targetType === 'RIDER') {
@@ -119,7 +122,7 @@ router.post('/payouts/bulk-approve', verifyAdmin, criticalLimiter, async (req, r
 
                 const ledgerEntries = [
                     { settlementId, orderId: null, entityType: targetType, entityId: targetType === 'RIDER' ? entity.userId : entity._id, type: 'CREDIT', amount: payoutAmount, balanceAfter: 0, description: `Bulk Payout via Admin (Batch: ${batchId})` },
-                    { settlementId, orderId: null, entityType: 'SYSTEM_CLEARING', entityId: 'MASTER_WALLET', type: 'DEBIT', amount: payoutAmount, balanceAfter: adminWalletUpdate.availableBalance, description: `Master Wallet Bulk Deduction (Batch: ${batchId})` }
+                    { settlementId, orderId: null, entityType: 'SYSTEM_CLEARING', entityId: null, type: 'DEBIT', amount: payoutAmount, balanceAfter: 0, description: `Daily Admin Wallet Deduction (Batch: ${batchId})` }
                 ];
 
                 await LedgerEntry.insertMany(ledgerEntries, { session, ordered: false });

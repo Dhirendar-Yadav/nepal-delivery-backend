@@ -1,0 +1,14 @@
+        const ledgerEntry = new WalletLedger({
+            orderId: orderId,
+            type: 'delivery_settlement',
+            riderId: riderId,
+            restaurantId: order.restaurantId,
+            adminWalletId: null,
+            transactionId: `DELIVERY_${orderId}_${now.getTime()}`,
+            amount: order.totalAmount,
+            riderCredit: order.deliveryFee + riderBonus,
+            restaurantCredit: order.foodCost,
+            platformCredit: order.platformFee,
+            createdAt: now
+        });
+        await ledgerEntry.save({ session });

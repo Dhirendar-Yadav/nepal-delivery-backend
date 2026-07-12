@@ -54,11 +54,15 @@ const adminAuditSchema = new mongoose.Schema(
 
         ipAddress: {
             type: String,
+            trim: true,
+            maxlength: 45,
             default: null
         },
 
         userAgent: {
             type: String,
+            trim: true,
+            maxlength: 1024,
             default: null
         }
     },

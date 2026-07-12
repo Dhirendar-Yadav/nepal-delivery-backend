@@ -2,6 +2,7 @@
 // 1. INITIALIZATION & CORE CONFIG
 // ==========================================
 require('dotenv').config();
+const PORT = process.env.PORT || 5005;
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -15,16 +16,35 @@ const helmet = require('helmet');
 const hpp = require('hpp');
 const pino = require('pino');
 const path = require('path'); // ✨ ADDED: Path module for image uploads
+const paymentWebhookRoutes = require('./routes/paymentWebhookRoutes');
 
 // Models
 const Restaurant = require('./models/Restaurant');
 const MenuItem = require('./models/MenuItem');
 const Order = require('./models/Order');
+const startShiftMonitor = require('./services/shiftMonitor');
+const startDispatchMonitor = require('./services/dispatchMonitor');
+const { VALID_TRANSITIONS } = require('./constants/orderConstants');
 
 const app = express();
 app.disable('x-powered-by'); 
 const server = http.createServer(app);
 
+const requiredEnv = [
+    "MONGO_URI",
+    "JWT_SECRET",
+    "PAYMENT_WEBHOOK_SECRET"
+];
+
+const missingEnv = requiredEnv.filter(
+    key => !process.env[key]?.trim()
+);
+
+if (missingEnv.length) {
+    throw new Error(
+        `Missing required environment variables: ${missingEnv.join(", ")}`
+    );
+}
 const isProd = process.env.NODE_ENV === 'production';
 app.set('trust proxy', 1);
 
@@ -36,18 +56,6 @@ const logger = pino({
 });
 
 // ==========================================
-// 🛡️ CEO'S ORDER STATE MACHINE (Business Logic)
-// ==========================================
-const VALID_TRANSITIONS = {
-    'Pending': ['Confirmed', 'Cancelled'],
-    'Confirmed': ['Cooking', 'Cancelled'],
-    'Cooking': ['Out for Delivery', 'Cancelled'],
-    'Out for Delivery': ['Delivered', 'Cancelled'],
-    'Delivered': [], // Final State
-    'Cancelled': []  // Final State
-};
-
-// ==========================================
 // 2. SECURITY & CONTEXT MIDDLEWARES
 // ==========================================
 // 🛡️ FIX: Security Headers (Adjusted to allow Cross-Origin Images for frontend)
@@ -57,7 +65,10 @@ app.use(helmet({
 
 // 📁 FIX: Expose the uploads folder to the frontend so images don't get blocked
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
+app.use(
+    '/api/payment',
+    paymentWebhookRoutes
+);
 // ✅ Data Parsers
 app.use(express.json({ limit: '10kb' })); 
 app.use(express.urlencoded({ extended: true, limit: '10kb' })); 
@@ -345,6 +356,9 @@ app.use('/api/restaurants', require('./routes/restaurantRoutes'));
 // ✨ FIX: Routed the customer menu request to the same restaurant routes file
 app.use('/api/menu', require('./routes/restaurantRoutes'));
 
+// ?? Payment Gateway Routes
+app.use('/api/payment', require('./routes/paymentRoutes'));
+
 // Centralized Error Handler
 app.use((err, req, res, next) => {
     const status = err.status || 500;
@@ -362,10 +376,18 @@ mongoose.connect(process.env.MONGO_URI, { maxPoolSize: 50, serverSelectionTimeou
         await Order.syncIndexes();
         await MenuItem.syncIndexes();
         // ✨ NEW: Enforce syncing of our new High-Performance Geo & Text Indexes
-        await Restaurant.syncIndexes(); 
+        await Restaurant.syncIndexes();
+        await RiderProfile.syncIndexes();
+        await AdminWallet.syncIndexes();
+        await LedgerEntry.syncIndexes();
     }
+    server.listen(PORT, () => {
+        startShiftMonitor();
+        startDispatchMonitor(io);
+        logger.info({ event: 'SERVER_UP', port: PORT });
+    });
 })
-.catch(err => logger.error({ event: 'DB_CONNECTION_FAILED', error: err.message }));
+.catch(err => { logger.error({ event: 'DB_CONNECTION_FAILED', error: err.message }); process.exit(1); });
 
 // 🛡️ PERFECTED GRACEFUL SHUTDOWN
 const shutdown = async () => {
@@ -382,5 +404,5 @@ const shutdown = async () => {
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
 
-const PORT = process.env.PORT || 5005;
-server.listen(PORT, () => logger.info({ event: 'SERVER_UP', port: PORT }));
+
+

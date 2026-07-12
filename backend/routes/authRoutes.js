@@ -7,6 +7,7 @@ const rateLimit = require('express-rate-limit');
 const { v4: uuidv4 } = require('uuid'); 
 const multer = require('multer'); // 🛡️ ADDED: For parsing FormData & Images
 const path = require('path');
+const fs = require('fs');
 
 const User = require('../models/User');
 const Restaurant = require('../models/Restaurant');
@@ -25,7 +26,27 @@ const storage = multer.diskStorage({
         cb(null, Date.now() + '-' + Math.round(Math.random() * 1E9) + path.extname(file.originalname));
     }
 });
-const upload = multer({ storage: storage });
+const baseUrl = process.env.UPLOAD_BASE_URL || 'http://localhost:5005';
+
+const upload = multer({
+    storage,
+    limits: {
+        fileSize: 5 * 1024 * 1024 // 5 MB
+    },
+    fileFilter: (req, file, cb) => {
+        const allowedMimeTypes = [
+            "image/jpeg",
+            "image/png",
+            "image/webp"
+        ];
+
+        if (!allowedMimeTypes.includes(file.mimetype)) {
+            return cb(new Error("Only JPEG, PNG and WEBP images are allowed."));
+        }
+
+        cb(null, true);
+    }
+});
 
 // 🛡️ Elite Brute-Force Protection
 const loginLimiter = rateLimit({
@@ -35,6 +56,20 @@ const loginLimiter = rateLimit({
 });
 
 const DUMMY_HASH = '$2a$12$C6UzMDM.H6dfI/f/IKcEeO6GZ5z6uGq5t1k8Kp1l9z0h9fQp7q9aW';
+
+
+// Cleanup uploaded files if transaction fails
+const cleanupUploadedFiles = (files = []) => {
+    for (const file of files) {
+        if (file?.path && fs.existsSync(file.path)) {
+            try {
+                fs.unlinkSync(file.path);
+            } catch (_) {
+                // Ignore cleanup failures
+            }
+        }
+    }
+};
 
 // ==========================================
 // 1. ✨ CUSTOMER / SELLER SIGNUP (Fraud-Proof)
@@ -51,23 +86,43 @@ router.post('/signup', upload.any(), async (req, res) => {
         if (!fullName) throw { status: 400, message: "Full name is required." };
         
         email = email.toLowerCase().trim();
-
-        const salt = await bcrypt.genSalt(12);
-        const hashedPassword = await bcrypt.hash(password, salt);
+        phone = String(phone).trim().replace(/^\+977/, "");
         const role = businessName ? 'Seller' : 'Customer';
 
         const isActive = role === 'Seller' ? false : true;
         const kycStatus = role === 'Seller' ? 'PENDING' : 'VERIFIED';
 
-        const userCoordinates = (longitude && latitude) ? [parseFloat(longitude), parseFloat(latitude)] : [0, 0];
+        const lng = Number(longitude);
+const lat = Number(latitude);
+
+const hasValidCoordinates =
+    Number.isFinite(lng) &&
+    Number.isFinite(lat) &&
+    lng >= -180 && lng <= 180 &&
+    lat >= -90 && lat <= 90;
+
+const userCoordinates = hasValidCoordinates
+    ? [lng, lat]
+    : [0, 0];
 
         session = await mongoose.startSession();
         session.startTransaction();
+        const existingUser = await User.findOne({
+    $or: [{ email }, { phone }]
+}).session(session);
 
+if (existingUser) {
+    throw {
+        status: 400,
+        message: existingUser.email === email
+            ? "Email already registered."
+            : "Phone number already registered."
+    };
+}
         const newUser = new User({ 
             name: fullName, 
             email, 
-            password: hashedPassword, 
+            password: password,
             phone, 
             role, 
             businessName,
@@ -81,7 +136,7 @@ router.post('/signup', upload.any(), async (req, res) => {
             let imagePath = null;
             if (req.files && req.files.length > 0) {
                 // Taking the first uploaded image as the profile photo
-                imagePath = `http://localhost:5005/uploads/${req.files[0].filename}`;
+                imagePath = `${baseUrl}/uploads/${req.files[0].filename}`;
             }
 
             let safeLocationString = 'Nepal';
@@ -102,8 +157,8 @@ router.post('/signup', upload.any(), async (req, res) => {
                     type: 'Point',
                     coordinates: userCoordinates
                 },
-                latitude: parseFloat(latitude) || null, 
-                longitude: parseFloat(longitude) || null, 
+                latitude: hasValidCoordinates ? lat : null, 
+                longitude: hasValidCoordinates ? lng : null, 
                 panVatNumber: panVatNumber || null 
             });
             await newRestaurant.save({ session });
@@ -125,9 +180,20 @@ router.post('/signup', upload.any(), async (req, res) => {
             session.endSession();
         }
 
+        cleanupUploadedFiles(req.files);
+
         if (err.code === 11000) {
-            return res.status(400).json({ success: false, message: "Email or Phone already registered!" });
-        }
+    const field = Object.keys(err.keyPattern || {})[0];
+
+    return res.status(400).json({
+        success: false,
+        message: field === 'email'
+            ? "Email already registered."
+            : field === 'phone'
+                ? "Phone number already registered."
+                : "Duplicate data."
+    });
+}
         
         const status = err.status || 500;
         if (req.log) req.log.error({ event: 'USER_SIGNUP_FAILED', error: err.message });
@@ -156,27 +222,37 @@ router.post('/rider/signup', upload.any(), async (req, res) => {
         }
         
         const formattedEmail = email.toLowerCase().trim();
-
-        const salt = await bcrypt.genSalt(12);
-        const hashedPassword = await bcrypt.hash(password, salt);
+        phone = String(phone).trim().replace(/^\+977/, "");
 
         // Map uploaded files to URLs
         const docs = {};
         if (req.files && req.files.length > 0) {
             req.files.forEach(file => {
                 // file.fieldname matches what you appended in frontend: 'citizenshipFront', 'licenseFront', etc.
-                docs[file.fieldname] = `http://localhost:5005/uploads/${file.filename}`;
+                docs[file.fieldname] = `${baseUrl}/uploads/${file.filename}`;
             });
         }
 
         session = await mongoose.startSession();
         session.startTransaction();
 
-        // 1. Create Base User Account
+        const existingUser = await User.findOne({
+            $or: [{ email: formattedEmail }, { phone }]
+        }).session(session);
+
+        if (existingUser) {
+            throw {
+                status: 400,
+                message: existingUser.email === formattedEmail
+                    ? "Email already registered."
+                    : "Phone number already registered."
+            };
+        }
+// 1. Create Base User Account
         const newUser = new User({ 
             name: fullName, 
             email: formattedEmail, 
-            password: hashedPassword, 
+            password: password, 
             phone, 
             role: 'Rider', 
             isActive: false, // Riders need admin approval
@@ -214,12 +290,23 @@ router.post('/rider/signup', upload.any(), async (req, res) => {
             session.endSession();
         }
 
+        cleanupUploadedFiles(req.files);
+
         // 🚨 FIX 4: Explicitly log the exact MongoDB error to the terminal so we aren't guessing
         console.error("🚨 MONGODB REJECTED RIDER SIGNUP:", err.message);
 
         if (err.code === 11000) {
-            return res.status(400).json({ success: false, message: "Email or Phone already registered!" });
-        }
+    const field = Object.keys(err.keyPattern || {})[0];
+
+    return res.status(400).json({
+        success: false,
+        message: field === 'email'
+            ? "Email already registered."
+            : field === 'phone'
+                ? "Phone number already registered."
+                : "Duplicate data."
+    });
+}
 
         if (req.log) req.log.error({ event: 'RIDER_SIGNUP_FAILED', error: err.message });
         // 🛡️ FIX 5: Send the actual error message back to the frontend alert
@@ -317,3 +404,11 @@ router.put('/rider/status', loginLimiter, async (req, res) => {
 });
 
 module.exports = router;
+
+
+
+
+
+
+
+

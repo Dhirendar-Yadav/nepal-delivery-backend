@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-function RiderWalletTab({ walletBalance }) {
+function RiderWalletTab({ walletBalance, apiBase, authFetch }) {
   // 🚀 STATES for Real Database History
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [historyData, setHistoryData] = useState([]);
@@ -10,11 +10,7 @@ function RiderWalletTab({ walletBalance }) {
   const fetchWalletHistory = async () => {
     setIsLoadingHistory(true);
     try {
-      const token = localStorage.getItem('token');
-      // Ensure this endpoint exists in your backend to fetch rider's actual transaction history
-      const res = await fetch('http://localhost:5005/api/rider/wallet/history', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const res = await authFetch(`${apiBase}/api/rider/wallet/history`);
       
       if (res.ok) {
         const data = await res.json();

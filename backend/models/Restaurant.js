@@ -38,7 +38,7 @@ function computePopularity(doc) {
 const restaurantSchema = new mongoose.Schema({
     // --- 👤 IDENTITY & SECURITY ---
     ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    name: { type: String, required: true, trim: true },
+    name: { type: String, required: true, trim: true, lowercase: true, minlength: 2, maxlength: 100 },
     slug: { type: String, unique: true, sparse: true, index: true }, 
     
     // --- 🚦 OPERATIONAL STATE & VISIBILITY ---
@@ -74,7 +74,7 @@ const restaurantSchema = new mongoose.Schema({
             type: [Number], 
             default: undefined,
             validate: {
-                validator: (v) => !v || (v.length === 2 && v[0] >= -180 && v[0] <= 180 && v[1] >= -90 && v[1] <= 90),
+                validator: (v) => !v || (Array.isArray(v) && v.length === 2 && Number.isFinite(v[0]) && Number.isFinite(v[1]) && v[0] >= -180 && v[0] <= 180 && v[1] >= -90 && v[1] <= 90),
                 message: 'Invalid GeoJSON [lng, lat].'
             }
         } 
@@ -108,8 +108,16 @@ const restaurantSchema = new mongoose.Schema({
         min: [0, 'Balance cannot be negative'],
         validate: { validator: Number.isInteger, message: 'Balance must be in Paisa (Integer)' }
     },
-    totalEarnings: { type: Number, default: 0 },
-    totalSettled: { type: Number, default: 0 },
+    totalEarnings: {
+        type: Number,
+        default: 0,
+        validate: { validator: Number.isSafeInteger, message: 'Earnings must be integer paisa.' }
+    },
+    totalSettled: {
+        type: Number,
+        default: 0,
+        validate: { validator: Number.isSafeInteger, message: 'Settled amount must be integer paisa.' }
+    },
     
     commissionRate: { type: Number, default: 10, min: 0, max: 100 },
 
@@ -158,7 +166,7 @@ restaurantSchema.pre('save', function() {
 
     // 🔄 4. Normalize foodTypes
     if (this.foodTypes && this.foodTypes.length > 0) {
-        this.foodTypes = this.foodTypes.map(type => type.toLowerCase().trim());
+        this.foodTypes = [...new Set(this.foodTypes.map(type => type.toLowerCase().trim()))];
     }
 
     // ⭐ 5. Strict Rating Math Enforcement
@@ -187,10 +195,38 @@ restaurantSchema.pre(['findOneAndUpdate', 'updateOne'], async function() {
     const update = this.getUpdate();
     
     // 💰 Auto-Increment Wallet Version
-    if (update.$inc && update.$inc.walletBalance !== undefined) {
-        update.$inc.walletVersion = 1;
+    if (update.$inc && update.$inc['wallet.balance'] !== undefined) {
+        update.$inc.walletVersion = (update.$inc.walletVersion || 0) + 1;
     }
     
+
+    if (update.$set && Object.keys(update.$set).some(k => k.startsWith('wallet'))) {
+        return next(new Error('CRITICAL: Wallet fields must use controlled atomic updates.'));
+    }
+
+    if (update.$unset && Object.keys(update.$unset).some(k => k.startsWith('wallet'))) {
+        return next(new Error('CRITICAL: Wallet fields cannot be removed.'));
+    }
+
+    if (update.$rename && Object.keys(update.$rename).some(k => k.startsWith('wallet'))) {
+        return next(new Error('CRITICAL: Wallet fields cannot be renamed.'));
+    }
+
+    if (update.$inc) {
+        const allowedWalletInc = new Set([
+            'wallet.balance',
+            'wallet.totalEarnings',
+            'wallet.totalSettled'
+        ]);
+
+        const invalid = Object.keys(update.$inc)
+            .filter(k => k.startsWith('wallet') && !allowedWalletInc.has(k));
+
+        if (invalid.length) {
+            return next(new Error('CRITICAL: Invalid wallet increment field.'));
+        }
+    }
+
     if (update.$set || update.$inc) {
         const visibilityFields = ['status', 'isOpen', 'isVerifiedByAdmin', 'isDeleted', 'lastActiveAt'];
         const ratingFields = ['totalRatingSum', 'totalRatings'];
@@ -256,3 +292,6 @@ restaurantSchema.index({ lastActiveAt: -1 });
 restaurantSchema.index({ name: 'text', foodTypes: 'text' }, { weights: { name: 5, foodTypes: 3 } });
 
 module.exports = mongoose.model('Restaurant', restaurantSchema);
+
+
+

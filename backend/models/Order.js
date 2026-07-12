@@ -1,18 +1,6 @@
 const mongoose = require('mongoose');
 const crypto = require('crypto');
-
-const VALID_ORDER_STATUSES = ['Pending', 'Accepted', 'Preparing', 'Ready for Pickup', 'Out for Delivery', 'Delivered', 'Cancelled'];
-const VALID_ACTORS = ['SELLER', 'RIDER', 'SYSTEM', 'ADMIN'];
-
-const VALID_TRANSITIONS = {
-    'Pending': ['Accepted', 'Cancelled'],
-    'Accepted': ['Preparing', 'Cancelled'],
-    'Preparing': ['Ready for Pickup', 'Cancelled'],
-    'Ready for Pickup': ['Out for Delivery'],
-    'Out for Delivery': ['Delivered'],
-    'Delivered': [],
-    'Cancelled': []
-};
+const { VALID_ORDER_STATUSES, VALID_TRANSITIONS, VALID_ACTORS } = require('../constants/orderConstants');
 
 /**
  * @description Order Schema for Food Samundar (The Absolute Master Copy ❄️)
@@ -96,7 +84,8 @@ const orderSchema = new mongoose.Schema({
         actorType: { type: String, enum: VALID_ACTORS, required: true },
         // 🚀 SUBDOC CONTEXT FIX: Dropped function required rules to block atomic array update query context failures.
         // Contract schema structural validation is delegated strictly to the factory layer payload builders instead.
-        actorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }
+        actorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+        changedAt: { type: Date, default: Date.now }
     }],
 
     otpUsed: { type: Boolean, default: false, index: true }, 
@@ -109,8 +98,20 @@ const orderSchema = new mongoose.Schema({
         trim: true
     }, 
     paymentReference: { type: String, default: null },
-    clientOrderId: { type: String, default: null }, 
-    processingStartedAt: { type: Date }, 
+    clientOrderId: { type: String, default: null },
+    settlementId: { type: String, default: null, index: true },
+    settlementStatus: {
+        type: String,
+        enum: ['PENDING','COMPLETED','FAILED','REVERSED'],
+        default: 'PENDING',
+        index: true
+    }, 
+    processingStartedAt: { type: Date },
+    completedAt: { type: Date, default: null, index: true },
+    processingLock: { type: Boolean, default: false, index: true },
+    processingOwner: { type: String, default: null, index: true },
+    processingVersion: { type: Number, default: 0 },
+    otpAttempts: { type: Number, default: 0, min: 0 }, 
     
     // Secure OTP Infrastructure Tokens
     deliveryOTP: { type: String, default: null }, 
@@ -159,23 +160,6 @@ const orderSchema = new mongoose.Schema({
 
 // Internal salt/pepper retrieval pattern configuration mapping rules
 const getSystemPepperToken = () => process.env.OTP_SECRET || 'FoodSamundarSystemServerPepperStringSignatureHashToken';
-
-orderSchema.methods.setOTPWithTTL = function(otp, ttlMinutes = 10) {
-    if (otp == null || String(otp).trim() === '') {
-        throw new Error('OTP Initialization Fault: Target validation value cannot evaluate to empty or null fields.');
-    }
-    if (!/^\d{4,8}$/.test(String(otp).trim())) {
-        throw new Error('Operational Format Rule Breach: Numeric raw tokens must measure between 4 to 8 digits explicitly.');
-    }
-    if (ttlMinutes < 1 || ttlMinutes > 30) {
-        throw new Error('Security Boundaries Breach: Lease window configurations must strictly fall between 1 and 30 minutes.');
-    }
-    
-    // 🚀 CRYPTO REFORMS: Injected custom server-side encryption pepper constraints to prevent rainbow tables brute-forcing bounds
-    this.deliveryOTP = crypto.createHash('sha256').update(String(otp).trim() + getSystemPepperToken()).digest('hex');
-    this.deliveryOTPExpiresAt = new Date(Date.now() + ttlMinutes * 60 * 1000);
-    this.otpUsed = false; 
-};
 
 orderSchema.statics.hashOTP = function(otp) {
     if (otp == null || String(otp).trim() === '') return null;
@@ -338,3 +322,6 @@ orderSchema.index(
 const Order = mongoose.model('Order', orderSchema);
 
 module.exports = Order;
+
+
+

@@ -203,21 +203,36 @@ exports.updateRestaurantStatus = async (req, res, next) => {
             }
         }
 
-        const operatorId = req.user?._id || req.admin?._id || "SYSTEM_AUTOMATION_ENGINE";
+        const operatorId =
+            req.user?.id ||
+            req.user?._id ||
+            req.admin?.id ||
+            req.admin?._id;
         const requestIp = req.ip || "UNKNOWN_PROXIED_IP";
         const userAgent = req.headers['user-agent'] || "UNKNOWN_AGENT";
 
         // 🚀 ISSUE 3 FIXED: Explicit Schema-Backed Transactional Audit Log Mutation Write Layer
         // Automatically rolls back if database connection pipelines or operations cascade loops drop out
         await AdminAudit.create([{
-            adminId: operatorId,
-            action: 'UPDATE_RESTAURANT_STATUS',
-            restaurantId: id,
-            mutatedKeys: Object.keys(updateFields), // Protects structural properties masking from logging layers leaks
-            ipAddress: requestIp,
-            browserAgent: userAgent,
-            executionTimestamp: new Date()
-        }], { session });
+    admin: operatorId,
+    action: 'UPDATE_RESTAURANT_STATUS',
+
+    entityType: 'Restaurant',
+    entityId: id,
+
+    oldData: null,
+
+    newData: {
+        ...updateFields
+    },
+
+    metadata: {
+        mutatedKeys: Object.keys(updateFields)
+    },
+
+    ipAddress: requestIp,
+    userAgent: userAgent
+}], { session });
 
         await session.commitTransaction();
         return res.status(200).json({ success: true, data: updatedRestaurant });

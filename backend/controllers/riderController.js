@@ -6,7 +6,8 @@ const RiderProfile = require('../models/RiderProfile');
 const Order = require('../models/Order');
 const Restaurant = require('../models/Restaurant');
 const AdminWallet = require('../models/AdminWallet');
-const WalletLedger = require('../models/WalletLedger');
+const LedgerEntry = require('../models/LedgerEntry');
+const dispatchService = require('../services/dispatchService');
 
 // Validation helpers
 const validateEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -279,20 +280,25 @@ exports.acceptOrder = async (req, res) => {
     const session = await mongoose.startSession();
     session.startTransaction();
 
+    let riderId = null;
+    let riderLocked = null;
+
     try {
         if (!req.user || !req.user.id || !req.params.id) {
+        if (session.inTransaction()) {
             await session.abortTransaction();
-            session.endSession();
+        }
+        session.endSession();
             return res.status(400).json({ success: false, message: "Invalid request parameters" });
         }
 
         const now = new Date();
         const orderId = new mongoose.Types.ObjectId(req.params.id);
-        const riderId = new mongoose.Types.ObjectId(req.user.id);
+        riderId = new mongoose.Types.ObjectId(req.user.id);
 
         // STEP 1: Atomically acquire lock on rider (check-and-set pattern)
         // This prevents concurrent order acceptance by same rider
-        const riderLocked = await User.findOneAndUpdate(
+        riderLocked = await User.findOneAndUpdate(
             {
                 _id: riderId,
                 currentActiveOrderId: null  // Only succeed if currently unlocked
@@ -308,6 +314,10 @@ exports.acceptOrder = async (req, res) => {
             session.endSession();
             return res.status(409).json({ success: false, message: "You already have an active order" });
         }
+
+        // Read the current order status inside the same transaction so audit history reflects the real previous state
+        const existingOrderForAudit = await Order.findById(orderId).select('status').session(session);
+        const previousStatus = existingOrderForAudit && existingOrderForAudit.status ? existingOrderForAudit.status : 'Preparing';
 
         // STEP 2: Generate cryptographically secure OTP using model's hash method
         const generatedOTP = crypto.randomInt(100000, 1000000).toString();
@@ -335,7 +345,7 @@ exports.acceptOrder = async (req, res) => {
                 },
                 $push: {
                     statusHistory: {
-                        from: 'Preparing',
+                        from: previousStatus,
                         to: 'Out for Delivery',
                         actorType: 'RIDER',
                         actorId: riderId,
@@ -390,10 +400,32 @@ exports.acceptOrder = async (req, res) => {
             deliveryOTP: generatedOTP
         });
     } catch (err) {
-        await session.abortTransaction();
-        session.endSession();
-        console.error('Accept order error:', err);
-        return res.status(500).json({ success: false, message: "Failed to accept order" });
+
+        try {
+            if (session.inTransaction()) {
+                await session.abortTransaction();
+            }
+        } finally {
+            session.endSession();
+        }
+
+        if (riderLocked && riderId) {
+            try {
+                await User.findByIdAndUpdate(
+                    riderId,
+                    { currentActiveOrderId: null }
+                );
+            } catch (unlockErr) {
+                console.error("Failed to release rider lock:", unlockErr);
+            }
+        }
+
+        console.error("Accept order error:", err);
+
+        return res.status(500).json({
+            success: false,
+            message: "Failed to accept order"
+        });
     }
 };
 
@@ -520,20 +552,10 @@ exports.completeOrder = async (req, res) => {
             return res.status(400).json({ success: false, message: "Financial data mismatch" });
         }
 
-        // STEP 4: Check WalletLedger for idempotency (prevent double settlement)
-        const existingLedger = await WalletLedger.findOne({
-            orderId: orderId,
-            type: 'delivery_settlement'
-        }).session(session);
+        // STEP 4: Database unique indexes enforce settlement idempotency.
+        // Duplicate settlements are handled via MongoDB duplicate-key (11000).
 
-        if (existingLedger) {
-            console.warn(`Duplicate settlement attempt - Order: ${orderId}, Rider: ${riderId}`);
-            await session.abortTransaction();
-            session.endSession();
-            return res.status(409).json({ success: false, message: "Order already settled" });
-        }
-
-        // STEP 5: Atomic state transition (write barrier - commit point for delivery)
+// STEP 5: Atomic state transition (write barrier - commit point for delivery)
         const updatedOrder = await Order.findOneAndUpdate(
             {
                 _id: orderId,
@@ -548,7 +570,9 @@ exports.completeOrder = async (req, res) => {
                     otpUsed: true,
                     deliveryOTP: null,
                     deliveryOTPExpiresAt: null,
-                    completedAt: now
+                    completedAt: now,
+                    settlementStatus: 'COMPLETED',
+                    settlementId: settlementId
                 },
                 $push: {
                     statusHistory: {
@@ -570,61 +594,106 @@ exports.completeOrder = async (req, res) => {
             return res.status(409).json({ success: false, message: "Order was completed by another request" });
         }
 
-        // STEP 6: Create ledger entry (settlement record for idempotency and audit)
+        // STEP 6: Create ledger entries (settlement record for idempotency and audit)
         const riderBonus = order.riderIncentive || Math.round(order.totalAmount * 0.02);
         const netAdminProfit = order.platformFee - riderBonus;
 
-        const ledgerEntry = new WalletLedger({
-            orderId: orderId,
-            type: 'delivery_settlement',
-            riderId: riderId,
-            restaurantId: order.restaurantId,
-            adminWalletId: null,
-            transactionId: `DELIVERY_${orderId}_${now.getTime()}`,
-            amount: order.totalAmount,
-            riderCredit: order.deliveryFee + riderBonus,
-            restaurantCredit: order.foodCost,
-            platformCredit: order.platformFee,
-            createdAt: now
-        });
-        await ledgerEntry.save({ session });
+        const ledgerEntries = [
+            {
+                settlementId,
+                orderId: orderId,
+                entityType: 'RIDER',
+                entityId: riderId,
+                type: 'CREDIT',
+                amount: order.deliveryFee + riderBonus,
+                currency: 'NPR',
+                balanceAfter: null,
+                description: 'Delivery settlement',
+                createdAt: now
+            },
+            {
+                settlementId,
+                orderId: orderId,
+                entityType: 'RESTAURANT',
+                entityId: order.restaurantId,
+                type: 'CREDIT',
+                amount: order.foodCost,
+                currency: 'NPR',
+                balanceAfter: null,
+                description: 'Restaurant settlement',
+                createdAt: now
+            },
+            {
+                settlementId,
+                orderId: orderId,
+                entityType: 'ADMIN',
+                entityId: null,
+                type: 'CREDIT',
+                amount: order.platformFee,
+                currency: 'NPR',
+                balanceAfter: null,
+                description: 'Platform commission',
+                createdAt: now
+            }
+        ];
+        await LedgerEntry.insertMany(ledgerEntries, { session });
 
         // STEP 7: Update rider wallet
-        await RiderProfile.findOneAndUpdate(
+        const updatedRiderProfile = await RiderProfile.findOneAndUpdate(
             { userId: riderId },
             {
                 $inc: {
                     "wallet.balance": (order.deliveryFee + riderBonus),
-                    "wallet.incentiveEarnings": riderBonus
+                    "wallet.incentiveEarnings": riderBonus,
+                    "wallet.transactionCount": 1,
+                    "wallet.walletVersion": 1
+                },
+                $set: {
+                    "wallet.lastProcessedOrderId": orderId
                 }
             },
-            { session, runValidators: true }
+            { new: true, runValidators: true, session }
         );
 
+        if (!updatedRiderProfile) {
+            throw new Error("RiderProfile not found");
+        }
+
         // STEP 8: Update restaurant wallet
-        await Restaurant.findByIdAndUpdate(
+        const updatedRestaurant = await Restaurant.findByIdAndUpdate(
             order.restaurantId,
             {
                 $inc: {
                     "wallet.balance": order.foodCost,
-                    "wallet.totalEarnings": order.foodCost
+                    "wallet.totalEarnings": order.foodCost,
+                    "transactionCount": 1,
+                    "walletVersion": 1
+                },
+                $set: {
+                    "lastProcessedOrderId": orderId,
+                    "lastSettlementId": settlementId
                 }
             },
-            { session, runValidators: true }
+            { session, runValidators: true, new: true }
         );
+
+        if (!updatedRestaurant) {
+            throw new Error("Restaurant not found");
+        }
 
         // STEP 9: Update admin wallet with proper initialization
         await AdminWallet.findOneAndUpdate(
-            {},
+            { date: now.toISOString().slice(0,10) },
             {
                 $inc: {
                     totalPlatformRevenue: order.platformFee,
                     totalRiderBonusesPaid: riderBonus,
-                    netCompanyProfit: netAdminProfit,
-                    totalOrdersProcessed: 1
-                }
+                    totalOrdersProcessed: 1,
+                    transactionCount: 1
+                },
+                $setOnInsert: { date: now.toISOString().slice(0,10) }
             },
-            { upsert: true, session, runValidators: true }
+            { upsert: true, new: true, session, runValidators: true, setDefaultsOnInsert: true }
         );
 
         // STEP 10: Release rider lock and check for shift end
@@ -650,6 +719,17 @@ exports.completeOrder = async (req, res) => {
         await session.commitTransaction();
         session.endSession();
 
+        const io = req.app.get('io');
+        if (io) {
+            io.to(order.customerId.toString()).emit('orderDelivered', {
+                orderId: order._id
+            });
+
+            io.to(order.restaurantId.toString()).emit('orderDelivered', {
+                orderId: order._id
+            });
+        }
+
         return res.status(200).json({
             success: true,
             message: `Order delivered successfully.${shiftEndedMsg}`,
@@ -661,10 +741,28 @@ exports.completeOrder = async (req, res) => {
             }
         });
     } catch (err) {
-        await session.abortTransaction();
-        session.endSession();
-        console.error('Complete order error:', err);
-        return res.status(500).json({ success: false, message: "Failed to complete order" });
+
+        try {
+            if (session.inTransaction()) {
+                await session.abortTransaction();
+            }
+        } finally {
+            session.endSession();
+        }
+
+        if (err?.code === 11000) {
+            return res.status(409).json({
+                success: false,
+                message: "Order settlement already processed."
+            });
+        }
+
+        console.error("Complete order error:", err);
+
+        return res.status(500).json({
+            success: false,
+            message: "Failed to complete order"
+        });
     }
 };
 
@@ -684,13 +782,21 @@ exports.toggleStatus = async (req, res) => {
             return res.status(400).json({ success: false, message: "Invalid targetStatus. Must be true or false" });
         }
 
-        const user = await User.findById(req.user.id);
-        if (!user) {
-            return res.status(404).json({ success: false, message: "User not found" });
-        }
-
-        // Going online - check pending COD
+        // Going online - check active order and pending COD
         if (targetStatus === true) {
+            const user = await User.findById(req.user.id).select('currentActiveOrderId');
+            if (!user) {
+                return res.status(404).json({ success: false, message: "User not found" });
+            }
+
+            if (user.currentActiveOrderId) {
+                return res.status(409).json({
+                    success: false,
+                    message: "Cannot start shift while you have an active order",
+                    activeOrderId: user.currentActiveOrderId
+                });
+            }
+
             let profile = await RiderProfile.findOne({ userId: new mongoose.Types.ObjectId(req.user.id) });
             const pendingCOD = profile?.wallet?.codPending || 0;
 
@@ -703,35 +809,48 @@ exports.toggleStatus = async (req, res) => {
                 });
             }
 
-            user.isOnline = true;
-            user.shiftStartTime = new Date();
-            await user.save();
+            const shiftStartTime = new Date();
+            const updatedUser = await User.findOneAndUpdate(
+                { _id: req.user.id },
+                { $set: { isOnline: true, shiftStartTime } },
+                { new: true }
+            );
+
+            if (!updatedUser) {
+                return res.status(404).json({ success: false, message: "User not found" });
+            }
 
             return res.status(200).json({
                 success: true,
                 message: "Shift started. You are now online",
-                shiftStartTime: user.shiftStartTime
+                shiftStartTime: updatedUser.shiftStartTime
             });
         }
         // Going offline - prevent if active order exists
         else {
-            // Check if rider has active order
-            const activeOrder = await Order.findOne({
-                assignedRiderId: new mongoose.Types.ObjectId(req.user.id),
-                status: 'Out for Delivery'
-            });
+            const user = await User.findById(req.user.id).select("currentActiveOrderId");
 
-            if (activeOrder) {
+            if (!user) {
+                return res.status(404).json({ success: false, message: "User not found" });
+            }
+
+            if (user.currentActiveOrderId) {
                 return res.status(403).json({
                     success: false,
                     message: "Cannot go offline. You have an active delivery order",
-                    activeOrderId: activeOrder._id
+                    activeOrderId: user.currentActiveOrderId
                 });
             }
 
-            user.isOnline = false;
-            user.shiftStartTime = null;
-            await user.save();
+            const updatedUser = await User.findOneAndUpdate(
+                { _id: req.user.id },
+                { $set: { isOnline: false, shiftStartTime: null } },
+                { new: true }
+            );
+
+            if (!updatedUser) {
+                return res.status(404).json({ success: false, message: "User not found" });
+            }
 
             return res.status(200).json({
                 success: true,
@@ -741,5 +860,56 @@ exports.toggleStatus = async (req, res) => {
     } catch (err) {
         console.error('Toggle status error:', err);
         return res.status(500).json({ success: false, message: "Failed to update shift status" });
+    }
+};
+
+
+
+
+
+
+/**
+ * ? Rider Reject Order
+ */
+exports.rejectOrder = async (req, res) => {
+    try {
+        const riderId = new mongoose.Types.ObjectId(req.user.id);
+        const orderId = new mongoose.Types.ObjectId(req.params.id);
+
+        const order = await Order.findOneAndUpdate(
+            {
+                _id: orderId,
+                assignedRiderId: null,
+                offeredRiderId: riderId
+            },
+            {
+                $set: {
+                    offeredRiderId: null,
+                    offerExpiresAt: null
+                }
+            },
+            {
+                new: true,
+                runValidators: true
+            }
+        );
+
+        if (!order) {
+            return res.status(409).json({
+                success: false,
+                message: "Order offer no longer available."
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Order rejected."
+        });
+    } catch (err) {
+        console.error("Reject order error:", err);
+        return res.status(500).json({
+            success: false,
+            message: "Failed to reject order."
+        });
     }
 };

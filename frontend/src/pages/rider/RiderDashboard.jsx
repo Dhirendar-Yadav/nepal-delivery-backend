@@ -23,7 +23,11 @@ const authFetch = async (url, options = {}) => {
   if (res.status === 401) {
     localStorage.removeItem('token');
     localStorage.removeItem('userName');
-    window.location.href = '/login';
+    if (typeof window !== 'undefined' && window.__riderDashboardNavigateToLogin) {
+      window.__riderDashboardNavigateToLogin();
+    } else {
+      window.location.href = '/login';
+    }
     return null; 
   }
   return res;
@@ -44,6 +48,7 @@ function RiderDashboard() {
   const [isToggling, setIsToggling] = useState(false);
   const controllerRef = useRef(null);
   const acceptingRef = useRef(false);
+  const toggleInFlightRef = useRef(false);
   
   const isOnlineRef = useRef(isOnline);
   useEffect(() => { isOnlineRef.current = isOnline; }, [isOnline]);
@@ -84,12 +89,20 @@ function RiderDashboard() {
   const navigate = useNavigate();
   const riderName = localStorage.getItem('userName') || 'Rider';
 
-  // 🚀 FIXED: Tab Switching ab popstate ko trigger nahi karega
+  useEffect(() => {
+    window.__riderDashboardNavigateToLogin = () => {
+      navigate('/login', { replace: true });
+    };
+
+    return () => {
+      delete window.__riderDashboardNavigateToLogin;
+    };
+  }, [navigate]);
+
   const handleTabSwitch = useCallback((newTab) => {
-    if (activeTabRef.current === newTab) return; 
-    // pushState silently updates URL hash without firing popstate
-    window.history.pushState(null, "", `#${newTab}`);
+    if (activeTabRef.current === newTab) return;
     setActiveTab(newTab);
+    window.history.replaceState(null, "", `#${newTab}`);
   }, []);
 
   // Initial Load Hash Setup
@@ -103,43 +116,31 @@ function RiderDashboard() {
     }
   }, []);
 
-  // 🚀 FIXED: The Ultimate Inescapable Swipe-Back Trap
   useEffect(() => {
-    const handlePopState = (e) => {
-      // 1. Close open modals first
+    const handlePopState = () => {
       const closeBtns = document.querySelectorAll('.app-close-btn');
       if (closeBtns.length > 0) {
         closeBtns[closeBtns.length - 1].click();
-        window.history.pushState(null, "", `#${activeTabRef.current}`); // Re-trap
         return;
       }
 
-      // Legacy modal fallbacks
       const isImageModalOpen = document.getElementById('image-preview-modal');
       const isOrderMapOpen = document.getElementById('order-map-modal');
       if (isImageModalOpen || isOrderMapOpen) {
-        window.history.pushState(null, "", `#${activeTabRef.current}`); // Re-trap
         return;
       }
 
-      // 2. If Logout alert is open, swipe back just closes it (doesn't exit app)
       if (showLogoutConfirmRef.current) {
         setShowLogoutConfirm(false);
-        window.history.pushState(null, "", `#${activeTabRef.current}`); // Re-trap
         return;
       }
-      
-      // 3. App Navigation Trap
+
       const currentHash = window.location.hash.replace('#', '');
-      
-      if (!currentHash || !['home', 'orders', 'wallet', 'profile'].includes(currentHash)) {
-        // User tried to swipe back out of the app (empty hash or external URL)
-        window.history.pushState(null, "", `#home`); // Trap them back
-        setActiveTab('home');
-        setShowLogoutConfirm(true); // Show alert
-      } else {
-        // Natural back-navigation between tabs
+      if (currentHash && ['home', 'orders', 'wallet', 'profile'].includes(currentHash)) {
         setActiveTab(currentHash);
+      } else {
+        window.history.replaceState(null, '', '#home');
+        setActiveTab('home');
       }
     };
 
@@ -207,7 +208,7 @@ function RiderDashboard() {
       });
       if (res && res.ok) {
         const data = await res.json();
-        setOrders(data);
+        setOrders(Array.isArray(data) ? data : (data.orders ?? []));
       }
     } catch (err) { 
         if (err.name !== 'AbortError') {
@@ -227,6 +228,14 @@ function RiderDashboard() {
     return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   };
 
+  const refreshDashboard = useCallback(() => {
+    fetchProfile();
+    fetchActiveOrder();
+    if (isOnlineRef.current) {
+      fetchAvailableOrders();
+    }
+  }, [fetchProfile, fetchActiveOrder, fetchAvailableOrders]);
+
   useEffect(() => {
     let watchId;
     if (isOnline && navigator.geolocation) {
@@ -235,6 +244,9 @@ function RiderDashboard() {
         maximumAge: activeOrder ? 10000 : 20000, 
         timeout: 5000 
       };
+
+      const MIN_LOCATION_DISTANCE_METERS = 50;
+      const MIN_LOCATION_INTERVAL_MS = 15000;
 
       watchId = navigator.geolocation.watchPosition(
         async (position) => {
@@ -246,10 +258,10 @@ function RiderDashboard() {
 
             if (lastLocationRef.current) {
               const distance = getDistanceMeters(lastLocationRef.current.lat, lastLocationRef.current.lng, latitude, longitude);
-              if (distance < 50) shouldUpdate = false; 
+              if (distance < MIN_LOCATION_DISTANCE_METERS) shouldUpdate = false;
             }
 
-            if (shouldUpdate && (now - lastUpdateTimeRef.current > 15000)) {
+            if (shouldUpdate && (now - lastUpdateTimeRef.current > MIN_LOCATION_INTERVAL_MS)) {
               lastUpdateTimeRef.current = now;
               lastLocationRef.current = { lat: latitude, lng: longitude };
               
@@ -272,7 +284,7 @@ function RiderDashboard() {
         (error) => {
           console.error("GPS Error:", error);
           if (error.code === error.PERMISSION_DENIED) {
-            alert("Location permission required for deliveries. Please enable GPS.");
+            // TODO: Replace with app toast/snackbar.
           }
         },
         geoOptions
@@ -316,10 +328,10 @@ function RiderDashboard() {
 
     const handleConnect = () => {
       setIsSocketConnected(true);
+      fetchProfile();
       if (isOnlineRef.current) {
         fetchAvailableOrders();
         fetchActiveOrder();
-        fetchProfile();
       }
     };
 
@@ -356,6 +368,32 @@ function RiderDashboard() {
   }, [fetchProfile, fetchActiveOrder]); 
 
   useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchProfile();
+      }
+    };
+
+    const handleWindowFocus = () => {
+      fetchProfile();
+    };
+
+    const handleOnline = () => {
+      fetchProfile();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleWindowFocus);
+    window.addEventListener('online', handleOnline);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleWindowFocus);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, [fetchProfile]);
+
+  useEffect(() => {
     if (isOnline && !activeOrder) {
       fetchAvailableOrders();
       let interval;
@@ -370,9 +408,10 @@ function RiderDashboard() {
   }, [isOnline, activeOrder, isSocketConnected, fetchAvailableOrders]);
 
   const handleToggleOnline = useCallback(async () => {
-    if (activeOrder) return alert("Please complete your current active order before going offline!");
-    if (isToggling) return; 
-    
+    if (activeOrder) return; // TODO: Replace with app toast/snackbar.
+    if (isToggling || toggleInFlightRef.current) return;
+
+    toggleInFlightRef.current = true;
     setIsToggling(true);
     const newStatus = !isOnline;
 
@@ -395,18 +434,19 @@ function RiderDashboard() {
                     setOrders([]); 
                 }
             } else {
-                alert(`❌ Action Blocked: ${data.message || data.error}`);
+                // TODO: Replace with app toast/snackbar.
             }
         }
     } catch (error) { 
-        alert("Network Error updating status."); 
+        // TODO: Replace with app toast/snackbar.
     } finally {
+        toggleInFlightRef.current = false;
         setIsToggling(false); 
     }
   }, [activeOrder, isOnline, isToggling, fetchAvailableOrders]);
 
   const handleAcceptOrder = useCallback(async (orderId) => {
-    if (!isOnline) return alert("Please go ONLINE first to accept orders!");
+    if (!isOnline) return; // TODO: Replace with app toast/snackbar.
     if (acceptingRef.current) return;
     acceptingRef.current = true;
 
@@ -425,10 +465,10 @@ function RiderDashboard() {
         fetchAvailableOrders();
       } else if (res) {
         const data = await res.json();
-        alert(data.message || "Failed to accept order.");
+        // TODO: Replace with app toast/snackbar.
       }
     } catch (err) { 
-      alert("Network Error while accepting order."); 
+      // TODO: Replace with app toast/snackbar.
     } finally {
       acceptingRef.current = false;
     }
@@ -474,7 +514,7 @@ function RiderDashboard() {
   const executeLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('userName');
-    window.location.href = '/login';
+    navigate('/login', { replace: true });
   };
 
   const handleLogoutClick = () => {
@@ -499,11 +539,11 @@ function RiderDashboard() {
         </div>
       )}
 
-      <div className="flex h-screen bg-gray-50 dark:bg-[#0a0a0a] text-gray-800 dark:text-gray-300 font-sans overflow-hidden">
+      <div className="flex min-h-dvh bg-gray-50 dark:bg-[#0a0a0a] text-gray-800 dark:text-gray-300 font-sans overflow-hidden">
         
-        <aside className="hidden md:flex flex-col w-64 bg-white dark:bg-gray-950 border-r border-gray-200 dark:border-gray-800 h-full">
+        <aside className="hidden md:flex flex-col w-64 bg-white dark:bg-gray-950 border-r border-gray-200 dark:border-gray-800 min-h-dvh">
           <div className="p-6">
-            <button onClick={() => window.location.reload()} className="text-xl font-black text-orange-500 italic tracking-tight text-left hover:opacity-80">
+            <button onClick={refreshDashboard} className="text-xl font-black text-orange-500 italic tracking-tight text-left hover:opacity-80">
               FOOD SAMUNDAR
             </button>
             <p className="text-xs font-medium text-gray-500 mt-1">{riderName}</p>
@@ -526,10 +566,10 @@ function RiderDashboard() {
           </nav>
         </aside>
 
-        <main className="flex-1 flex flex-col h-full relative">
+        <main className="flex-1 flex flex-col min-h-dvh relative">
           <header className="bg-white dark:bg-gray-950 border-b border-gray-200 dark:border-gray-800 px-4 md:px-8 py-3 md:py-4 flex justify-between items-center sticky top-0 z-40 shadow-sm">
             <div className="md:hidden">
-              <button onClick={() => window.location.reload()} className="text-lg font-black text-orange-500 italic tracking-tight leading-none text-left">
+              <button onClick={refreshDashboard} className="text-lg font-black text-orange-500 italic tracking-tight leading-none text-left">
                 FOOD SAMUNDAR
               </button>
               <p className="text-[10px] font-bold text-gray-500 mt-1">{riderName}</p>
@@ -565,10 +605,10 @@ function RiderDashboard() {
                   <span className="hidden md:inline text-xs font-bold uppercase tracking-wider">Logout</span>
               </button>
             </div>
-          </header>
+            </header>
 
           <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-24 md:pb-8 custom-scrollbar">
-            <div className="max-w-4xl mx-auto">
+            <div className="w-full">
               {activeTab === 'home' && (
                   <RiderHomeTab 
                       isOnline={isOnline} 
@@ -590,7 +630,7 @@ function RiderDashboard() {
                       handleDelivered={handleDelivered} 
                   />
               )}
-              {activeTab === 'wallet' && <RiderWalletTab walletBalance={walletBalance} />}
+              {activeTab === 'wallet' && <RiderWalletTab walletBalance={walletBalance} apiBase={API_BASE} authFetch={authFetch} />}
               {activeTab === 'profile' && <RiderProfileTab riderName={riderName} riderDetails={riderDetails} />}
             </div>
           </div>
@@ -630,7 +670,7 @@ function RiderDashboard() {
               <button 
                 onClick={() => {
                   setShowLogoutConfirm(false);
-                  window.history.pushState(null, "", `#${activeTabRef.current}`); // Stay locked
+
                 }} 
                 className="app-close-btn flex-1 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 font-bold py-3.5 rounded-xl hover:bg-red-100 transition border border-red-200 dark:border-red-500/20"
               >

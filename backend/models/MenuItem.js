@@ -15,7 +15,12 @@ const menuItemSchema = new mongoose.Schema({
     },
 
     // 🧾 CORE DETAILS
-    name: { type: String, required: true, trim: true },
+    name: {
+        type: String,
+        required: true,
+        trim: true,
+        maxlength: 150
+    },
 
     price: { 
         type: Number, 
@@ -69,8 +74,8 @@ menuItemSchema.index({ restaurantId: 1, price: 1 });
 // Ultra-fast text search across name, description, and tags
 menuItemSchema.index({
     name: 'text',
-    description: 'text',
     tags: 'text'
 });
 
 module.exports = mongoose.model('MenuItem', menuItemSchema);
+

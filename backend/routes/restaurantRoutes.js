@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const jwt = require('jsonwebtoken');
+const { authMiddleware } = require('../middlewares/auth');
 const mongoose = require('mongoose'); 
 
 // Core Database Models
@@ -10,9 +10,9 @@ const Order = require('../models/Order');
 const User = require('../models/User'); 
 
 const restaurantController = require('../controllers/restaurantController');
+const { VALID_ORDER_STATUSES } = require('../constants/orderConstants');
+const dispatchService = require('../services/dispatchService');
 
-// Centralized Finite State Machine Core Layout Settings
-const VALID_ORDER_STATUSES = ['Pending', 'Accepted', 'Preparing', 'Ready for Pickup', 'Out for Delivery', 'Delivered', 'Cancelled'];
 const DISPATCH_TRIGGER_STATUSES = ['Accepted', 'Preparing'];
 
 const ORDER_STATUS_TRANSITIONS = {
@@ -40,26 +40,39 @@ const asyncHandler = (fn) => (req, res, next) => {
  * Hardened Seller Security Middleware
  */
 const verifySeller = asyncHandler(async (req, res, next) => {
-    const authHeader = req.header('Authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ success: false, error: "ACCESS_DENIED", message: "Access Denied! Malformed or Missing Authorization Token." });
-    }
 
-    const token = authHeader.split(" ")[1];
-    const verified = jwt.verify(token, process.env.JWT_SECRET);
-    
-    if (verified.role !== 'Seller') {
-        return res.status(403).json({ success: false, error: "RESTRICTED_ACCESS", message: "Restricted Access! Seller authorization clearance flags required." });
-    }
+    authMiddleware(req, res, async () => {
 
-    const activeUserCheck = await User.findById(verified.id || verified._id || verified.userId).select('isActive kycStatus').lean();
-    if (!activeUserCheck || !activeUserCheck.isActive || activeUserCheck.kycStatus !== 'VERIFIED') {
-        return res.status(403).json({ success: false, error: "BANNED_SELLER_ACCOUNT", message: "Access Suspended: This account has been deactivated or failed verification checks." });
-    }
-    
-    req.user = verified;
-    req.user.id = activeUserCheck._id.toString();
-    return next();
+        if (req.user.role !== 'Seller') {
+            return res.status(403).json({
+                success: false,
+                error: "RESTRICTED_ACCESS",
+                message: "Restricted Access! Seller authorization clearance flags required."
+            });
+        }
+
+        const activeUserCheck = await User.findById(req.user.id)
+            .select('isActive kycStatus')
+            .lean();
+
+        if (
+            !activeUserCheck ||
+            !activeUserCheck.isActive ||
+            activeUserCheck.kycStatus !== 'VERIFIED'
+        ) {
+            return res.status(403).json({
+                success: false,
+                error: "BANNED_SELLER_ACCOUNT",
+                message: "Access Suspended: This account has been deactivated or failed verification checks."
+            });
+        }
+
+        req.user.id = activeUserCheck._id.toString();
+
+        next();
+
+    });
+
 });
 
 /**
@@ -86,53 +99,8 @@ const attachRestaurantContext = asyncHandler(async (req, res, next) => {
 // ==========================================
 // 🏢 DECOUPLED DISPATCH SERVICE LAYER LOGIC
 // ==========================================
-const dispatchService = {
-    triggerAutomatedRiderDispatch: async (orderId, restaurantLocation, appIoContext) => {
-        try {
-            // 🚀 NOTE ON PROBLEM 5 & 6: To handle simultaneous race conditions across 100k+ users,
-            // this direct database fetch array must be substituted with a Redis Distributed Lock (Redlock)
-            // matching engine pattern linked with a persistent BullMQ state machine worker tracking pipeline.
-            
-            const closestRiders = await User.find({
-                role: 'Rider',
-                isActive: true, 
-                isOnline: true, 
-                $or: [{ currentActiveOrderId: null }, { currentActiveOrderId: { $exists: false } }], 
-                currentLocation: { $near: { $geometry: restaurantLocation } }
-            }).select('_id name phone').limit(10).lean();
-
-            if (closestRiders.length === 0) return null;
-
-            const riderQueueIds = closestRiders.map(rider => rider._id.toString());
-            const primeTargetCandidateRiderId = riderQueueIds[0];
-
-            const updatedOrder = await Order.findOneAndUpdate(
-                { _id: orderId, offeredRiderId: null, assignedRiderId: null },
-                {
-                    $set: {
-                        dispatchQueue: riderQueueIds,
-                        currentDispatchIndex: 0,
-                        offeredRiderId: primeTargetCandidateRiderId,
-                        offerExpiresAt: new Date(Date.now() + 60 * 1000) 
-                    }
-                },
-                { new: true, runValidators: true }
-            ).populate('customerId', 'name phone').populate('restaurantId', 'name address phone');
-
-            if (updatedOrder && appIoContext) {
-                appIoContext.to(primeTargetCandidateRiderId).emit('newOrderOffer', updatedOrder);
-            }
-
-            return primeTargetCandidateRiderId;
-        } catch (error) {
-            console.error(`[DISPATCH EXCEPTION] Allocation fault tracked: ${error.message}`);
-            return null;
-        }
-    }
-};
-
 // ==========================================
-// 🏢 CUSTOMER ROUTES (Public Operations)
+// ?? CUSTOMER ROUTES (Public Operations)
 // ==========================================
 router.get('/', restaurantController.getAllRestaurants);
 
@@ -233,7 +201,10 @@ router.put('/orders/:id/status', verifySeller, attachRestaurantContext, asyncHan
     const order = await Order.findOneAndUpdate(
         queryCondition,
         { 
-            $set: { status },
+            $set: {
+                status,
+                statusUpdatedAt: historicalAuditNode.changedAt
+            },
             $push: { statusHistory: historicalAuditNode } 
         },
         { new: true, runValidators: true }

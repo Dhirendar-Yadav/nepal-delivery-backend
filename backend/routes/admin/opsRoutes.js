@@ -8,8 +8,6 @@ const Order = require('../../models/Order');
 const RiderProfile = require('../../models/RiderProfile');
 const AdminWallet = require('../../models/AdminWallet');
 
-// 🛡️ FIX: Ab ye naye orderController ko point kar raha hai
-const orderController = require('../../controllers/admin/orderController');
 const { verifyAdmin, statsLimiter, orderLimiter, criticalLimiter } = require('../../middlewares/adminAuth');
 
 const generateHash = (...args) => crypto.createHash('sha256').update(args.join('_')).digest('hex');
@@ -24,9 +22,10 @@ const AdminAuditLog = mongoose.models.AdminAuditLog || mongoose.model('AdminAudi
 // ==========================================
 router.get('/full-stats', verifyAdmin, statsLimiter, async (req, res) => {
     try {
-        const wallet = await AdminWallet.findOne({ walletType: 'MASTER' }).lean();
         const now = new Date();
+        const todayString = now.toISOString().split('T')[0];
         const startOfTodayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+        const wallet = await AdminWallet.findOne({ date: todayString }).lean();
         
         const dailyStats = await Order.aggregate([
             { $match: { createdAt: { $gte: startOfTodayUTC }, status: 'Delivered' } },
@@ -37,7 +36,7 @@ router.get('/full-stats', verifyAdmin, statsLimiter, async (req, res) => {
             totalOrdersProcessed: wallet?.totalOrdersProcessed || 0,
             totalRevenue: ((wallet?.totalPlatformRevenue || 0) / 100).toFixed(2),
             netProfit: ((wallet?.netCompanyProfit || 0) / 100).toFixed(2),
-            availableBalance: ((wallet?.availableBalance || 0) / 100).toFixed(2),
+            availableBalance: ((wallet?.totalPlatformRevenue || 0) / 100).toFixed(2),
             dailyOrders: dailyStats[0]?.count || 0,
             dailyRevenue: ((dailyStats[0]?.revenue || 0) / 100).toFixed(2)
         }});
@@ -104,7 +103,7 @@ router.get('/all-customers', verifyAdmin, statsLimiter, async (req, res) => {
 
 router.get('/live-rider-shifts', verifyAdmin, statsLimiter, async (req, res) => {
     try {
-        const riders = await User.find({ role: 'Rider', isOnline: true }).select('name phone shiftStartTime currentActiveOrderId walletBalance').lean();
+        const riders = await User.find({ role: 'Rider', isOnline: true }).select('name phone shiftStartTime currentActiveOrderId').lean();
         const riderData = riders.map(rider => {
             const shiftDuration = rider.shiftStartTime ? Math.floor((Date.now() - new Date(rider.shiftStartTime)) / (1000 * 60)) : 0;
             return { ...rider, shiftDurationMinutes: shiftDuration, isOvertime: shiftDuration >= 720, isInBuffer: shiftDuration >= 700 && shiftDuration < 720, isBusy: !!rider.currentActiveOrderId };
@@ -123,10 +122,16 @@ router.post('/reset-rider-shift', verifyAdmin, criticalLimiter, async (req, res)
         if (user.currentActiveOrderId) throw new Error("Cannot reset shift during active delivery!");
 
         user.shiftStartTime = new Date(); user.isOnline = true;
-        if (clearCOD) user.walletBalance = 0;
         await user.save({ session });
 
-        if (clearCOD) await RiderProfile.findOneAndUpdate({ userId: riderId }, { $set: { "wallet.balance": 0 } }, { session });
+        if (clearCOD) {
+            await RiderProfile.findOneAndUpdate(
+                { userId: riderId },
+                { $set: { "wallet.balance": 0 } },
+                { session, upsert: true }
+            );
+        }
+
         await session.commitTransaction(); res.json({ success: true, message: `Rider ${user.name} settled and shift restarted.` });
     } catch (err) {
         await session.abortTransaction(); res.status(400).json({ success: false, message: err.message });
@@ -161,8 +166,7 @@ router.get('/active-tracking-orders', verifyAdmin, orderLimiter, async (req, res
     } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 });
 
-// 🛡️ FIX: Using orderController here
-router.post('/deliver-order', verifyAdmin, criticalLimiter, orderController.processOrderDelivery);
+// Deprecated: Delivery settlement handled only via riderController.completeOrder
 
 router.delete('/purge/:type/:id', verifyAdmin, criticalLimiter, async (req, res) => {
     try {
