@@ -113,7 +113,7 @@ router.post('/payouts/bulk-approve', verifyAdmin, criticalLimiter, async (req, r
 
                 let updatedEntity;
                 if (targetType === 'RIDER') {
-                    updatedEntity = await RiderProfile.findOneAndUpdate({ _id: entity._id, "wallet.balance": payoutAmount }, { $set: { "wallet.balance": 0 } }, { session, new: true });
+                    updatedEntity = await RiderProfile.findOneAndUpdate({ _id: entity._id, "wallet.balance": payoutAmount }, { $inc: { "wallet.balance": -payoutAmount } }, { session, new: true });
                 } else {
                     updatedEntity = await Restaurant.findOneAndUpdate({ _id: entity._id, walletBalance: payoutAmount }, { $inc: { walletBalance: -payoutAmount, totalSettled: payoutAmount, walletVersion: 1 } }, { session, new: true });
                 }

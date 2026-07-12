@@ -125,9 +125,14 @@ router.post('/reset-rider-shift', verifyAdmin, criticalLimiter, async (req, res)
         await user.save({ session });
 
         if (clearCOD) {
+            const riderProfile = await RiderProfile.findOne({ userId: riderId })
+                .session(session)
+                .select('wallet.balance');
+            const walletBalance = riderProfile?.wallet?.balance || 0;
+
             await RiderProfile.findOneAndUpdate(
-                { userId: riderId },
-                { $set: { "wallet.balance": 0 } },
+                { userId: riderId, "wallet.balance": walletBalance },
+                { $inc: { "wallet.balance": -walletBalance } },
                 { session, upsert: true }
             );
         }
