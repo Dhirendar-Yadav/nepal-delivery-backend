@@ -539,7 +539,7 @@ exports.completeOrder = async (req, res) => {
         const financialStatus = Order.validateFinancialBreakdown({
             foodCost: order.foodCost,
             deliveryFee: order.deliveryFee,
-            platformFee: order.platformFee,
+            platformFee: 0,
             taxAmount: order.taxAmount,
             discountAmount: order.discountAmount,
             totalAmount: order.totalAmount
