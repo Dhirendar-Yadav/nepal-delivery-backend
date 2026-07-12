@@ -1,5 +1,7 @@
 const Restaurant = require('../models/Restaurant');
 
+const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 /**
  * @description Fetch all discoverable restaurants with Geo-sorting, filtering, and deep menu search.
  * @route GET /api/restaurants
@@ -36,12 +38,12 @@ exports.getAllRestaurants = async (req, res) => {
 
         if (categories) {
             const catArray = categories.split(',');
-            matchStage.foodTypes = { $in: catArray.map(c => new RegExp(`^${c.trim()}$`, 'i')) };
+            matchStage.foodTypes = { $in: catArray.map(c => new RegExp(`^${escapeRegex(c.trim())}$`, 'i')) };
         }
 
         // 🎯 3. DEEP SEARCH (Restaurant Name, Category OR Menu Items)
         if (search) {
-            const searchRegex = new RegExp(search, 'i');
+            const searchRegex = new RegExp(escapeRegex(search), 'i');
             
             // We do a fast lookup ONLY if the user is searching for something
             pipeline.push({
