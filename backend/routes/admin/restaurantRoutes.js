@@ -13,6 +13,6 @@ router.patch('/restaurants/:id/status', verifyAdmin, criticalLimiter, restaurant
 router.patch('/restaurants/:id/operate', verifyAdmin, criticalLimiter, restaurantController.updateOperationalState);
 router.patch('/restaurants/:id/metrics', verifyAdmin, criticalLimiter, restaurantController.updateRankingMetrics);
 
-router.get('/sync-legacy-data', verifyAdmin, restaurantController.syncLegacyData);
+router.post('/sync-legacy-data', verifyAdmin, restaurantController.syncLegacyData);
 
 module.exports = router;
