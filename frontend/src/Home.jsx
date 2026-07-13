@@ -152,16 +152,13 @@ function Home() {
         badgeText = `✨ ${matchedMenuItems[0].name} available here`;
       }
 
-      const isClosedMock = r.name.length % 5 === 0; 
-      const offerMock = r.name.length % 3 === 0 ? "🔥 20% OFF" : (r.name.length % 4 === 0 ? "🚚 FREE DELIVERY" : null);
-
       return { 
         ...r, 
         distance: dist, 
         matchesSearch: matchesName || matchesType || hasMatchingItem || searchLower === '',
         badgeText,
-        isOpen: r.isOpen !== undefined ? r.isOpen : !isClosedMock,
-        offerTag: r.offerTag || offerMock
+        isOpen: r.isOpen,
+        offerTag: r.offerTag || null
       };
     })
     .filter(r => {
@@ -369,7 +366,7 @@ function Home() {
           ) : (
             <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
               {isLoading ? [...Array(12)].map((_, i) => <SkeletonCard key={i} />) : processedRestaurants.map((restaurant) => (
-                <div key={restaurant._id} className={`bg-white rounded-2xl shadow-sm hover:shadow-xl transition-all border border-gray-100 flex flex-col overflow-hidden group active:scale-95 transition-all relative ${!restaurant.isOpen ? 'opacity-80 grayscale-[40%]' : ''}`}>
+                <div key={restaurant._id} className={`bg-white rounded-2xl shadow-sm hover:shadow-xl transition-all border border-gray-100 flex flex-col overflow-hidden group active:scale-95 transition-all relative ${restaurant.isOpen === false ? 'opacity-80 grayscale-[40%]' : ''}`}>
                   
                   {restaurant.offerTag && (
                     <div className="absolute top-0 left-0 bg-blue-600 text-white text-[9px] font-black px-3 py-1 rounded-br-xl shadow-lg z-20 uppercase tracking-wider">
@@ -383,13 +380,17 @@ function Home() {
                     </div>
                     {restaurant.rating && <span className="absolute bottom-2 left-2 bg-white/90 px-1.5 py-0.5 rounded-lg text-[10px] font-black shadow-sm z-10 flex gap-1 items-center">⭐ {restaurant.rating}</span>}
                     
-                    {restaurant.isOpen ? (
+                    {restaurant.isOpen === true ? (
                       <span className="absolute top-2 right-2 bg-white/90 px-1.5 py-0.5 rounded-lg text-[9px] font-black text-green-600 shadow-sm flex items-center gap-1 z-10">
                         <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span> LIVE
                       </span>
-                    ) : (
+                    ) : restaurant.isOpen === false ? (
                       <span className="absolute top-2 right-2 bg-white/90 px-1.5 py-0.5 rounded-lg text-[9px] font-black text-red-600 shadow-sm flex items-center gap-1 z-10">
                         <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span> CLOSED
+                      </span>
+                    ) : (
+                      <span className="absolute top-2 right-2 bg-white/90 px-1.5 py-0.5 rounded-lg text-[9px] font-black text-gray-600 shadow-sm flex items-center gap-1 z-10">
+                        STATUS UNKNOWN
                       </span>
                     )}
                   </div>
@@ -408,14 +409,14 @@ function Home() {
                     </div>
 
                     <button 
-                      onClick={() => restaurant.isOpen && handleRestaurantClick(restaurant._id)} 
+                      onClick={() => restaurant.isOpen !== false && handleRestaurantClick(restaurant._id)} 
                       className={`w-full font-black py-2.5 rounded-xl transition-all text-[10px] uppercase active:scale-95 mt-auto ${
-                        restaurant.isOpen 
+                        restaurant.isOpen !== false 
                           ? 'bg-orange-50 hover:bg-orange-500 text-orange-600 hover:text-white' 
                           : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                       }`}
                     >
-                      {restaurant.isOpen ? 'View Menu ➔' : 'Currently Closed'}
+                      {restaurant.isOpen === false ? 'Currently Closed' : 'View Menu ➔'}
                     </button>
                   </div>
                 </div>
