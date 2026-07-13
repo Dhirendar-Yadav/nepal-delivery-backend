@@ -29,7 +29,13 @@ function Signup() {
         alert("Swagat Chha! 🥘 Account created successfully. Login garera mitho khana order garnuhos.");
         navigate('/login');
       } else {
-        const data = await res.json();
+        const responseText = await res.text();
+        let data = {};
+        try {
+          data = responseText ? JSON.parse(responseText) : {};
+        } catch {
+          data = {};
+        }
         alert(data.message || "Signup failed. Please try again.");
       }
     } catch (err) { 

@@ -133,7 +133,13 @@ function SellerSignup() {
         alert("Badhai Chha! 🎉 Pasal saphalatapurvak darta bhayo. Aba login garnuhos.");
         navigate('/login'); 
       } else {
-        const result = await res.json();
+        const responseText = await res.text();
+        let result = {};
+        try {
+          result = responseText ? JSON.parse(responseText) : {};
+        } catch {
+          result = {};
+        }
         alert(result.message || "Registration failed.");
       }
     } catch (err) { 

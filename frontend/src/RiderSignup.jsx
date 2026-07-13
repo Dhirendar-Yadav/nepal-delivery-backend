@@ -90,11 +90,17 @@ function RiderSignup() {
         method: 'POST',
         body: data, 
       });
-      const result = await res.json();
       if (res.ok) {
         alert("Badhai Chha! 🎉 Application submitted. Aba login garnuhos.");
         navigate('/login'); 
       } else {
+        const responseText = await res.text();
+        let result = {};
+        try {
+          result = responseText ? JSON.parse(responseText) : {};
+        } catch {
+          result = {};
+        }
         alert(result.message || "Registration failed.");
       }
     } catch (err) { 
