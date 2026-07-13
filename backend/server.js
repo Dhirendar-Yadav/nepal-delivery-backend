@@ -83,7 +83,7 @@ app.use(hpp());
 const allowedOrigins = [process.env.FRONTEND_URL, 'http://localhost:3000', 'http://localhost:5173']; 
 app.use(cors({
     origin: (origin, callback) => {
-        if (!origin || allowedOrigins.includes(origin) || !isProd) callback(null, true);
+        if (!origin || allowedOrigins.includes(origin)) callback(null, true);
         else callback(new Error('CORS blocked by CEO Firewall.'));
     },
     credentials: true
