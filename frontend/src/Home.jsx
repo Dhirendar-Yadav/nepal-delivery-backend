@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom'; 
 
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5005';
+
 function Home() {
   const [restaurants, setRestaurants] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -33,7 +35,7 @@ function Home() {
   useEffect(() => {
     const fetchRestaurants = async () => {
       try {
-        const response = await fetch('http://localhost:5005/api/restaurants');
+        const response = await fetch(`${API_BASE}/api/restaurants`);
         const data = await response.json();
         if (response.ok) setRestaurants(data);
       } catch (error) { console.error("API connection error:", error); }
