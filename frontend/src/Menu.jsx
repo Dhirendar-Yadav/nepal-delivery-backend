@@ -10,22 +10,32 @@ function Menu() {
   const [restaurantName, setRestaurantName] = useState(""); 
   const [isLoading, setIsLoading] = useState(true);
   const [cart, setCart] = useState([]);
+  const [apiError, setApiError] = useState('');
 
   useEffect(() => {
     const fetchMenuAndDetails = async () => {
+      setApiError('');
+      let menuLoaded = false;
       try {
         const menuRes = await fetch(`${API_BASE}/api/menu/${id}`);
-        const menuData = await menuRes.json();
-        if (menuRes.ok) setMenuItems(menuData);
+        if (menuRes.ok) {
+          const menuData = await menuRes.json();
+          setApiError('');
+          setMenuItems(menuData);
+          menuLoaded = true;
+        } else {
+          setApiError('Unable to Load Menu');
+        }
 
         const restRes = await fetch(`${API_BASE}/api/restaurants`);
-        const restData = await restRes.json();
         if (restRes.ok) {
+          const restData = await restRes.json();
           const currentRest = restData.find(r => r._id === id);
           if (currentRest) setRestaurantName(currentRest.name);
         }
       } catch (error) {
         console.error("API Error:", error);
+        if (!menuLoaded) setApiError('Unable to Load Menu');
       } finally {
         setIsLoading(false);
       }
@@ -78,6 +88,14 @@ function Menu() {
 
             {isLoading ? (
               <div className="flex justify-center py-20"><div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div></div>
+            ) : apiError ? (
+              <div className="text-center py-20">
+                <p className="text-gray-500 font-bold">{apiError}</p>
+              </div>
+            ) : menuItems.length === 0 ? (
+              <div className="text-center py-20">
+                <p className="text-gray-500 font-bold">No Menu Items Found</p>
+              </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 {menuItems.map((item) => (
