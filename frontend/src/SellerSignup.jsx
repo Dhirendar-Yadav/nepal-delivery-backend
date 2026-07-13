@@ -40,6 +40,7 @@ function SellerSignup() {
   const [selectedImage, setSelectedImage] = useState(null);
   const [regDocument, setRegDocument] = useState(null); 
   const [isCompressing, setIsCompressing] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   const [position, setPosition] = useState([27.5020, 83.6661]); 
   const [isLocating, setIsLocating] = useState(false);
@@ -108,6 +109,7 @@ function SellerSignup() {
 
   const handleSellerSignup = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return;
     const nepalRegex = /^(98|97)\d{8}$/;
     if (!nepalRegex.test(formData.phone)) {
       alert("Invalid Number! Kripya valid Nepali number (98/97 bata suru hune 10 digits) halnuhos.");
@@ -124,6 +126,7 @@ function SellerSignup() {
     if (selectedImage) data.append('image', selectedImage);
     if (regDocument) data.append('registrationDoc', regDocument);
 
+    setIsSubmitting(true);
     try {
       const res = await fetch(`${API_BASE}/api/auth/signup`, {
         method: 'POST',
@@ -144,6 +147,8 @@ function SellerSignup() {
       }
     } catch (err) { 
       alert("Server connection error. Internet check garnuhos!");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -260,10 +265,10 @@ function SellerSignup() {
             </div>
             
             <button 
-              disabled={isCompressing} 
-              className={`w-full text-white font-black py-6 rounded-3xl transition-all shadow-[0_20px_50px_rgba(234,88,12,0.3)] uppercase tracking-[0.2em] text-base mt-10 mb-6 ${isCompressing ? 'bg-orange-300' : 'bg-orange-600 hover:bg-gray-900 active:scale-95'}`}
+              disabled={isCompressing || isSubmitting} 
+              className={`w-full text-white font-black py-6 rounded-3xl transition-all shadow-[0_20px_50px_rgba(234,88,12,0.3)] uppercase tracking-[0.2em] text-base mt-10 mb-6 ${isCompressing || isSubmitting ? 'bg-orange-300' : 'bg-orange-600 hover:bg-gray-900 active:scale-95'}`}
             >
-              {isCompressing ? "Security Processing..." : "Register"}
+              {isCompressing ? "Security Processing..." : isSubmitting ? "Submitting..." : "Register"}
             </button>
           </form>
 
