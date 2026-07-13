@@ -43,9 +43,19 @@ function Menu() {
     fetchMenuAndDetails();
   }, [id]);
 
-  const addToCart = (item) => setCart([...cart, item]);
-  const removeFromCart = (indexToRemove) => setCart(cart.filter((_, index) => index !== indexToRemove));
-  const totalAmount = cart.reduce((total, item) => total + item.price, 0);
+  const addToCart = (item) => setCart(currentCart => {
+    const existingItem = currentCart.find(cartItem => cartItem._id === item._id);
+    if (existingItem) {
+      return currentCart.map(cartItem => cartItem._id === item._id ? { ...cartItem, quantity: cartItem.quantity + 1 } : cartItem);
+    }
+    return [...currentCart, { ...item, quantity: 1 }];
+  });
+  const updateQuantity = (itemId, change) => setCart(currentCart => currentCart.reduce((updatedCart, item) => {
+    if (item._id !== itemId) return [...updatedCart, item];
+    const quantity = item.quantity + change;
+    return quantity > 0 ? [...updatedCart, { ...item, quantity }] : updatedCart;
+  }, []));
+  const totalAmount = cart.reduce((total, item) => total + item.price * item.quantity, 0);
 
   // ✨ THE FIX: Proper navigation function with data transfer
   const handleCheckout = () => {
@@ -142,17 +152,26 @@ function Menu() {
               ) : (
                 <>
                   <div className="space-y-4 mb-10 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar">
-                    {cart.map((item, index) => (
-                      <div key={index} className="flex justify-between items-center bg-gray-50/50 p-4 rounded-3xl border border-gray-100 hover:bg-white transition-colors">
+                    {cart.map((item) => (
+                      <div key={item._id} className="flex justify-between items-center bg-gray-50/50 p-4 rounded-3xl border border-gray-100 hover:bg-white transition-colors">
                         <div className="flex flex-col">
                           <span className="font-black text-gray-800 text-sm leading-tight">{item.name}</span>
                           <span className="text-xs font-bold text-orange-500 mt-1">NPR {item.price}</span>
                         </div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-sm">{item.quantity}</span>
+                          <button 
+                            onClick={() => updateQuantity(item._id, 1)}
+                            className="bg-gray-100 text-gray-600 hover:bg-orange-500 hover:text-white w-8 h-8 rounded-full flex items-center justify-center font-bold transition-all"
+                          >
+                            +
+                          </button>
+                        </div>
                         <button 
-                          onClick={() => removeFromCart(index)}
+                          onClick={() => updateQuantity(item._id, -1)}
                           className="bg-red-50 text-red-400 hover:bg-red-500 hover:text-white w-8 h-8 rounded-full flex items-center justify-center font-bold transition-all"
                         >
-                          ×
+                          -
                         </button>
                       </div>
                     ))}
