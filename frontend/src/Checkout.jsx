@@ -261,6 +261,11 @@ function Checkout() {
       return;
     }
 
+    if (address === "Locating your hunger..." || (position[0] === 27.5020 && position[1] === 83.6661)) {
+      alert("Please select or confirm your delivery location before placing the order.");
+      return;
+    }
+
     const safePhone = localStorage.getItem('userPhone') || localStorage.getItem('phone') || "Number Not Provided";
 
     const formattedItems = cartItems.map(item => ({
