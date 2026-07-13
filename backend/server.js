@@ -362,7 +362,7 @@ io.on('connection', (socket) => {
         if (typeof data.lat !== 'number' || typeof data.lng !== 'number' || Math.abs(data.lat) > 90 || Math.abs(data.lng) > 180) return;
         try {
             await Order.updateOne({ _id: data.orderId, assignedRiderId: socket.user.id, status: 'Out for Delivery' }, { $set: { riderLocation: { type: 'Point', coordinates: [data.lng, data.lat] }, lastLocationUpdate: new Date() }});
-            io.to(data.orderId).emit('riderMoved', { lat: data.lat, lng: data.lng });
+            io.to(data.orderId).emit('riderMoved', { orderId: data.orderId, lat: data.lat, lng: data.lng, latitude: data.lat, longitude: data.lng });
         } catch (err) { logger.error({ event: 'SOCKET_UPDATE_ERROR', error: err.message }); }
     });
 });
