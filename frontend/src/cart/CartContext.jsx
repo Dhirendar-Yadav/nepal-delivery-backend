@@ -1,11 +1,27 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 const CART_STORAGE_KEY = "foodsamundar:cart:v1";
+
+const createEmptyCheckoutAttempt = () => ({
+  attemptId: null,
+  createdAt: null,
+  status: null,
+});
 
 const createEmptyCart = () => ({
   restaurant: null,
   items: [],
+  pendingCheckout: createEmptyCheckoutAttempt(),
 });
+
+const isValidCheckoutAttempt = (pendingCheckout) => (
+  pendingCheckout &&
+  typeof pendingCheckout === 'object' &&
+  !Array.isArray(pendingCheckout) &&
+  (pendingCheckout.attemptId === null || typeof pendingCheckout.attemptId === 'string') &&
+  (pendingCheckout.createdAt === null || Number.isFinite(pendingCheckout.createdAt)) &&
+  (pendingCheckout.status === null || typeof pendingCheckout.status === 'string')
+);
 
 const isValidCart = (cart) => (
   cart &&
@@ -15,13 +31,28 @@ const isValidCart = (cart) => (
   Array.isArray(cart.items)
 );
 
+const persistCart = (cart) => {
+  try {
+    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart));
+  } catch {
+    // Keep the in-memory cart available when storage is unavailable.
+  }
+};
+
 const readStoredCart = () => {
   try {
     const storedCart = localStorage.getItem(CART_STORAGE_KEY);
     if (!storedCart) return createEmptyCart();
 
     const parsedCart = JSON.parse(storedCart);
-    return isValidCart(parsedCart) ? parsedCart : createEmptyCart();
+    if (!isValidCart(parsedCart)) return createEmptyCart();
+
+    return {
+      ...parsedCart,
+      pendingCheckout: isValidCheckoutAttempt(parsedCart.pendingCheckout)
+        ? parsedCart.pendingCheckout
+        : createEmptyCheckoutAttempt(),
+    };
   } catch {
     return createEmptyCart();
   }
@@ -43,11 +74,7 @@ export function CartProvider({ children }) {
   const [cart, setCart] = useState(readStoredCart);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart));
-    } catch {
-      // Keep the in-memory cart available when storage is unavailable.
-    }
+    persistCart(cart);
   }, [cart]);
 
   const addItem = (item) => {
@@ -71,6 +98,7 @@ export function CartProvider({ children }) {
         : [...currentCart.items, { ...item, quantity: 1 }];
 
       return {
+        ...currentCart,
         restaurant: currentCart.restaurant || itemRestaurant,
         items,
       };
@@ -96,6 +124,7 @@ export function CartProvider({ children }) {
       }, []);
 
       return {
+        ...currentCart,
         restaurant: items.length > 0 ? currentCart.restaurant : null,
         items,
       };
@@ -107,6 +136,7 @@ export function CartProvider({ children }) {
       const items = currentCart.items.filter((item) => getItemId(item) !== itemId);
 
       return {
+        ...currentCart,
         restaurant: items.length > 0 ? currentCart.restaurant : null,
         items,
       };
@@ -116,6 +146,28 @@ export function CartProvider({ children }) {
   const clearCart = () => {
     setCart(createEmptyCart());
   };
+
+  const beginCheckoutAttempt = useCallback(() => {
+    if (cart.pendingCheckout.attemptId) return cart.pendingCheckout;
+
+    const attempt = {
+      attemptId: typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      createdAt: Date.now(),
+      status: 'pending',
+    };
+    const nextCart = { ...cart, pendingCheckout: attempt };
+
+    setCart(nextCart);
+    return attempt;
+  }, [cart]);
+
+  const clearCheckoutAttempt = useCallback(() => {
+    const nextCart = { ...cart, pendingCheckout: createEmptyCheckoutAttempt() };
+
+    setCart(nextCart);
+  }, [cart]);
 
   const totalQuantity = cart.items.reduce((sum, item) => sum + item.quantity, 0);
   const totalAmount = cart.items.reduce((sum, item) => {
@@ -131,9 +183,12 @@ export function CartProvider({ children }) {
     decreaseQuantity,
     removeItem,
     clearCart,
+    beginCheckoutAttempt,
+    clearCheckoutAttempt,
+    pendingCheckout: cart.pendingCheckout,
     totalQuantity,
     totalAmount,
-  }), [cart]);
+  }), [cart, beginCheckoutAttempt, clearCheckoutAttempt, totalAmount, totalQuantity]);
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 }
