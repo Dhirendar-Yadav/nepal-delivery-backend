@@ -31,6 +31,7 @@ function RecenterMap({ position }) {
 // ==========================================
 function OrderTrackingScreen({ orderId }) {
   const [order, setOrder] = useState(null);
+  const [trackingError, setTrackingError] = useState('');
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -49,9 +50,14 @@ function OrderTrackingScreen({ orderId }) {
         } else if (res.status === 401 || res.status === 403) {
           localStorage.clear();
           navigate('/login');
+        } else {
+          setTrackingError('Unable to load order tracking. Please try again.');
         }
       } catch (e) {
-        if (e.name !== 'AbortError') console.error("Tracking fetch error", e);
+        if (e.name !== 'AbortError') {
+          console.error("Tracking fetch error", e);
+          setTrackingError('Unable to load order tracking. Please try again.');
+        }
       }
     };
 
@@ -68,8 +74,14 @@ function OrderTrackingScreen({ orderId }) {
   if (!order) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#FDF2F0]">
-        <div className="w-16 h-16 border-4 border-orange-500/20 border-t-orange-500 rounded-full animate-spin mb-4"></div>
-        <p className="font-black text-orange-500 animate-pulse">Loading Live Tracking...</p>
+        {trackingError ? (
+          <p className="font-black text-orange-500">{trackingError}</p>
+        ) : (
+          <>
+            <div className="w-16 h-16 border-4 border-orange-500/20 border-t-orange-500 rounded-full animate-spin mb-4"></div>
+            <p className="font-black text-orange-500 animate-pulse">Loading Live Tracking...</p>
+          </>
+        )}
       </div>
     );
   }
