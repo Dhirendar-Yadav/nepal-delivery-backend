@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5005';
+
 function Signup() {
   const [formData, setFormData] = useState({ fullName: '', email: '', password: '', phone: '' });
   const [isLoading, setIsLoading] = useState(false);
@@ -17,7 +19,7 @@ function Signup() {
 
     setIsLoading(true);
     try {
-      const res = await fetch('http://localhost:5005/api/auth/signup', {
+      const res = await fetch(`${API_BASE}/api/auth/signup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData), 

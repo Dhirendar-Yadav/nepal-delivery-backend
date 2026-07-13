@@ -5,6 +5,8 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import imageCompression from 'browser-image-compression'; 
 
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5005';
+
 // Icon Fix for Leaflet
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -123,7 +125,7 @@ function SellerSignup() {
     if (regDocument) data.append('registrationDoc', regDocument);
 
     try {
-      const res = await fetch('http://localhost:5005/api/auth/signup', {
+      const res = await fetch(`${API_BASE}/api/auth/signup`, {
         method: 'POST',
         body: data, 
       });

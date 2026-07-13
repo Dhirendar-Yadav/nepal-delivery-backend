@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import imageCompression from 'browser-image-compression'; 
 
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5005';
+
 function RiderSignup() {
   const [formData, setFormData] = useState({ 
     fullName: '', 
@@ -84,7 +86,7 @@ function RiderSignup() {
 
     setIsLoading(true);
     try {
-      const res = await fetch('http://localhost:5005/api/auth/rider/signup', {
+      const res = await fetch(`${API_BASE}/api/auth/rider/signup`, {
         method: 'POST',
         body: data, 
       });

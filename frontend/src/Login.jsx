@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate, Link } from 'react-router-dom';
 
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5005';
+
 const Login = () => {
     const [formData, setFormData] = useState({ email: '', password: '' });
     const [isLoading, setIsLoading] = useState(false);
@@ -12,7 +14,7 @@ const Login = () => {
         setIsLoading(true);
         try {
             // Internal logic: Authenticating user via backend engine
-            const res = await axios.post('http://localhost:5005/api/auth/login', formData);
+            const res = await axios.post(`${API_BASE}/api/auth/login`, formData);
             
             // Securely storing authentication artifacts
             localStorage.setItem('token', res.data.token);
