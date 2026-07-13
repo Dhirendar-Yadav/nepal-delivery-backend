@@ -308,7 +308,19 @@ function Checkout() {
     return <OrderTrackingScreen orderId={placedOrderId} />;
   }
 
-  if (cartItems.length === 0) return null;
+  if (cartItems.length === 0) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#FDF2F0] p-4 font-sans">
+        <div className="bg-white rounded-[2.5rem] p-10 text-center shadow-2xl border border-orange-50">
+          <h1 className="text-3xl font-black text-gray-900">Your Cart Is Empty</h1>
+          <p className="text-gray-400 font-bold mt-3">Add some delicious items before checking out.</p>
+          <button onClick={() => navigate('/')} className="mt-8 bg-orange-500 hover:bg-gray-900 text-white font-black py-4 px-8 rounded-2xl transition-all">
+            Back to Home
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#FDF2F0] p-4 md:p-8 font-sans">
