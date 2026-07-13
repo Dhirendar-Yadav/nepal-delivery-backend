@@ -116,6 +116,10 @@ function SellerSignup() {
       return;
     }
     if (isCompressing) return alert("Hajur, photo compress hudai chha. Kripya ekxin parkhinu...");
+    if (position[0] === 27.5020 && position[1] === 83.6661) {
+      alert("Please select or confirm your business location before registering.");
+      return;
+    }
 
     const data = new FormData();
     Object.keys(formData).forEach(key => data.append(key, formData[key].trim()));
