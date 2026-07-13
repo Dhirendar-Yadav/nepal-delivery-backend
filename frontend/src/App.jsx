@@ -6,6 +6,7 @@ import Checkout from './Checkout';
 import Login from './Login';                
 import Signup from './Signup';              
 import SellerSignup from './SellerSignup'; 
+import { CartProvider } from './cart/CartContext';
 // ✨ NAYE RIDER IMPORTS 
 import RiderSignup from './RiderSignup';
 import RiderDashboard from './pages/rider/RiderDashboard'; 
@@ -14,8 +15,9 @@ import AdminDashboard from "./pages/admin/AdminDashboard";
 
 function App() {
   return (
-    <Router>
-      <Routes>
+    <CartProvider>
+      <Router>
+        <Routes>
         {/* 1. Home Page: List of all restaurants */}
         <Route path="/" element={<Home />} />
 
@@ -46,8 +48,9 @@ function App() {
         <Route path="/admin-dhiru-portal-99" element={<AdminDashboard />} /> 
         {/* Fallback Route */}
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </Router>
+        </Routes>
+      </Router>
+    </CartProvider>
   );
 }
 
