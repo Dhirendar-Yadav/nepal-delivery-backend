@@ -649,9 +649,6 @@ exports.completeOrder = async (req, res) => {
                     "wallet.incentiveEarnings": riderBonus,
                     "wallet.transactionCount": 1,
                     "wallet.walletVersion": 1
-                },
-                $set: {
-                    "wallet.lastProcessedOrderId": orderId
                 }
             },
             { new: true, runValidators: true, session }
