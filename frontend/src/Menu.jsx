@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom'; // ✨ ADDED useNavigate
 
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5005';
+
 function Menu() {
   const { id } = useParams(); 
   const navigate = useNavigate(); // ✨ INITIALIZED navigate
@@ -12,11 +14,11 @@ function Menu() {
   useEffect(() => {
     const fetchMenuAndDetails = async () => {
       try {
-        const menuRes = await fetch(`http://localhost:5005/api/menu/${id}`);
+        const menuRes = await fetch(`${API_BASE}/api/menu/${id}`);
         const menuData = await menuRes.json();
         if (menuRes.ok) setMenuItems(menuData);
 
-        const restRes = await fetch(`http://localhost:5005/api/restaurants`);
+        const restRes = await fetch(`${API_BASE}/api/restaurants`);
         const restData = await restRes.json();
         if (restRes.ok) {
           const currentRest = restData.find(r => r._id === id);
