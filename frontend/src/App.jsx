@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Home from './Home';
 import Menu from './Menu';
 import Dashboard from './Dashboard';
@@ -44,6 +44,8 @@ function App() {
         {/* 10. 🕵️‍♂️ SECRET ADMIN ROUTES (Dhiru Special) */}
         {/* Aba Admin le pani sidhai /login bata login garchhan, login pachi Dashboard khulcha */}
         <Route path="/admin-dhiru-portal-99" element={<AdminDashboard />} /> 
+        {/* Fallback Route */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Router>
   );
