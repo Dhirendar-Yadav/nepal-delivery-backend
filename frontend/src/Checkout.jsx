@@ -5,6 +5,8 @@ import { v4 as uuidv4 } from 'uuid';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5005';
+
 // Icon Fix (Standard Leaflet Markers)
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -37,7 +39,7 @@ function OrderTrackingScreen({ orderId }) {
     
     const fetchOrder = async () => {
       try {
-        const res = await fetch(`http://localhost:5005/api/orders/${orderId}`, {
+        const res = await fetch(`${API_BASE}/api/orders/${orderId}`, {
           headers: { 'Authorization': `Bearer ${token}` },
           signal: controller.signal
         });
@@ -269,7 +271,7 @@ function Checkout() {
 
     setIsPlacingOrder(true);
     try {
-      const response = await fetch('http://localhost:5005/api/orders', {
+      const response = await fetch(`${API_BASE}/api/orders`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({
