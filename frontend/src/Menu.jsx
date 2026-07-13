@@ -55,6 +55,7 @@ function Menu() {
     const quantity = item.quantity + change;
     return quantity > 0 ? [...updatedCart, { ...item, quantity }] : updatedCart;
   }, []));
+  const totalQuantity = cart.reduce((sum, item) => sum + item.quantity, 0);
   const totalAmount = cart.reduce((total, item) => total + item.price * item.quantity, 0);
 
   // ✨ THE FIX: Proper navigation function with data transfer
@@ -81,7 +82,7 @@ function Menu() {
             <h1 className="text-xl md:text-2xl font-black text-gray-900 leading-none">{restaurantName || "Food Samundar"}</h1>
           </div>
           <div className="bg-orange-500 text-white px-5 py-2 rounded-2xl font-black shadow-lg shadow-orange-100">
-            🛒 {cart.length}
+            🛒 {totalQuantity}
           </div>
         </div>
       </nav>
@@ -141,7 +142,7 @@ function Menu() {
             <div className="bg-white rounded-[3rem] p-8 shadow-[0_30px_100px_rgba(0,0,0,0.1)] border border-gray-50 sticky top-32">
               <h3 className="text-2xl font-black mb-8 text-gray-900 flex justify-between items-center">
                 Your Jhola 🧺
-                <span className="text-xs bg-gray-100 px-3 py-1 rounded-full text-gray-400 font-bold">{cart.length} Items</span>
+                <span className="text-xs bg-gray-100 px-3 py-1 rounded-full text-gray-400 font-bold">{totalQuantity} Items</span>
               </h3>
               
               {cart.length === 0 ? (
