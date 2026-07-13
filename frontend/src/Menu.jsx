@@ -101,7 +101,7 @@ function Menu() {
                 {menuItems.map((item) => (
                   <div key={item._id} className="bg-white rounded-[2.5rem] p-8 shadow-[0_15px_50px_-15px_rgba(0,0,0,0.05)] border border-gray-50 hover:shadow-2xl hover:-translate-y-2 transition-all duration-500 group relative overflow-hidden">
                     <div className="absolute top-0 right-0 w-32 h-32 bg-orange-50/50 rounded-bl-[5rem] -mr-16 -mt-16 group-hover:bg-orange-500/10 transition-colors"></div>
-                    <span className="bg-green-100 text-green-700 text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-tighter">Pure Veg</span>
+                    <span className="bg-green-100 text-green-700 text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-tighter">{item.foodCategory || 'Not Specified'}</span>
                     
                     <h3 className="text-2xl font-black text-gray-800 mt-6 group-hover:text-orange-600 transition-colors">{item.name}</h3>
                     <p className="text-gray-400 text-sm mt-3 leading-relaxed min-h-[50px]">
