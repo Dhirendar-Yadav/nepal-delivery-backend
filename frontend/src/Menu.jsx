@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useCart } from "./cart/CartContext";
 import { useParams, Link, useNavigate } from 'react-router-dom'; // ✨ ADDED useNavigate
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5005';
@@ -9,8 +10,16 @@ function Menu() {
   const [menuItems, setMenuItems] = useState([]);
   const [restaurantName, setRestaurantName] = useState(""); 
   const [isLoading, setIsLoading] = useState(true);
-  const [cart, setCart] = useState([]);
   const [apiError, setApiError] = useState('');
+  const {
+    cart,
+    addItem,
+    increaseQuantity,
+    decreaseQuantity,
+    removeItem,
+    totalQuantity,
+    totalAmount,
+  } = useCart();
 
   useEffect(() => {
     const fetchMenuAndDetails = async () => {
@@ -43,29 +52,14 @@ function Menu() {
     fetchMenuAndDetails();
   }, [id]);
 
-  const addToCart = (item) => setCart(currentCart => {
-    const existingItem = currentCart.find(cartItem => cartItem._id === item._id);
-    if (existingItem) {
-      return currentCart.map(cartItem => cartItem._id === item._id ? { ...cartItem, quantity: cartItem.quantity + 1 } : cartItem);
-    }
-    return [...currentCart, { ...item, quantity: 1 }];
-  });
-  const updateQuantity = (itemId, change) => setCart(currentCart => currentCart.reduce((updatedCart, item) => {
-    if (item._id !== itemId) return [...updatedCart, item];
-    const quantity = item.quantity + change;
-    return quantity > 0 ? [...updatedCart, { ...item, quantity }] : updatedCart;
-  }, []));
-  const totalQuantity = cart.reduce((sum, item) => sum + item.quantity, 0);
-  const totalAmount = cart.reduce((total, item) => total + item.price * item.quantity, 0);
-
   // ✨ THE FIX: Proper navigation function with data transfer
   const handleCheckout = () => {
-    if (cart.length === 0) {
+    if (cart.items.length === 0) {
       alert("Please add at least one item to your cart before checkout!");
       return;
     }
     // Ye line tujhe Checkout page pe bhejegi aur cart ka data sath le jayegi
-    navigate('/checkout', { state: { cartItems: cart, restaurantId: id, totalAmount } });
+    navigate('/checkout', { state: { cartItems: cart.items, restaurantId: id, totalAmount } });
   };
 
   return (
@@ -125,7 +119,7 @@ function Menu() {
                         <p className="text-2xl font-black text-gray-900">Rs. {item.price}</p>
                       </div>
                       <button 
-                        onClick={() => addToCart(item)}
+                        onClick={() => addItem({ ...item, restaurant: { _id: id, name: restaurantName } })}
                         className="bg-gray-900 hover:bg-orange-500 text-white font-black py-4 px-10 rounded-3xl shadow-xl active:scale-90 transition-all"
                       >
                         ADD +
@@ -145,7 +139,7 @@ function Menu() {
                 <span className="text-xs bg-gray-100 px-3 py-1 rounded-full text-gray-400 font-bold">{totalQuantity} Items</span>
               </h3>
               
-              {cart.length === 0 ? (
+              {cart.items.length === 0 ? (
                 <div className="text-center py-16">
                   <div className="text-6xl mb-6 opacity-10 grayscale">🥘</div>
                   <p className="text-gray-400 font-bold italic tracking-wide">Basket is empty!</p>
@@ -153,7 +147,7 @@ function Menu() {
               ) : (
                 <>
                   <div className="space-y-4 mb-10 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar">
-                    {cart.map((item) => (
+                    {cart.items.map((item) => (
                       <div key={item._id} className="flex justify-between items-center bg-gray-50/50 p-4 rounded-3xl border border-gray-100 hover:bg-white transition-colors">
                         <div className="flex flex-col">
                           <span className="font-black text-gray-800 text-sm leading-tight">{item.name}</span>
@@ -162,14 +156,14 @@ function Menu() {
                         <div className="flex items-center gap-2">
                           <span className="font-bold text-sm">{item.quantity}</span>
                           <button 
-                            onClick={() => updateQuantity(item._id, 1)}
+                            onClick={() => increaseQuantity(item._id)}
                             className="bg-gray-100 text-gray-600 hover:bg-orange-500 hover:text-white w-8 h-8 rounded-full flex items-center justify-center font-bold transition-all"
                           >
                             +
                           </button>
                         </div>
                         <button 
-                          onClick={() => updateQuantity(item._id, -1)}
+                          onClick={() => item.quantity === 1 ? removeItem(item._id) : decreaseQuantity(item._id)}
                           className="bg-red-50 text-red-400 hover:bg-red-500 hover:text-white w-8 h-8 rounded-full flex items-center justify-center font-bold transition-all"
                         >
                           -
