@@ -1,7 +1,8 @@
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid'; 
+import { useCart } from "./cart/CartContext";
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
@@ -160,12 +161,11 @@ function OrderTrackingScreen({ orderId }) {
 // ORIGINAL CHECKOUT COMPONENT
 // ==========================================
 function Checkout() {
-  const location = useLocation();
   const navigate = useNavigate();
+  const { cart, totalAmount } = useCart();
 
-  const cartItems = location.state?.cartItems || [];
-  const restaurantId = location.state?.restaurantId || '';
-  const foodTotal = location.state?.totalAmount || 0;
+  const restaurantId = cart.restaurant?._id || cart.restaurant?.id || '';
+  const foodTotal = totalAmount;
 
   // ⛽ CEO DYNAMIC PRICING STATES
   const [petrolPrice, setPetrolPrice] = useState(175); 
@@ -280,7 +280,7 @@ function Checkout() {
 
     const safePhone = localStorage.getItem('userPhone') || localStorage.getItem('phone') || "Number Not Provided";
 
-    const formattedItems = cartItems.map(item => ({
+    const formattedItems = cart.items.map(item => ({
         menuItemId: item._id, 
         quantity: item.quantity || 1, 
         name: item.name
@@ -325,7 +325,7 @@ function Checkout() {
     return <OrderTrackingScreen orderId={placedOrderId} />;
   }
 
-  if (cartItems.length === 0) {
+  if (cart.items.length === 0) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#FDF2F0] p-4 font-sans">
         <div className="bg-white rounded-[2.5rem] p-10 text-center shadow-2xl border border-orange-50">
