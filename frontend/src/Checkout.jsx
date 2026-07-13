@@ -284,7 +284,13 @@ function Checkout() {
         }),
       });
 
-      const data = await response.json();
+      const responseText = await response.text();
+      let data = {};
+      try {
+        data = responseText ? JSON.parse(responseText) : {};
+      } catch {
+        data = {};
+      }
       if (response.ok) { 
         const finalOrderId = data.order?._id || data.orderId || data._id;
         setPlacedOrderId(finalOrderId);
