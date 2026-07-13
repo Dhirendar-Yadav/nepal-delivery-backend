@@ -393,7 +393,7 @@ function Home() {
                     </div>
 
                     <button 
-                      onClick={() => handleRestaurantClick(restaurant._id)} 
+                      onClick={() => restaurant.isOpen && handleRestaurantClick(restaurant._id)} 
                       className={`w-full font-black py-2.5 rounded-xl transition-all text-[10px] uppercase active:scale-95 mt-auto ${
                         restaurant.isOpen 
                           ? 'bg-orange-50 hover:bg-orange-500 text-orange-600 hover:text-white' 
