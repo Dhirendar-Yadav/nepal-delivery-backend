@@ -6,6 +6,7 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5005';
 function Home() {
   const [restaurants, setRestaurants] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [apiError, setApiError] = useState('');
   const [showCEOProfile, setShowCEOProfile] = useState(false); 
   const [isFilterOpen, setIsFilterOpen] = useState(false); 
   const navigate = useNavigate(); 
@@ -34,11 +35,19 @@ function Home() {
   // Fetching real data from the backend API
   useEffect(() => {
     const fetchRestaurants = async () => {
+      setApiError('');
       try {
         const response = await fetch(`${API_BASE}/api/restaurants`);
         const data = await response.json();
-        if (response.ok) setRestaurants(data);
-      } catch (error) { console.error("API connection error:", error); }
+        if (response.ok) {
+          setApiError('');
+          setRestaurants(data);
+        }
+        else setApiError('Unable to load restaurants. Please try again.');
+      } catch (error) {
+        console.error("API connection error:", error);
+        setApiError('Unable to load restaurants. Please try again.');
+      }
       finally { setIsLoading(false); }
     };
     fetchRestaurants();
@@ -340,7 +349,13 @@ function Home() {
           </div>
           
           {/* Short & Professional Empty State */}
-          {!isLoading && processedRestaurants.length === 0 ? (
+          {!isLoading && apiError ? (
+            <div className="flex flex-col items-center justify-center py-20 px-4 text-center bg-white rounded-3xl border border-dashed border-gray-200 shadow-sm">
+              <div className="text-6xl mb-4 grayscale opacity-50">⚠️</div>
+              <h3 className="text-2xl font-black text-gray-900 mb-2">Unable to Load Restaurants</h3>
+              <p className="text-gray-500 font-bold max-w-md">{apiError}</p>
+            </div>
+          ) : !isLoading && processedRestaurants.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 px-4 text-center bg-white rounded-3xl border border-dashed border-gray-200 shadow-sm">
               <div className="text-6xl mb-4 grayscale opacity-50">🍽️</div>
               <h3 className="text-2xl font-black text-gray-900 mb-2">Oops! No Matches Found</h3>
