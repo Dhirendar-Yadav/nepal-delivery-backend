@@ -382,10 +382,18 @@ router.post('/login', loginLimiter, async (req, res) => {
 router.put('/rider/status', loginLimiter, async (req, res) => {
     try {
         const authHeader = req.header('Authorization');
-        if (!authHeader) return res.status(401).json({ success: false, error: "Unauthorized" });
+        if (!authHeader || !authHeader.startsWith('Bearer ')) return res.status(401).json({ success: false, error: "Unauthorized" });
 
         const token = authHeader.split(" ")[1];
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        if (!token) return res.status(401).json({ success: false, error: "Unauthorized" });
+
+        const decoded = jwt.verify(token, process.env.JWT_SECRET, {
+            algorithms: ['HS256'],
+            issuer: 'food-samundar',
+            audience: 'user-app'
+        });
+
+        if (decoded.role !== 'Rider') return res.status(403).json({ success: false, error: "Unauthorized" });
         
         const { isOnline } = req.body; // Expecting { isOnline: true/false }
 
