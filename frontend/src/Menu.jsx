@@ -9,6 +9,7 @@ function Menu() {
   const navigate = useNavigate(); // ✨ INITIALIZED navigate
   const [menuItems, setMenuItems] = useState([]);
   const [restaurantName, setRestaurantName] = useState(""); 
+  const [restaurant, setRestaurant] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [apiError, setApiError] = useState('');
   const {
@@ -42,7 +43,15 @@ function Menu() {
         if (restRes.ok) {
           const restData = await restRes.json();
           const currentRest = restData.find(r => r._id === id);
-          if (currentRest) setRestaurantName(currentRest.name);
+          if (currentRest) {
+            setRestaurantName(currentRest.name);
+            setRestaurant({
+              _id: currentRest._id,
+              name: currentRest.name,
+              latitude: currentRest.currentLocation?.coordinates?.[1],
+              longitude: currentRest.currentLocation?.coordinates?.[0]
+            });
+          }
         }
       } catch (error) {
         console.error("API Error:", error);
@@ -121,7 +130,7 @@ function Menu() {
                         <p className="text-2xl font-black text-gray-900">Rs. {item.price}</p>
                       </div>
                       <button 
-                        onClick={() => addItem({ ...item, restaurant: { _id: id, name: restaurantName } })}
+                        onClick={() => addItem({ ...item, restaurant: restaurant || { _id: id, name: restaurantName } })}
                         className="bg-gray-900 hover:bg-orange-500 text-white font-black py-4 px-10 rounded-3xl shadow-xl active:scale-90 transition-all"
                       >
                         ADD +

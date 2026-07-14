@@ -164,6 +164,8 @@ function Checkout() {
   const { cart, totalAmount, beginCheckoutAttempt, clearCheckoutAttempt, pendingCheckout } = useCart();
 
   const restaurantId = cart.restaurant?._id || cart.restaurant?.id || '';
+  const restaurantLatitude = cart.restaurant?.latitude;
+  const restaurantLongitude = cart.restaurant?.longitude;
   const foodTotal = totalAmount;
 
   // ⛽ CEO DYNAMIC PRICING STATES
@@ -172,7 +174,6 @@ function Checkout() {
   const [distance, setDistance] = useState(0);
 
   const [position, setPosition] = useState([27.5020, 83.6661]); 
-  const [resCoords, setResCoords] = useState([27.5050, 83.6690]); 
   const [address, setAddress] = useState("Locating your hunger...");
   const [isLocating, setIsLocating] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState('COD');
@@ -193,7 +194,9 @@ function Checkout() {
   };
 
   useEffect(() => {
-    const dist = calculateDistance(resCoords[0], resCoords[1], position[0], position[1]);
+    if (!Number.isFinite(restaurantLatitude) || !Number.isFinite(restaurantLongitude)) return;
+
+    const dist = calculateDistance(restaurantLatitude, restaurantLongitude, position[0], position[1]);
     setDistance(dist.toFixed(2));
 
     const fuelCostPerKM = petrolPrice / 40; 
@@ -201,7 +204,7 @@ function Checkout() {
     
     let calculatedFee = (fuelCostPerKM + riderProfitPerKM) * dist;
     setDeliveryFee(calculatedFee < 25 ? 25 : Math.round(calculatedFee));
-  }, [position, petrolPrice]);
+  }, [position, petrolPrice, restaurantLatitude, restaurantLongitude]);
 
   const grandTotal = foodTotal + deliveryFee;
 
