@@ -457,6 +457,7 @@ app.use('/api/menu', require('./routes/restaurantRoutes'));
 
 // ?? Payment Gateway Routes
 app.use('/api/payment', require('./routes/paymentRoutes'));
+app.use('/api/customer-payment', require('./routes/customerPaymentRoutes'));
 
 // Centralized Error Handler
 app.use((err, req, res, next) => {
