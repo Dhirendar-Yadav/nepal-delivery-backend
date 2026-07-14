@@ -284,6 +284,13 @@ app.post('/api/orders', authMiddleware, orderLimiter, async (req, res, next) => 
                 deliveryDetails, 
                 clientOrderId, 
                 status: 'Pending', 
+                statusHistory: [{
+                    from: 'Pending',
+                    to: 'Pending',
+                    actorType: 'SYSTEM',
+                    actorId: null,
+                    changedAt: new Date()
+                }],
                 paymentStatus: 'PENDING'
             });
 
