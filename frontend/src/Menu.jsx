@@ -17,6 +17,7 @@ function Menu() {
     increaseQuantity,
     decreaseQuantity,
     removeItem,
+    reconcileCart,
     totalQuantity,
     totalAmount,
   } = useCart();
@@ -31,6 +32,7 @@ function Menu() {
           const menuData = await menuRes.json();
           setApiError('');
           setMenuItems(menuData);
+          reconcileCart(menuData);
           menuLoaded = true;
         } else {
           setApiError('Unable to Load Menu');
