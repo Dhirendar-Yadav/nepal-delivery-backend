@@ -197,6 +197,31 @@ export function CartProvider({ children }) {
     setCart(nextCart);
   }, [cart]);
 
+  const reconcileCart = useCallback((menuItems) => {
+    if (!Array.isArray(menuItems)) return;
+
+    const latestMenuItems = new Map(
+      menuItems
+        .map((menuItem) => [getItemId(menuItem), menuItem])
+        .filter(([menuItemId]) => menuItemId)
+    );
+
+    setCart((currentCart) => {
+      const items = currentCart.items.reduce((updatedItems, cartItem) => {
+        const menuItem = latestMenuItems.get(getItemId(cartItem));
+        return menuItem
+          ? [...updatedItems, { ...cartItem, price: menuItem.price }]
+          : updatedItems;
+      }, []);
+
+      return {
+        ...currentCart,
+        restaurant: items.length > 0 ? currentCart.restaurant : null,
+        items,
+      };
+    });
+  }, []);
+
   const totalQuantity = cart.items.reduce((sum, item) => sum + item.quantity, 0);
   const totalAmount = cart.items.reduce((sum, item) => {
     const price = Number(item.price);
@@ -213,10 +238,11 @@ export function CartProvider({ children }) {
     clearCart,
     beginCheckoutAttempt,
     clearCheckoutAttempt,
+    reconcileCart,
     pendingCheckout: cart.pendingCheckout,
     totalQuantity,
     totalAmount,
-  }), [cart, beginCheckoutAttempt, clearCheckoutAttempt, totalAmount, totalQuantity]);
+  }), [cart, beginCheckoutAttempt, clearCheckoutAttempt, reconcileCart, totalAmount, totalQuantity]);
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 }
