@@ -264,7 +264,7 @@ orderSchema.statics.buildNextDispatchPayload = function(dispatchQueue, currentIn
 /**
  * Programmatic Financial Reconciliation Validator Static Hook
  */
-orderSchema.statics.validateFinancialBreakdown = function(financials) {
+orderSchema.statics.validateFinancialBreakdown = function(financials, { includePlatformFee = true } = {}) {
     const keys = ['foodCost', 'deliveryFee', 'platformFee', 'taxAmount', 'discountAmount', 'totalAmount'];
     
     for (const key of keys) {
@@ -275,7 +275,7 @@ orderSchema.statics.validateFinancialBreakdown = function(financials) {
     }
 
     const { foodCost, deliveryFee, platformFee, taxAmount, discountAmount, totalAmount } = financials;
-    const expectedTotal = (foodCost + deliveryFee + platformFee + taxAmount) - discountAmount;
+    const expectedTotal = (foodCost + deliveryFee + (includePlatformFee ? platformFee : 0) + taxAmount) - discountAmount;
     
     const isSane = expectedTotal >= 0 && totalAmount >= 0 && foodCost >= 0 && deliveryFee >= 0 && platformFee >= 0 && taxAmount >= 0 && discountAmount >= 0;
     const isMatched = totalAmount === expectedTotal;

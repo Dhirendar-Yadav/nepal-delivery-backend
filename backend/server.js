@@ -252,6 +252,17 @@ app.post('/api/orders', authMiddleware, orderLimiter, async (req, res, next) => 
             })();
             const finalDeliveryFee = Math.max(25, Math.round(((petrolPrice / 40) + 12) * distance));
             const finalTotalAmount = computedFoodCost + finalDeliveryFee;
+            const platformFee = Math.round(computedFoodCost * 0.10);
+            const financialStatus = Order.validateFinancialBreakdown({
+                foodCost: computedFoodCost,
+                deliveryFee: finalDeliveryFee,
+                platformFee,
+                taxAmount: 0,
+                discountAmount: 0,
+                totalAmount: finalTotalAmount
+            }, { includePlatformFee: false });
+
+            if (!financialStatus.valid) throw { status: 400, code: 'INVALID_FINANCIAL_BREAKDOWN' };
 
             const newOrder = new Order({
                 customerId: req.user.id, 
@@ -260,7 +271,7 @@ app.post('/api/orders', authMiddleware, orderLimiter, async (req, res, next) => 
                 totalAmount: finalTotalAmount,
                 foodCost: computedFoodCost, 
                 deliveryFee: finalDeliveryFee,
-                platformFee: Math.round(computedFoodCost * 0.10),
+                platformFee,
                 deliveryDetails, 
                 clientOrderId, 
                 status: 'Pending', 
