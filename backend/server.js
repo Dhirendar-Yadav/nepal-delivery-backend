@@ -201,6 +201,10 @@ app.post('/api/orders', authMiddleware, orderLimiter, async (req, res, next) => 
                 itemMap.set(i.menuItemId, (itemMap.get(i.menuItemId) || 0) + i.quantity);
             }
 
+            for (const quantity of itemMap.values()) {
+                if (quantity < 1 || quantity > 50) throw { status: 400, code: 'INVALID_QUANTITY' };
+            }
+
             const restaurant = await Restaurant.findById(restaurantId).session(session).select('status latitude longitude');
             if (!restaurant || restaurant.status !== 'ACTIVE') throw { status: 400, code: 'RESTAURANT_UNAVAILABLE' };
 
