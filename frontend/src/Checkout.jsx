@@ -1,7 +1,6 @@
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { v4 as uuidv4 } from 'uuid'; 
 import { useCart } from "./cart/CartContext";
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -162,7 +161,7 @@ function OrderTrackingScreen({ orderId }) {
 // ==========================================
 function Checkout() {
   const navigate = useNavigate();
-  const { cart, totalAmount } = useCart();
+  const { cart, totalAmount, beginCheckoutAttempt, clearCheckoutAttempt, pendingCheckout } = useCart();
 
   const restaurantId = cart.restaurant?._id || cart.restaurant?.id || '';
   const foodTotal = totalAmount;
@@ -180,7 +179,6 @@ function Checkout() {
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
 
   const [placedOrderId, setPlacedOrderId] = useState(null);
-  const [clientOrderId] = useState(() => uuidv4()); 
   const markerRef = useRef(null);
 
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
@@ -288,13 +286,17 @@ function Checkout() {
 
     setIsPlacingOrder(true);
     try {
+      const attempt =
+        pendingCheckout?.attemptId
+          ? pendingCheckout
+          : beginCheckoutAttempt();
       const response = await fetch(`${API_BASE}/api/orders`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({
           restaurantId,
           items: formattedItems, 
-          clientOrderId,        
+          clientOrderId: attempt.attemptId,        
           totalAmount: grandTotal,
           deliveryFee: deliveryFee, 
           deliveryDetails: { address, phone: safePhone, latitude: position[0], longitude: position[1] }
@@ -310,6 +312,7 @@ function Checkout() {
       }
       if (response.ok) { 
         const finalOrderId = data.order?._id || data.orderId || data._id;
+        if (finalOrderId) clearCheckoutAttempt();
         setPlacedOrderId(finalOrderId);
       } else { 
         alert(`Order Failed: ${data.error || data.message || "Unknown Error"}`); 
