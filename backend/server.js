@@ -22,6 +22,7 @@ const paymentWebhookRoutes = require('./routes/paymentWebhookRoutes');
 const Restaurant = require('./models/Restaurant');
 const MenuItem = require('./models/MenuItem');
 const Order = require('./models/Order');
+const Settings = require('./models/Settings');
 const RiderProfile = require('./models/RiderProfile');
 const AdminWallet = require('./models/AdminWallet');
 const LedgerEntry = require('./models/LedgerEntry');
@@ -170,7 +171,7 @@ app.patch('/api/admin/orders/:id/status', authMiddleware, async (req, res) => {
 app.post('/api/orders', authMiddleware, orderLimiter, async (req, res, next) => {
     const MAX_RETRIES = 3;
     // ✨ FIX: Accept deliveryFee and totalAmount strictly from the frontend Checkout
-    const { restaurantId, items, deliveryDetails, clientOrderId, deliveryFee, totalAmount } = req.body;
+    const { restaurantId, items, deliveryDetails, clientOrderId } = req.body;
 
     if (!clientOrderId) return res.status(400).json({ success: false, error: 'IDEMPOTENCY_KEY_REQUIRED' });
 
@@ -197,8 +198,23 @@ app.post('/api/orders', authMiddleware, orderLimiter, async (req, res, next) => 
                 itemMap.set(i.menuItemId, (itemMap.get(i.menuItemId) || 0) + i.quantity);
             }
 
-            const restaurant = await Restaurant.findById(restaurantId).session(session).select('status');
+            const restaurant = await Restaurant.findById(restaurantId).session(session).select('status latitude longitude');
             if (!restaurant || restaurant.status !== 'ACTIVE') throw { status: 400, code: 'RESTAURANT_UNAVAILABLE' };
+
+            const customerLatitude = Number(deliveryDetails.latitude);
+            const customerLongitude = Number(deliveryDetails.longitude);
+            const restaurantLatitude = Number(restaurant.latitude);
+            const restaurantLongitude = Number(restaurant.longitude);
+            if (
+                deliveryDetails.latitude == null || deliveryDetails.longitude == null ||
+                restaurant.latitude == null || restaurant.longitude == null ||
+                !Number.isFinite(customerLatitude) || customerLatitude < -90 || customerLatitude > 90 ||
+                !Number.isFinite(customerLongitude) || customerLongitude < -180 || customerLongitude > 180 ||
+                !Number.isFinite(restaurantLatitude) || restaurantLatitude < -90 || restaurantLatitude > 90 ||
+                !Number.isFinite(restaurantLongitude) || restaurantLongitude < -180 || restaurantLongitude > 180
+            ) {
+                throw { status: 400, code: 'INVALID_DELIVERY_COORDINATES' };
+            }
 
             const dbItems = await MenuItem.find({ 
                 _id: { $in: Array.from(itemMap.keys()) }, 
@@ -223,16 +239,27 @@ app.post('/api/orders', authMiddleware, orderLimiter, async (req, res, next) => 
             });
 
             // ✨ FIX: Use frontend values directly and ensure they are integers for safety
-            const finalDeliveryFee = deliveryFee ? Math.round(Number(deliveryFee)) : 0;
-            const finalTotalAmount = totalAmount ? Number(totalAmount) : computedFoodCost + finalDeliveryFee; 
+            const settings = await Settings.findOne().session(session).select('petrolPrice').lean();
+            const petrolPrice = Number.isFinite(settings?.petrolPrice) ? settings.petrolPrice : 175;
+            const distance = (() => {
+                const R = 6371;
+                const dLat = (customerLatitude - restaurantLatitude) * Math.PI / 180;
+                const dLon = (customerLongitude - restaurantLongitude) * Math.PI / 180;
+                const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                    Math.cos(restaurantLatitude * Math.PI / 180) * Math.cos(customerLatitude * Math.PI / 180) *
+                    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+                return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            })();
+            const finalDeliveryFee = Math.max(25, Math.round(((petrolPrice / 40) + 12) * distance));
+            const finalTotalAmount = computedFoodCost + finalDeliveryFee;
 
             const newOrder = new Order({
                 customerId: req.user.id, 
                 restaurantId, 
                 items: normalizedItems,
-                totalAmount: finalTotalAmount, // Frontend's Grand Total (Fixed integer)
+                totalAmount: finalTotalAmount,
                 foodCost: computedFoodCost, 
-                deliveryFee: finalDeliveryFee, // Frontend's Calculated Fee (Fixed integer)
+                deliveryFee: finalDeliveryFee,
                 platformFee: Math.round(computedFoodCost * 0.10),
                 deliveryDetails, 
                 clientOrderId, 
