@@ -221,10 +221,12 @@ app.post('/api/orders', authMiddleware, orderLimiter, async (req, res, next) => 
 
             const dbItems = await MenuItem.find({ 
                 _id: { $in: Array.from(itemMap.keys()) }, 
-                restaurantId 
+                restaurantId,
+                isAvailable: true,
+                isDeleted: false
             }).session(session).maxTimeMS(2000);
 
-            if (dbItems.length !== itemMap.size) throw { status: 400, code: 'ITEM_MISMATCH' };
+            if (dbItems.length !== itemMap.size) throw { status: 400, code: 'MENU_ITEM_UNAVAILABLE' };
 
             let computedFoodCost = 0;
             const normalizedItems = dbItems.map(dbItem => {
