@@ -130,7 +130,13 @@ function Menu() {
                         <p className="text-2xl font-black text-gray-900">Rs. {item.price}</p>
                       </div>
                       <button 
-                        onClick={() => addItem({ ...item, restaurant: restaurant || { _id: id, name: restaurantName } })}
+                        onClick={() => addItem({
+                          ...item,
+                          restaurant: restaurant || {
+                            _id: id,
+                            name: restaurantName
+                          }
+                        })}
                         className="bg-gray-900 hover:bg-orange-500 text-white font-black py-4 px-10 rounded-3xl shadow-xl active:scale-90 transition-all"
                       >
                         ADD +
