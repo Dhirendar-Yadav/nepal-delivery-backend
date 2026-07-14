@@ -184,7 +184,9 @@ app.post('/api/orders', authMiddleware, orderLimiter, async (req, res, next) => 
 
     const existingOrder = await Order.findOne({ customerId: req.user.id, clientOrderId }).lean();
     if (existingOrder) {
-        return res.json({ success: true, orderId: existingOrder._id, message: "Idempotent replay detected." });
+        const response = { success: true, orderId: existingOrder._id, message: "Idempotent replay detected." };
+        if (existingOrder.paymentMethod === 'ONLINE') response.paymentReference = existingOrder.paymentReference;
+        return res.json(response);
     }
 
     req.log.info({ event: 'ORDER_CREATE_ATTEMPT', customerId: req.user.id });
@@ -277,6 +279,9 @@ app.post('/api/orders', authMiddleware, orderLimiter, async (req, res, next) => 
 
             if (!financialStatus.valid) throw { status: 400, code: 'INVALID_FINANCIAL_BREAKDOWN' };
 
+            const paymentProvider = paymentMethod === 'ONLINE' ? 'KHALTI' : null;
+            const paymentReference = paymentMethod === 'ONLINE' ? crypto.randomUUID() : null;
+
             const newOrder = new Order({
                 customerId: req.user.id, 
                 restaurantId, 
@@ -296,6 +301,8 @@ app.post('/api/orders', authMiddleware, orderLimiter, async (req, res, next) => 
                     changedAt: new Date()
                 }],
                 paymentMethod,
+                paymentProvider,
+                paymentReference,
                 paymentStatus: 'PENDING'
             });
 
@@ -312,7 +319,9 @@ app.post('/api/orders', authMiddleware, orderLimiter, async (req, res, next) => 
             }
 
             req.log.info({ event: 'ORDER_CREATED', orderId: newOrder._id });
-            return res.status(201).json({ success: true, orderId: newOrder._id });
+            const response = { success: true, orderId: newOrder._id };
+            if (paymentMethod === 'ONLINE') response.paymentReference = paymentReference;
+            return res.status(201).json(response);
 
         } catch (err) {
             await session.abortTransaction();
@@ -323,7 +332,9 @@ app.post('/api/orders', authMiddleware, orderLimiter, async (req, res, next) => 
             }
             if (err.code === 11000) {
                 const existing = await Order.findOne({ customerId: req.user.id, clientOrderId }).lean();
-                return res.json({ success: true, orderId: existing._id, message: "Handled duplicate." });
+                const response = { success: true, orderId: existing._id, message: "Handled duplicate." };
+                if (existing.paymentMethod === 'ONLINE') response.paymentReference = existing.paymentReference;
+                return res.json(response);
             }
             return next(err);
         }
