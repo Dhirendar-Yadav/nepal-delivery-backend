@@ -23,11 +23,34 @@ const isValidCheckoutAttempt = (pendingCheckout) => (
   (pendingCheckout.status === null || typeof pendingCheckout.status === 'string')
 );
 
+const isValidRestaurant = (restaurant) => (
+  restaurant === null || (
+    restaurant &&
+    typeof restaurant === 'object' &&
+    !Array.isArray(restaurant) &&
+    Boolean(restaurant._id || restaurant.id)
+  )
+);
+
+const isValidCartItem = (item) => (
+  item &&
+  typeof item === 'object' &&
+  !Array.isArray(item) &&
+  Boolean(item._id || item.id) &&
+  typeof item.name === 'string' &&
+  item.name.trim().length > 0 &&
+  typeof item.price === 'number' &&
+  Number.isFinite(item.price) &&
+  typeof item.quantity === 'number' &&
+  Number.isFinite(item.quantity) &&
+  item.quantity > 0
+);
+
 const isValidCart = (cart) => (
   cart &&
   typeof cart === 'object' &&
   !Array.isArray(cart) &&
-  (cart.restaurant === null || (typeof cart.restaurant === 'object' && !Array.isArray(cart.restaurant))) &&
+  isValidRestaurant(cart.restaurant) &&
   Array.isArray(cart.items)
 );
 
@@ -47,8 +70,13 @@ const readStoredCart = () => {
     const parsedCart = JSON.parse(storedCart);
     if (!isValidCart(parsedCart)) return createEmptyCart();
 
+    const validItems = parsedCart.items.filter(isValidCartItem);
+    const items = parsedCart.restaurant ? validItems : [];
+
     return {
       ...parsedCart,
+      restaurant: items.length > 0 ? parsedCart.restaurant : null,
+      items,
       pendingCheckout: isValidCheckoutAttempt(parsedCart.pendingCheckout)
         ? parsedCart.pendingCheckout
         : createEmptyCheckoutAttempt(),
