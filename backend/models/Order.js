@@ -76,6 +76,12 @@ const orderSchema = new mongoose.Schema({
         default: 'PENDING', 
         index: true 
     },
+
+    paymentMethod: {
+        type: String,
+        enum: ['COD', 'ONLINE'],
+        required: true
+    },
     
     // Rich History Audit Log Timeline Array
     statusHistory: [{

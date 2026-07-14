@@ -171,11 +171,15 @@ app.patch('/api/admin/orders/:id/status', authMiddleware, async (req, res) => {
 app.post('/api/orders', authMiddleware, orderLimiter, async (req, res, next) => {
     const MAX_RETRIES = 3;
     // ✨ FIX: Accept deliveryFee and totalAmount strictly from the frontend Checkout
-    const { restaurantId, items, deliveryDetails, clientOrderId: rawClientOrderId } = req.body;
+    const { restaurantId, items, deliveryDetails, paymentMethod, clientOrderId: rawClientOrderId } = req.body;
     const clientOrderId = typeof rawClientOrderId === 'string' ? rawClientOrderId.trim() : '';
 
     if (!clientOrderId || clientOrderId.length > 100 || !/^[A-Za-z0-9_-]+$/.test(clientOrderId)) {
         return res.status(400).json({ success: false, error: 'INVALID_CLIENT_ORDER_ID' });
+    }
+
+    if (paymentMethod !== 'COD' && paymentMethod !== 'ONLINE') {
+        return res.status(400).json({ success: false, error: 'INVALID_PAYMENT_METHOD' });
     }
 
     const existingOrder = await Order.findOne({ customerId: req.user.id, clientOrderId }).lean();
@@ -291,6 +295,7 @@ app.post('/api/orders', authMiddleware, orderLimiter, async (req, res, next) => 
                     actorId: null,
                     changedAt: new Date()
                 }],
+                paymentMethod,
                 paymentStatus: 'PENDING'
             });
 
