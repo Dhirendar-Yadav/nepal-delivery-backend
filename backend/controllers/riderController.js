@@ -315,9 +315,8 @@ exports.acceptOrder = async (req, res) => {
             return res.status(409).json({ success: false, message: "You already have an active order" });
         }
 
-        // Read the current order status inside the same transaction so audit history reflects the real previous state
-        const existingOrderForAudit = await Order.findById(orderId).select('status').session(session);
-        const previousStatus = existingOrderForAudit && existingOrderForAudit.status ? existingOrderForAudit.status : 'Preparing';
+        // The atomic assignment filter below enforces Ready for Pickup as the only legal predecessor.
+        const previousStatus = 'Ready for Pickup';
 
         // STEP 2: Generate cryptographically secure OTP using model's hash method
         const generatedOTP = crypto.randomInt(100000, 1000000).toString();
@@ -330,7 +329,11 @@ exports.acceptOrder = async (req, res) => {
                 offeredRiderId: riderId,
                 offerExpiresAt: { $gt: now },
                 assignedRiderId: null,
-                status: 'Ready for Pickup'
+                status: 'Ready for Pickup',
+                $or: [
+                    { paymentMethod: 'COD' },
+                    { paymentMethod: 'ONLINE', paymentStatus: 'PAID' }
+                ]
             },
             {
                 $set: {
@@ -526,6 +529,12 @@ exports.completeOrder = async (req, res) => {
             return res.status(409).json({ success: false, message: "Order not found or already completed" });
         }
 
+        if (order.paymentMethod === 'ONLINE' && order.paymentStatus !== 'PAID') {
+            await session.abortTransaction();
+            session.endSession();
+            return res.status(409).json({ success: false, error: 'PAYMENT_REQUIRED', message: "Online payment must be completed before delivery" });
+        }
+
         // STEP 2: Verify OTP using timing-safe method BEFORE any state mutation
         const isTokenValid = Order.verifyTimingSafeOTP(otp, order.deliveryOTP, order.deliveryOTPExpiresAt, order.otpUsed);
         if (!isTokenValid) {
@@ -563,7 +572,11 @@ exports.completeOrder = async (req, res) => {
                 _id: orderId,
                 assignedRiderId: riderId,
                 status: 'Out for Delivery',
-                otpUsed: false
+                otpUsed: false,
+                $or: [
+                    { paymentMethod: 'COD' },
+                    { paymentMethod: 'ONLINE', paymentStatus: 'PAID' }
+                ]
             },
             {
                 $set: {

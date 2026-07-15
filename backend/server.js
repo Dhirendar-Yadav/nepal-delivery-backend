@@ -8,14 +8,13 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const http = require('http');
 const { Server } = require('socket.io');
-const crypto = require('crypto'); 
 const jwt = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
 const { v4: uuidv4 } = require('uuid');
 const helmet = require('helmet'); 
 const hpp = require('hpp');
 const pino = require('pino');
-const path = require('path'); // ✨ ADDED: Path module for image uploads
+const path = require('path');
 const paymentWebhookRoutes = require('./routes/paymentWebhookRoutes');
 
 // Models
@@ -145,6 +144,10 @@ app.patch('/api/admin/orders/:id/status', authMiddleware, async (req, res) => {
         const order = await Order.findById(id);
         if (!order) return res.status(404).json({ success: false, error: 'ORDER_NOT_FOUND' });
 
+        if (order.paymentMethod === 'ONLINE' && order.paymentStatus !== 'PAID' && nextStatus !== 'Cancelled') {
+            return res.status(409).json({ success: false, error: 'PAYMENT_REQUIRED' });
+        }
+
         const currentStatus = order.status;
 
         // Verify if the transition is allowed by the CEO Guard
@@ -178,7 +181,7 @@ app.post('/api/orders', authMiddleware, orderLimiter, async (req, res, next) => 
         return res.status(400).json({ success: false, error: 'INVALID_CLIENT_ORDER_ID' });
     }
 
-    if (paymentMethod !== 'COD' && paymentMethod !== 'ONLINE') {
+    if (paymentMethod !== 'COD') {
         return res.status(400).json({ success: false, error: 'INVALID_PAYMENT_METHOD' });
     }
 
@@ -279,8 +282,8 @@ app.post('/api/orders', authMiddleware, orderLimiter, async (req, res, next) => 
 
             if (!financialStatus.valid) throw { status: 400, code: 'INVALID_FINANCIAL_BREAKDOWN' };
 
-            const paymentProvider = paymentMethod === 'ONLINE' ? 'KHALTI' : null;
-            const paymentReference = paymentMethod === 'ONLINE' ? crypto.randomUUID() : null;
+            const paymentProvider = null;
+            const paymentReference = null;
 
             const newOrder = new Order({
                 customerId: req.user.id, 
@@ -320,7 +323,6 @@ app.post('/api/orders', authMiddleware, orderLimiter, async (req, res, next) => 
 
             req.log.info({ event: 'ORDER_CREATED', orderId: newOrder._id });
             const response = { success: true, orderId: newOrder._id };
-            if (paymentMethod === 'ONLINE') response.paymentReference = paymentReference;
             return res.status(201).json(response);
 
         } catch (err) {
@@ -441,6 +443,7 @@ io.on('connection', (socket) => {
 // ✅ ROUTES INTEGRATION
 // ==========================================
 app.use('/api/auth', require('./routes/authRoutes'));
+app.use('/api/kyc', require('./routes/kycRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
 
 // 🚀 FIX APPLIED HERE: The Rider Routes were entirely missing!

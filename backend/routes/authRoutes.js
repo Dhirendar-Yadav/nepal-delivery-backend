@@ -136,7 +136,7 @@ if (existingUser) {
             let imagePath = null;
             if (req.files && req.files.length > 0) {
                 // Taking the first uploaded image as the profile photo
-                imagePath = `${baseUrl}/uploads/${req.files[0].filename}`;
+                imagePath = req.files[0].filename;
             }
 
             let safeLocationString = 'Nepal';

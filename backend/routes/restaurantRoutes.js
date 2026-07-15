@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const { authMiddleware } = require('../middlewares/auth');
 const mongoose = require('mongoose'); 
+const fs = require('fs');
+const path = require('path');
 
 // Core Database Models
 const Restaurant = require('../models/Restaurant');
@@ -104,6 +106,42 @@ const attachRestaurantContext = asyncHandler(async (req, res, next) => {
 // ==========================================
 router.get('/', restaurantController.getAllRestaurants);
 
+router.get('/:id/image', asyncHandler(async (req, res) => {
+    const restaurantId = req.params.id;
+
+    if (!mongoose.Types.ObjectId.isValid(restaurantId)) {
+        return res.status(400).json({ success: false, error: 'INVALID_RESTAURANT_ID' });
+    }
+
+    const restaurant = await Restaurant.findOne({ _id: restaurantId, isDiscoverable: true, image: { $ne: null } }).select('image').lean();
+    if (!restaurant?.image) {
+        return res.status(404).json({ success: false, error: 'RESTAURANT_IMAGE_NOT_FOUND' });
+    }
+
+    const filename = typeof restaurant.image === 'string' ? path.basename(restaurant.image.replace(/\\/g, '/')) : '';
+    if (!/^[A-Za-z0-9._-]+\.(?:jpe?g|png|webp)$/i.test(filename)) {
+        return res.status(404).json({ success: false, error: 'RESTAURANT_IMAGE_NOT_FOUND' });
+    }
+
+    const uploadDirectory = path.resolve(__dirname, '..', 'uploads');
+    const imagePath = path.resolve(uploadDirectory, filename);
+    if (!imagePath.startsWith(`${uploadDirectory}${path.sep}`)) {
+        return res.status(404).json({ success: false, error: 'RESTAURANT_IMAGE_NOT_FOUND' });
+    }
+
+    try {
+        await fs.promises.access(imagePath, fs.constants.R_OK);
+    } catch {
+        return res.status(404).json({ success: false, error: 'RESTAURANT_IMAGE_NOT_FOUND' });
+    }
+
+    return res.sendFile(imagePath, (err) => {
+        if (err && !res.headersSent) {
+            return res.status(err.statusCode === 404 ? 404 : 500).json({ success: false, error: 'RESTAURANT_IMAGE_NOT_FOUND' });
+        }
+    });
+}));
+
 // ==========================================
 // 🏪 SELLER DASHBOARD ROUTES (Protected Sandbox)
 // ==========================================
@@ -169,9 +207,13 @@ router.put('/orders/:id/status', verifySeller, attachRestaurantContext, asyncHan
         return res.status(400).json({ success: false, error: "INVALID_TARGET_STATUS", message: "Requested state out of system runtime parameters limits mappings bounds." });
     }
 
-    const existingOrder = await Order.findOne({ _id: orderId, restaurantId: req.restaurant._id }).select('status offeredRiderId assignedRiderId').lean();
+    const existingOrder = await Order.findOne({ _id: orderId, restaurantId: req.restaurant._id }).select('status offeredRiderId assignedRiderId paymentMethod paymentStatus').lean();
     if (!existingOrder) {
         return res.status(404).json({ success: false, error: "ORDER_NOT_FOUND", message: "Target request dataset criteria matches not found inside databases collections." });
+    }
+
+    if (existingOrder.paymentMethod === 'ONLINE' && existingOrder.paymentStatus !== 'PAID' && status !== 'Cancelled') {
+        return res.status(409).json({ success: false, error: 'PAYMENT_REQUIRED', message: 'Online payment must be completed before order processing.' });
     }
 
     const allowedNextStates = ORDER_STATUS_TRANSITIONS[existingOrder.status] || [];
@@ -195,8 +237,15 @@ router.put('/orders/:id/status', verifySeller, attachRestaurantContext, asyncHan
     const queryCondition = { 
         _id: orderId, 
         restaurantId: req.restaurant._id,
-        status: existingOrder.status 
+        status: existingOrder.status
     };
+
+    if (status !== 'Cancelled') {
+        queryCondition.$or = [
+            { paymentMethod: 'COD' },
+            { paymentMethod: 'ONLINE', paymentStatus: 'PAID' }
+        ];
+    }
 
     const order = await Order.findOneAndUpdate(
         queryCondition,

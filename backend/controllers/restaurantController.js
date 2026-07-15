@@ -103,7 +103,12 @@ exports.getAllRestaurants = async (req, res) => {
         pipeline.push({ $limit: 50 });
 
         const restaurants = await Restaurant.aggregate(pipeline);
-        res.status(200).json(restaurants);
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        const restaurantsWithImageUrls = restaurants.map((restaurant) => ({
+            ...restaurant,
+            image: restaurant.image ? `${baseUrl}/api/restaurants/${restaurant._id}/image` : null
+        }));
+        res.status(200).json(restaurantsWithImageUrls);
 
     } catch (error) {
         console.error("Database Aggregation Error:", error);
