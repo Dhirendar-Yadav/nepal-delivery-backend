@@ -11,6 +11,8 @@ function Dashboard() {
   const [itemName, setItemName] = useState('');
   const [itemPrice, setItemPrice] = useState('');
   const [itemDescription, setItemDescription] = useState('');
+  const [restaurant, setRestaurant] = useState(null);
+  const [updatingStoreStatus, setUpdatingStoreStatus] = useState(false);
   
   // 🚀 CHATGPT FIX: Use useRef for Socket and Audio to prevent memory leaks and infinite loops
   const socketRef = useRef(null);
@@ -44,6 +46,7 @@ function Dashboard() {
 
     fetchOrders(token);
     fetchMyMenu(token);
+    fetchRestaurant(token);
 
     socketRef.current.on('newLiveOrder', (newOrder) => {
       console.log("🔥 New Order Received:", newOrder);
@@ -154,6 +157,25 @@ function Dashboard() {
       }
     } catch (error) { console.error("Menu fetch error:", error); }
   };
+  const fetchRestaurant = async (token) => {
+  try {
+    const response = await fetch('http://localhost:5005/api/seller/store', {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      setRestaurant(data.restaurant);
+    } else {
+      console.error(data);
+    }
+  } catch (err) {
+    console.error(err);
+  }
+};
 
   const handleAddItem = async (e) => {
     e.preventDefault();
@@ -187,6 +209,43 @@ function Dashboard() {
         console.error("Network Error: Make sure backend is running."); 
     }
   };
+  const toggleStoreStatus = async () => {
+  if (!restaurant) return;
+
+  const token = localStorage.getItem('token');
+
+  setUpdatingStoreStatus(true);
+
+  try {
+    const response = await fetch(
+      'http://localhost:5005/api/seller/store/status',
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          isOpen: !restaurant.isOpen
+        })
+      }
+    );
+
+    const data = await response.json();
+
+    if (response.ok) {
+      setRestaurant(data.restaurant);
+      fetchOrders(token);
+    } else {
+      alert(data.error || "Failed");
+    }
+
+  } catch (err) {
+    console.error(err);
+  }
+
+  setUpdatingStoreStatus(false);
+};
 
   const handleLogout = () => {
     localStorage.clear(); 
@@ -215,7 +274,39 @@ function Dashboard() {
       </nav>
 
       <div className="max-w-7xl mx-auto p-6 md:p-10 space-y-12">
-        
+        {/* ================= STORE STATUS ================= */}
+
+<div className="bg-gray-800 border border-gray-700 rounded-3xl p-6 flex justify-between items-center">
+
+  <div>
+    <h2 className="text-2xl font-black">
+      Store Status
+    </h2>
+
+    <p className="text-gray-400 mt-1">
+      {restaurant?.isOpen
+        ? "Customers can place new orders."
+        : "Store is currently closed."}
+    </p>
+  </div>
+
+  <button
+    disabled={updatingStoreStatus}
+    onClick={toggleStoreStatus}
+    className={`px-6 py-3 rounded-xl font-black transition ${
+      restaurant?.isOpen
+        ? "bg-green-600 hover:bg-green-700"
+        : "bg-red-600 hover:bg-red-700"
+    }`}
+  >
+    {updatingStoreStatus
+      ? "Updating..."
+      : restaurant?.isOpen
+      ? "OPEN"
+      : "CLOSED"}
+  </button>
+
+</div>
         {/* ================= SECTION 1: LIVE ORDERS ================= */}
         <section>
           <div className="flex justify-between items-end mb-6">

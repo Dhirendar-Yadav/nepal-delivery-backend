@@ -6,16 +6,25 @@ const crypto = require('crypto');
  * Hides restaurants that are suspended, manually closed, deleted, or inactive for 7+ days.
  */
 function computeDiscoverable(doc) {
+    console.log({
+    status: doc.status,
+    isOpen: doc.isOpen,
+    isPaused: doc.isPaused,
+    isVerifiedByAdmin: doc.isVerifiedByAdmin,
+    isDeleted: doc.isDeleted,
+    lastActive: doc.lastActiveAt
+});
     const inactiveThreshold = Date.now() - (7 * 24 * 60 * 60 * 1000); // 7 Days in ms
     const lastActive = doc.lastActiveAt ? new Date(doc.lastActiveAt).getTime() : Date.now();
 
     return (
-        doc.status === 'ACTIVE' &&
-        doc.isOpen === true &&
-        doc.isVerifiedByAdmin === true &&
-        doc.isDeleted === false &&
-        lastActive >= inactiveThreshold
-    );
+    doc.status === 'ACTIVE' &&
+    doc.isOpen === true &&
+    doc.isPaused === false &&
+    doc.isVerifiedByAdmin === true &&
+    doc.isDeleted === false &&
+    lastActive >= inactiveThreshold
+);
 }
 
 /**
@@ -49,7 +58,22 @@ const restaurantSchema = new mongoose.Schema({
     },
     isVerifiedByAdmin: { type: Boolean, default: false },
     isOpen: { type: Boolean, default: true }, 
-    lastActiveAt: { type: Date, default: Date.now, index: true }, 
+    isPaused: { type: Boolean, default: false },
+
+pauseReason: {
+    type: String,
+    trim: true,
+    maxlength: 200,
+    default: null
+},
+
+pausedAt: {
+    type: Date,
+    default: null
+},
+
+lastActiveAt: { type: Date, default: Date.now, index: true },
+     
     
     // 🕰️ Dynamic Time Management
     openingHours: [{
@@ -191,7 +215,7 @@ restaurantSchema.pre('validate', function() {
 // 🔄 UPDATE MIDDLEWARES
 // ==========================================
 
-restaurantSchema.pre(['findOneAndUpdate', 'updateOne'], async function() {
+restaurantSchema.pre(['findOneAndUpdate', 'updateOne'], async function(next) {
     const update = this.getUpdate();
     
     // 💰 Auto-Increment Wallet Version
@@ -239,9 +263,15 @@ restaurantSchema.pre(['findOneAndUpdate', 'updateOne'], async function() {
         // 🔥 SINGLE FETCH OPTIMIZATION
         if (shouldRecomputeVisibility || shouldRecomputeRating || shouldRecomputePopularity) {
             const doc = await this.model.findOne(this.getQuery()).lean();
+            console.log("HAS isPaused:", Object.prototype.hasOwnProperty.call(doc, "isPaused"));
+            console.log("===== BEFORE =====", doc);
+console.log("===== UPDATE =====", update);
+
             
             if (doc) {
                 const mergedDoc = { ...doc, ...(update.$set || {}) };
+                console.log("===== MERGED =====", mergedDoc);
+console.log("===== RESULT =====", computeDiscoverable(mergedDoc));
                 
                 if (update.$inc) {
                     for (const key in update.$inc) {
@@ -292,6 +322,3 @@ restaurantSchema.index({ lastActiveAt: -1 });
 restaurantSchema.index({ name: 'text', foodTypes: 'text' }, { weights: { name: 5, foodTypes: 3 } });
 
 module.exports = mongoose.model('Restaurant', restaurantSchema);
-
-
-

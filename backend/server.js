@@ -214,8 +214,38 @@ app.post('/api/orders', authMiddleware, orderLimiter, async (req, res, next) => 
                 if (quantity < 1 || quantity > 50) throw { status: 400, code: 'INVALID_QUANTITY' };
             }
 
-            const restaurant = await Restaurant.findById(restaurantId).session(session).select('status latitude longitude');
-            if (!restaurant || restaurant.status !== 'ACTIVE') throw { status: 400, code: 'RESTAURANT_UNAVAILABLE' };
+            const restaurant = await Restaurant.findById(restaurantId)
+    .session(session)
+    .select('status isOpen isPaused latitude longitude');
+            if (!restaurant) {
+    throw {
+        status: 404,
+        code: 'RESTAURANT_NOT_FOUND'
+    };
+}
+
+if (restaurant.status !== 'ACTIVE') {
+    throw {
+        status: 400,
+        code: 'RESTAURANT_UNAVAILABLE'
+    };
+}
+
+if (!restaurant.isOpen) {
+    throw {
+        status: 403,
+        code: 'RESTAURANT_CLOSED',
+        message: 'Restaurant is currently closed.'
+    };
+}
+
+if (restaurant.isPaused) {
+    throw {
+        status: 403,
+        code: 'RESTAURANT_PAUSED',
+        message: 'Restaurant is temporarily unavailable.'
+    };
+}
 
             const customerLatitude = Number(deliveryDetails.latitude);
             const customerLongitude = Number(deliveryDetails.longitude);
@@ -284,6 +314,16 @@ app.post('/api/orders', authMiddleware, orderLimiter, async (req, res, next) => 
 
             const paymentProvider = null;
             const paymentReference = null;
+            // ==========================================
+// TEMPORARILY DISABLE ONLINE PAYMENTS
+// ==========================================
+if (paymentMethod === 'ONLINE') {
+    throw {
+        status: 503,
+        code: 'ONLINE_PAYMENT_DISABLED',
+        message: 'Online payment is currently unavailable. Please use Cash on Delivery.'
+    };
+}
 
             const newOrder = new Order({
                 customerId: req.user.id, 
@@ -349,10 +389,20 @@ app.get('/api/orders/:id', authMiddleware, async (req, res, next) => {
             return res.status(404).json({ success: false, error: 'ORDER_NOT_FOUND' });
         }
 
-        const order = await Order.findOne({ _id: req.params.id, customerId: req.user.id })
-            .select('_id status statusUpdatedAt assignedRiderId')
-            .populate('assignedRiderId', 'name phone')
-            .lean();
+        const order = await Order.findOne({
+    _id: req.params.id,
+    customerId: req.user.id
+})
+.select(`
+    _id
+    status
+    statusUpdatedAt
+    statusHistory
+    assignedRiderId
+    createdAt
+`)
+.populate('assignedRiderId', 'name phone')
+.lean();
 
         if (!order) {
             return res.status(404).json({ success: false, error: 'ORDER_NOT_FOUND' });

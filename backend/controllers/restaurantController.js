@@ -1,4 +1,5 @@
 const Restaurant = require('../models/Restaurant');
+const mongoose = require('mongoose');
 
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -113,5 +114,72 @@ exports.getAllRestaurants = async (req, res) => {
     } catch (error) {
         console.error("Database Aggregation Error:", error);
         res.status(500).json({ message: "Internal Server Error", error: error.message });
+    }
+};
+/**
+ * @description Seller Store Open / Close
+ * @route PATCH /api/restaurants/store/status
+ */
+exports.updateStoreStatus = async (req, res) => {
+    try {
+
+        const { isOpen } = req.body;
+
+        if (typeof isOpen !== "boolean") {
+            return res.status(400).json({
+                success: false,
+                message: "isOpen must be boolean"
+            });
+        }
+
+        const restaurant = await Restaurant.findOneAndUpdate(
+            {
+                ownerId: new mongoose.Types.ObjectId(req.user.id),
+                status: "ACTIVE",
+                isDeleted: false
+            },
+            {
+                $set: {
+                    isOpen,
+                    lastActiveAt: new Date()
+                }
+            },
+            {
+                new: true,
+                runValidators: true
+            }
+        );
+
+        if (!restaurant) {
+            return res.status(404).json({
+                success: false,
+                message: "Restaurant not found"
+            });
+        }
+
+        return res.json({
+    success: true,
+    message: isOpen
+        ? "Restaurant opened successfully."
+        : "Restaurant closed successfully.",
+
+    restaurant: {
+        _id: restaurant._id,
+        name: restaurant.name,
+        isOpen: restaurant.isOpen,
+        status: restaurant.status,
+        isDiscoverable: restaurant.isDiscoverable
+    }
+});
+
+    } catch (err) {
+
+        console.error(err);
+
+        return res.status(500).json({
+            success: false,
+            message: "Failed to update restaurant status."
+        });
+
     }
 };

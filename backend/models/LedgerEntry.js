@@ -62,10 +62,17 @@ ledgerEntrySchema.index(
 
 // SYSTEM_CLEARING duplicate protection
 ledgerEntrySchema.index(
-    { settlementId: 1, entityType: 1, type: 1 },
+    {
+        settlementId: 1,
+        entityType: 1,
+        type: 1,
+        description: 1
+    },
     {
         unique: true,
-        partialFilterExpression: { entityType: "SYSTEM_CLEARING" }
+        partialFilterExpression: {
+            entityType: "SYSTEM_CLEARING"
+        }
     }
 );
 
@@ -100,5 +107,3 @@ ledgerEntrySchema.pre('deleteMany', function(next) {
 });
 
 module.exports = mongoose.model('LedgerEntry', ledgerEntrySchema);
-
-

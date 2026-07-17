@@ -614,55 +614,107 @@ exports.completeOrder = async (req, res) => {
         const netAdminProfit = order.platformFee - riderBonus;
 
         const ledgerEntries = [
-            {
-                settlementId,
-                orderId: orderId,
-                entityType: 'RIDER',
-                entityId: riderId,
-                type: 'CREDIT',
-                amount: order.deliveryFee + riderBonus,
-                currency: 'NPR',
-                balanceAfter: null,
-                description: 'Delivery settlement',
-                createdAt: now
-            },
-            {
-                settlementId,
-                orderId: orderId,
-                entityType: 'RESTAURANT',
-                entityId: order.restaurantId,
-                type: 'CREDIT',
-                amount: order.foodCost,
-                currency: 'NPR',
-                balanceAfter: null,
-                description: 'Restaurant settlement',
-                createdAt: now
-            },
-            {
-                settlementId,
-                orderId: orderId,
-                entityType: 'ADMIN',
-                entityId: null,
-                type: 'CREDIT',
-                amount: order.platformFee,
-                currency: 'NPR',
-                balanceAfter: null,
-                description: 'Platform commission',
-                createdAt: now
-            }
-        ];
+    // ==========================================
+    // CREDIT ENTRIES
+    // ==========================================
+
+    {
+        settlementId,
+        orderId: orderId,
+        entityType: 'RIDER',
+        entityId: riderId,
+        type: 'CREDIT',
+        amount: order.deliveryFee + riderBonus,
+        currency: 'NPR',
+        balanceAfter: null,
+        description: 'Delivery settlement',
+        createdAt: now
+    },
+    {
+        settlementId,
+        orderId: orderId,
+        entityType: 'RESTAURANT',
+        entityId: order.restaurantId,
+        type: 'CREDIT',
+        amount: order.foodCost,
+        currency: 'NPR',
+        balanceAfter: null,
+        description: 'Restaurant settlement',
+        createdAt: now
+    },
+    {
+        settlementId,
+        orderId: orderId,
+        entityType: 'ADMIN',
+        entityId: null,
+        type: 'CREDIT',
+        amount: order.platformFee,
+        currency: 'NPR',
+        balanceAfter: null,
+        description: 'Platform commission',
+        createdAt: now
+    },
+
+    // ==========================================
+    // MATCHING DEBIT ENTRIES (Audit #4 Fix)
+    // ==========================================
+
+    {
+        settlementId,
+        orderId: orderId,
+        entityType: 'SYSTEM_CLEARING',
+        entityId: null,
+        type: 'DEBIT',
+        amount: order.deliveryFee + riderBonus,
+        currency: 'NPR',
+        balanceAfter: null,
+        description: 'Rider settlement clearing',
+        createdAt: now
+    },
+    {
+        settlementId,
+        orderId: orderId,
+        entityType: 'SYSTEM_CLEARING',
+        entityId: null,
+        type: 'DEBIT',
+        amount: order.foodCost,
+        currency: 'NPR',
+        balanceAfter: null,
+        description: 'Restaurant settlement clearing',
+        createdAt: now
+    },
+    {
+        settlementId,
+        orderId: orderId,
+        entityType: 'SYSTEM_CLEARING',
+        entityId: null,
+        type: 'DEBIT',
+        amount: order.platformFee,
+        currency: 'NPR',
+        balanceAfter: null,
+        description: 'Platform revenue clearing',
+        createdAt: now
+    }
+];
+
+await LedgerEntry.insertMany(ledgerEntries, { session });
         await LedgerEntry.insertMany(ledgerEntries, { session });
 
         // STEP 7: Update rider wallet
         const updatedRiderProfile = await RiderProfile.findOneAndUpdate(
             { userId: riderId },
             {
-                $inc: {
-                    "wallet.balance": (order.deliveryFee + riderBonus),
-                    "wallet.incentiveEarnings": riderBonus,
-                    "wallet.transactionCount": 1,
-                    "wallet.walletVersion": 1
-                }
+              $inc: {
+    "wallet.balance": (order.deliveryFee + riderBonus),
+
+    ...(order.paymentMethod === "COD"
+        ? { "wallet.codPending": order.totalAmount }
+        : {}),
+
+    "wallet.incentiveEarnings": riderBonus,
+    "wallet.transactionCount": 1,
+    "wallet.walletVersion": 1
+}
             },
             { new: true, runValidators: true, session }
         );

@@ -21,7 +21,7 @@ const ORDER_STATUS_TRANSITIONS = {
     'Pending': ['Accepted', 'Cancelled'],
     'Accepted': ['Preparing', 'Cancelled'],
     'Preparing': ['Ready for Pickup', 'Cancelled'],
-    'Ready for Pickup': ['Out for Delivery'],
+    'Ready for Pickup': [],
     'Out for Delivery': ['Delivered'],
     'Delivered': [], 
     'Cancelled': []  
@@ -118,10 +118,22 @@ router.get('/:id/image', asyncHandler(async (req, res) => {
         return res.status(404).json({ success: false, error: 'RESTAURANT_IMAGE_NOT_FOUND' });
     }
 
-    const filename = typeof restaurant.image === 'string' ? path.basename(restaurant.image.replace(/\\/g, '/')) : '';
-    if (!/^[A-Za-z0-9._-]+\.(?:jpe?g|png|webp)$/i.test(filename)) {
-        return res.status(404).json({ success: false, error: 'RESTAURANT_IMAGE_NOT_FOUND' });
-    }
+    const filename = typeof restaurant.image === 'string'
+    ? path.basename(restaurant.image.replace(/\\/g, '/'))
+    : '';
+
+if (
+    !filename ||
+    filename.includes('..') ||
+    filename.includes('/') ||
+    filename.includes('\\') ||
+    !/^[A-Za-z0-9._-]+(?:\.(?:jpe?g|png|webp))?$/i.test(filename)
+) {
+    return res.status(404).json({
+        success: false,
+        error: 'RESTAURANT_IMAGE_NOT_FOUND'
+    });
+}
 
     const uploadDirectory = path.resolve(__dirname, '..', 'uploads');
     const imagePath = path.resolve(uploadDirectory, filename);
@@ -145,7 +157,23 @@ router.get('/:id/image', asyncHandler(async (req, res) => {
 // ==========================================
 // 🏪 SELLER DASHBOARD ROUTES (Protected Sandbox)
 // ==========================================
-
+router.get('/store', verifySeller, attachRestaurantContext, asyncHandler(async (req, res) => {
+    return res.json({
+        success: true,
+        restaurant: {
+            _id: req.restaurant._id,
+            name: req.restaurant.name,
+            isOpen: req.restaurant.isOpen,
+            status: req.restaurant.status,
+            isDiscoverable: req.restaurant.isDiscoverable
+        }
+    });
+}));
+router.patch(
+    '/store/status',
+    verifySeller,
+    restaurantController.updateStoreStatus
+);
 // 1. ADD NEW MENU ITEM (POST /api/seller/menu)
 router.post('/menu', verifySeller, attachRestaurantContext, asyncHandler(async (req, res) => {
     const { name, price, description } = req.body;

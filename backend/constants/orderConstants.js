@@ -5,7 +5,7 @@ const VALID_TRANSITIONS = {
     'Pending': ['Accepted', 'Cancelled'],
     'Accepted': ['Preparing', 'Cancelled'],
     'Preparing': ['Ready for Pickup', 'Cancelled'],
-    'Ready for Pickup': ['Out for Delivery'],
+    'Ready for Pickup': [],
     'Out for Delivery': ['Delivered'],
     'Delivered': [],
     'Cancelled': []
