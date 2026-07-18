@@ -39,10 +39,12 @@ function Dashboard() {
     }
 
     // 🚀 CHATGPT FIX: Initialize Socket ONCE
-    socketRef.current = io('http://localhost:5005', {
-      auth: { token },
-      transports: ['websocket']
-    });
+    const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5005";
+
+socketRef.current = io(API_BASE, {
+  auth: { token },
+  transports: ["websocket"]
+});
 
     fetchOrders(token);
     fetchMyMenu(token);
@@ -115,7 +117,7 @@ function Dashboard() {
 
   const fetchOrders = async (token) => {
     try {
-      const res = await fetch('http://localhost:5005/api/seller/orders', {
+      const res = await fetch(`${API_BASE}/api/seller/orders`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
@@ -130,7 +132,7 @@ function Dashboard() {
   const updateOrderStatus = async (orderId, newStatus) => {
     const token = localStorage.getItem('token');
     try {
-      const res = await fetch(`http://localhost:5005/api/seller/orders/${orderId}/status`, {
+      const res = await fetch(`${API_BASE}/api/seller/orders/${orderId}/status`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ status: newStatus })
@@ -146,7 +148,7 @@ function Dashboard() {
 
   const fetchMyMenu = async (token) => {
     try {
-      const response = await fetch('http://localhost:5005/api/seller/menu', {
+      const response = await fetch(`${API_BASE}/api/seller/menu`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();
@@ -159,7 +161,8 @@ function Dashboard() {
   };
   const fetchRestaurant = async (token) => {
   try {
-    const response = await fetch('http://localhost:5005/api/seller/store', {
+    const response = await fetch(
+`${API_BASE}/api/seller/store`, {
       headers: {
         Authorization: `Bearer ${token}`
       }
@@ -181,7 +184,7 @@ function Dashboard() {
     e.preventDefault();
     const token = localStorage.getItem('token');
     try {
-      const response = await fetch('http://localhost:5005/api/seller/menu', {
+      const response = await fetch(`${API_BASE}/api/seller/menu`, {
         method: 'POST',
         headers: { 
             'Content-Type': 'application/json', 
@@ -218,7 +221,7 @@ function Dashboard() {
 
   try {
     const response = await fetch(
-      'http://localhost:5005/api/seller/store/status',
+      `${API_BASE}/api/seller/store/status`,
       {
         method: 'PATCH',
         headers: {

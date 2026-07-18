@@ -399,9 +399,10 @@ app.get('/api/orders/:id', authMiddleware, async (req, res, next) => {
     statusUpdatedAt
     statusHistory
     assignedRiderId
+    deliveryOTP
     createdAt
 `)
-.populate('assignedRiderId', 'name phone')
+.populate('assignedRiderId', 'name phone bikeNumber')
 .lean();
 
         if (!order) {
