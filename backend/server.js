@@ -15,6 +15,7 @@ const helmet = require('helmet');
 const hpp = require('hpp');
 const pino = require('pino');
 const path = require('path');
+const { authMiddleware } = require('./middlewares/auth');
 const paymentWebhookRoutes = require('./routes/paymentWebhookRoutes');
 const {
     initializeSocket,
@@ -112,22 +113,6 @@ app.use((req, res, next) => {
     next();
 });
 
-// 🛡️ Hardened Auth Middleware
-const authMiddleware = (req, res, next) => {
-    const authHeader = req.header('Authorization');
-    if (!authHeader) return res.status(401).json({ success: false, error: 'AUTH_REQUIRED' });
-    try {
-        const token = authHeader.split(' ')[1];
-        req.user = jwt.verify(token, process.env.JWT_SECRET, {
-            algorithms: ['HS256'],
-            issuer: 'food-samundar',
-            audience: 'user-app'
-        });
-        next();
-    } catch (err) {
-        return res.status(403).json({ success: false, error: 'INVALID_TOKEN' });
-    }
-};
 
 const orderLimiter = rateLimit({
     windowMs: 60 * 1000,
