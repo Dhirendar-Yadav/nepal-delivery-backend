@@ -39,11 +39,17 @@ const dispatchService = {
                 },
                 {
                     $set: {
-                        dispatchQueue: riderQueueIds,
-                        currentDispatchIndex: 0,
-                        offeredRiderId: firstRiderId,
-                        offerExpiresAt: new Date(Date.now() + 60 * 1000)
-                    }
+    dispatchQueue: riderQueueIds,
+    currentDispatchIndex: 0,
+    offeredRiderId: firstRiderId,
+    offerExpiresAt: new Date(Date.now() + 60 * 1000)
+},
+$push: {
+    dispatchHistory: {
+        riderId: firstRiderId,
+        action: "OFFERED"
+    }
+}
                 },
                 {
                     new: true,
@@ -89,7 +95,16 @@ dispatchService.advanceDispatchQueue = async function (orderId, appIoContext) {
                 offeredRiderId: order.offeredRiderId,
                 currentDispatchIndex: order.currentDispatchIndex
             },
-            payload,
+            {
+    ...payload,
+    $push: {
+        dispatchHistory: {
+    riderId: order.offeredRiderId,
+    action: "EXPIRED",
+    createdAt: new Date()
+}
+    }
+},
             {
                 new: true,
                 runValidators: true

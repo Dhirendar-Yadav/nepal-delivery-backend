@@ -93,6 +93,22 @@ const orderSchema = new mongoose.Schema({
         actorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
         changedAt: { type: Date, default: Date.now }
     }],
+    dispatchHistory: [{
+    riderId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true
+    },
+    action: {
+        type: String,
+        enum: ['OFFERED', 'REJECTED', 'EXPIRED', 'ACCEPTED'],
+        required: true
+    },
+    createdAt: {
+        type: Date,
+        default: Date.now
+    }
+}],
 
     otpUsed: { type: Boolean, default: false, index: true }, 
     isPaymentProcessed: { type: Boolean, default: false, index: true }, 

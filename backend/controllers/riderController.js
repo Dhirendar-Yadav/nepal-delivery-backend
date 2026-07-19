@@ -347,14 +347,19 @@ exports.acceptOrder = async (req, res) => {
                     deliveryOTPExpiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000)
                 },
                 $push: {
-                    statusHistory: {
-                        from: previousStatus,
-                        to: 'Out for Delivery',
-                        actorType: 'RIDER',
-                        actorId: riderId,
-                        changedAt: now
-                    }
-                }
+    statusHistory: {
+        from: previousStatus,
+        to: 'Out for Delivery',
+        actorType: 'RIDER',
+        actorId: riderId,
+        changedAt: now
+    },
+    dispatchHistory: {
+        riderId: riderId,
+        action: "ACCEPTED",
+        createdAt: now
+    }
+}
             },
             { new: true, runValidators: true, session }
         );
@@ -948,9 +953,15 @@ exports.rejectOrder = async (req, res) => {
             },
             {
                 $set: {
-                    offeredRiderId: null,
-                    offerExpiresAt: null
-                }
+    offeredRiderId: null,
+    offerExpiresAt: null
+},
+$push: {
+    dispatchHistory: {
+        riderId: riderId,
+        action: "REJECTED"
+    }
+}
             },
             {
                 new: true,
