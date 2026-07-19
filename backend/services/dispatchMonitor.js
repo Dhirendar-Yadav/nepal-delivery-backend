@@ -6,10 +6,13 @@ const startDispatchMonitor = (io) => {
     cron.schedule('*/5 * * * * *', async () => {
         try {
             const expiredOrders = await Order.find({
-                assignedRiderId: null,
-                offeredRiderId: { $ne: null },
-                offerExpiresAt: { $lte: new Date() }
-            }).select('_id').lean();
+    status: "Ready for Pickup",
+    assignedRiderId: null,
+    offeredRiderId: { $ne: null },
+    offerExpiresAt: { $lte: new Date() }
+})
+.select("_id")
+.lean();
 
             for (const order of expiredOrders) {
                 await dispatchService.advanceDispatchQueue(order._id, io);
