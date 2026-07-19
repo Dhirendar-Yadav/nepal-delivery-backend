@@ -965,10 +965,22 @@ exports.rejectOrder = async (req, res) => {
             });
         }
 
-        return res.status(200).json({
-            success: true,
-            message: "Order rejected."
-        });
+        // Notify next rider in dispatch queue (best effort)
+try {
+    const io = req.app.get("io");
+
+await dispatchService.advanceDispatchQueue(order._id, io);
+} catch (dispatchErr) {
+    console.error(
+        "Failed to advance dispatch queue after rejection:",
+        dispatchErr
+    );
+}
+
+return res.status(200).json({
+    success: true,
+    message: "Order rejected."
+});
     } catch (err) {
         console.error("Reject order error:", err);
         return res.status(500).json({
