@@ -65,17 +65,28 @@ const {
 } = payload;
 
     if (
-        typeof transactionId !== "string" ||
-        transactionId.trim().length === 0 ||
-        typeof riderId !== "string" ||
-        riderId.trim().length === 0 ||
-        !mongoose.Types.ObjectId.isValid(riderId)
-    ) {
-        return res.status(400).json({
-            success: false,
-            message: "Invalid webhook payload."
-        });
-    }
+    typeof transactionId !== "string" ||
+    typeof riderId !== "string"
+) {
+    return res.status(400).json({
+        success: false,
+        message: "Invalid webhook payload."
+    });
+}
+
+const normalizedTransactionId = transactionId.trim();
+
+if (
+    normalizedTransactionId.length === 0 ||
+    normalizedTransactionId.length > 128 ||
+    riderId.trim().length === 0 ||
+    !mongoose.Types.ObjectId.isValid(riderId)
+) {
+    return res.status(400).json({
+        success: false,
+        message: "Invalid webhook payload."
+    });
+}
 
     if (status !== 'SUCCESS') {
         return res.status(400).json({
@@ -98,9 +109,8 @@ const {
     try {
 
         const existingLedger = await LedgerEntry.findOne({
-            settlementId: transactionId
-        }).session(session);
-
+    settlementId: normalizedTransactionId
+}).session(session);
         if (existingLedger) {
             await session.commitTransaction();
             session.endSession();
@@ -154,8 +164,8 @@ if (!rider) {
         );
 
         await LedgerEntry.insertMany([
-            {
-                settlementId: transactionId,
+    {
+        settlementId: normalizedTransactionId,
                 entityType: "RIDER",
                 entityId: rider._id,
                 type: "DEBIT",
@@ -165,7 +175,8 @@ if (!rider) {
                     "Digital Top-up via Gateway to clear COD Debt"
             },
             {
-                settlementId: transactionId,
+                
+        settlementId: normalizedTransactionId,
                 entityType: "ADMIN",
                 type: "CREDIT",
                 amount,
