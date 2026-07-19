@@ -275,12 +275,17 @@ orderSchema.statics.buildNextDispatchPayload = function(dispatchQueue, currentIn
     }
 
     return {
-        $set: {
-            currentDispatchIndex: nextIndex,
-            offeredRiderId: nextRiderId ? new mongoose.Types.ObjectId(nextRiderId) : null,
-            offerExpiresAt: nextRiderId ? new Date(Date.now() + 60 * 1000) : null
-        }
-    };
+    $set: {
+        currentDispatchIndex: nextRiderId ? nextIndex : -1,
+        offeredRiderId: nextRiderId
+            ? new mongoose.Types.ObjectId(nextRiderId)
+            : null,
+        offerExpiresAt: nextRiderId
+            ? new Date(Date.now() + 60 * 1000)
+            : null,
+        dispatchQueue: nextRiderId ? dispatchQueue : []
+    }
+};
 };
 
 /**
