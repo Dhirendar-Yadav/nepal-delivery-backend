@@ -192,6 +192,10 @@ restaurantSchema.pre('save', function() {
     if (this.foodTypes && this.foodTypes.length > 0) {
         this.foodTypes = [...new Set(this.foodTypes.map(type => type.toLowerCase().trim()))];
     }
+    // Auto sync primary category
+if ((!this.foodTypes || this.foodTypes.length === 0) && this.foodType) {
+    this.foodTypes = [this.foodType.toLowerCase().trim()];
+}
 
     // ⭐ 5. Strict Rating Math Enforcement
     if (this.totalRatings > 0) {
@@ -219,9 +223,9 @@ restaurantSchema.pre(['findOneAndUpdate', 'updateOne'], async function(next) {
     const update = this.getUpdate();
     
     // 💰 Auto-Increment Wallet Version
-    if (update.$inc && update.$inc['wallet.balance'] !== undefined) {
-        update.$inc.walletVersion = (update.$inc.walletVersion || 0) + 1;
-    }
+    if (update.$inc && update.$inc.walletBalance !== undefined) {
+    update.$inc.walletVersion = (update.$inc.walletVersion || 0) + 1;
+}
     
 
     if (update.$set && Object.keys(update.$set).some(k => k.startsWith('wallet'))) {
@@ -238,13 +242,18 @@ restaurantSchema.pre(['findOneAndUpdate', 'updateOne'], async function(next) {
 
     if (update.$inc) {
         const allowedWalletInc = new Set([
-            'wallet.balance',
-            'wallet.totalEarnings',
-            'wallet.totalSettled'
-        ]);
+    'walletBalance',
+    'totalEarnings',
+    'totalSettled'
+]);
+        const walletFields = [
+    'walletBalance',
+    'totalEarnings',
+    'totalSettled'
+];
 
-        const invalid = Object.keys(update.$inc)
-            .filter(k => k.startsWith('wallet') && !allowedWalletInc.has(k));
+const invalid = Object.keys(update.$inc)
+    .filter(k => walletFields.includes(k) && !allowedWalletInc.has(k));
 
         if (invalid.length) {
             return next(new Error('CRITICAL: Invalid wallet increment field.'));

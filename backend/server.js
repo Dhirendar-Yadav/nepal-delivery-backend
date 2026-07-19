@@ -16,6 +16,12 @@ const hpp = require('hpp');
 const pino = require('pino');
 const path = require('path');
 const paymentWebhookRoutes = require('./routes/paymentWebhookRoutes');
+const {
+    initializeSocket,
+    emitToUser,
+    emitToOrder,
+    emitToRestaurant
+} = require('./services/socketService');
 
 // Models
 const Restaurant = require('./models/Restaurant');
@@ -420,6 +426,7 @@ app.get('/api/orders/:id', authMiddleware, async (req, res, next) => {
 // ==========================================
 const io = new Server(server, { cors: { origin: allowedOrigins } });
 app.set('io', io); // ✨ NEW: Expose IO to routes
+initializeSocket(io);
 
 const riderThrottle = new Map(); 
 
@@ -557,6 +564,3 @@ const shutdown = async () => {
 
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
-
-
-

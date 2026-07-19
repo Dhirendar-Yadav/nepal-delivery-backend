@@ -2,6 +2,7 @@ const Restaurant = require('../models/Restaurant');
 const mongoose = require('mongoose');
 
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const MAX_LIMIT = 50;
 
 /**
  * @description Fetch all discoverable restaurants with Geo-sorting, filtering, and deep menu search.
@@ -101,7 +102,14 @@ exports.getAllRestaurants = async (req, res) => {
 
         // ⚡ 6. LIMIT FOR FAST LOAD (Pagination Base)
         // We limit to 50 for now. Real infinite scroll will use a cursor later.
-        pipeline.push({ $limit: 50 });
+        const limit = Math.min(
+    parseInt(req.query.limit) || 20,
+    MAX_LIMIT
+);
+
+pipeline.push({
+    $limit: limit
+});
 
         const restaurants = await Restaurant.aggregate(pipeline);
         const baseUrl = `${req.protocol}://${req.get('host')}`;

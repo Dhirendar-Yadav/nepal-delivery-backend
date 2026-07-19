@@ -5,9 +5,41 @@ const LedgerEntry = require('../../models/LedgerEntry');
 exports.processRestaurantSettlement = async (req, res) => {
     try {
         const { id } = req.params;
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({
+        success: false,
+        error: "INVALID_RESTAURANT_ID"
+    });
+}
         const { settlementAmount, transactionReference } = req.body; 
-        if (settlementAmount <= 0) return res.status(400).json({ success: false, error: 'Invalid amount' });
+        if (
+    !Number.isFinite(settlementAmount) ||
+    settlementAmount <= 0
+) {
+    return res.status(400).json({
+        success: false,
+        error: "INVALID_SETTLEMENT_AMOUNT"
+    });
+}
+if (
+    typeof transactionReference !== "string" ||
+    transactionReference.trim().length < 3
+) {
+    return res.status(400).json({
+        success: false,
+        error: "INVALID_TRANSACTION_REFERENCE"
+    });
+}
+        const existingSettlement = await LedgerEntry.findOne({
+    settlementId: transactionReference
+});
 
+if (existingSettlement) {
+    return res.status(409).json({
+        success: false,
+        error: "DUPLICATE_SETTLEMENT_REFERENCE"
+    });
+}
         const session = await mongoose.startSession();
         session.startTransaction();
 

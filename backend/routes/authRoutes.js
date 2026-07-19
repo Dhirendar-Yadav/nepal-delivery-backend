@@ -14,6 +14,7 @@ const Restaurant = require('../models/Restaurant');
 // NOTE: Make sure you have a Rider model created in models/Rider.js
 // If not, you will need to create one to store rider-specific details.
 const Rider = require('../models/Rider'); // Added this, assuming you have or will create it
+const { authMiddleware } = require('../middlewares/auth');
 
 // ==========================================
 // 🛡️ MULTER CONFIGURATION (Handles FormData)
@@ -379,26 +380,19 @@ router.post('/login', loginLimiter, async (req, res) => {
 // ✨ NEW: RIDER ONLINE/OFFLINE TOGGLE
 // ==========================================
 // Rider calls this when flipping the "Go Online" switch
-router.put('/rider/status', loginLimiter, async (req, res) => {
+router.put('/rider/status', loginLimiter, authMiddleware, async (req, res) => {
     try {
-        const authHeader = req.header('Authorization');
-        if (!authHeader || !authHeader.startsWith('Bearer ')) return res.status(401).json({ success: false, error: "Unauthorized" });
-
-        const token = authHeader.split(" ")[1];
-        if (!token) return res.status(401).json({ success: false, error: "Unauthorized" });
-
-        const decoded = jwt.verify(token, process.env.JWT_SECRET, {
-            algorithms: ['HS256'],
-            issuer: 'food-samundar',
-            audience: 'user-app'
-        });
-
-        if (decoded.role !== 'Rider') return res.status(403).json({ success: false, error: "Unauthorized" });
+        if (req.user.role !== 'Rider') {
+    return res.status(403).json({
+        success: false,
+        error: "Unauthorized"
+    });
+}
         
         const { isOnline } = req.body; // Expecting { isOnline: true/false }
 
         const user = await User.findByIdAndUpdate(
-            decoded.id, 
+            req.user.id, 
             { isOnline: isOnline, shiftStartTime: isOnline ? new Date() : null }, 
             { new: true }
         );
@@ -412,11 +406,3 @@ router.put('/rider/status', loginLimiter, async (req, res) => {
 });
 
 module.exports = router;
-
-
-
-
-
-
-
-
