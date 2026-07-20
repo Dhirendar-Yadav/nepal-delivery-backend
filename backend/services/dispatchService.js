@@ -1,9 +1,22 @@
 const Order = require('../models/Order');
 const User = require('../models/User');
+const Order = require('../models/Order');
 
 const dispatchService = {
     async triggerAutomatedRiderDispatch(orderId, restaurantLocation, appIoContext) {
         try {
+            const existingOrder = await Order.findById(orderId)
+    .select("assignedRiderId offeredRiderId status")
+    .lean();
+
+if (
+    !existingOrder ||
+    existingOrder.assignedRiderId ||
+    existingOrder.offeredRiderId ||
+    existingOrder.status !== "Ready for Pickup"
+) {
+    return null;
+}
             const closestRiders = await User.find({
                 role: 'Rider',
                 isActive: true,
@@ -28,7 +41,18 @@ const dispatchService = {
                 return null;
             }
 
-            const riderQueueIds = closestRiders.map(r => r._id.toString());
+            const riderQueueIds = [
+    ...new Set(
+        closestRiders
+            .map(r => r?._id?.toString())
+            .filter(id => id && /^[a-f\d]{24}$/i.test(id))
+    )
+];
+
+if (riderQueueIds.length === 0) {
+    console.warn("[DISPATCH] No valid riders remained after queue sanitization.");
+    return null;
+}
             const firstRiderId = riderQueueIds[0];
 
             const updatedOrder = await Order.findOneAndUpdate(

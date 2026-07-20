@@ -270,9 +270,26 @@ orderSchema.statics.buildNextDispatchPayload = function(dispatchQueue, currentIn
     const nextIndex = currentIndex + 1;
     const nextRiderId = dispatchQueue[nextIndex] || null;
 
-    if (nextRiderId && !mongoose.Types.ObjectId.isValid(nextRiderId)) {
-        throw new Error(`Dispatch Invariant Violation: Extracted candidate unit identifier [${nextRiderId}] at queue index [${nextIndex}] fails strict ObjectId parsing rules.`);
-    }
+    // Validate queue integrity before advancing dispatch
+const uniqueRiders = new Set(dispatchQueue.map(id => id?.toString()));
+
+if (uniqueRiders.size !== dispatchQueue.length) {
+    throw new Error(
+        "Dispatch Queue Integrity Violation: Duplicate rider detected inside dispatch queue."
+    );
+}
+
+if (dispatchQueue.some(id => !id)) {
+    throw new Error(
+        "Dispatch Queue Integrity Violation: Null rider detected inside dispatch queue."
+    );
+}
+
+if (nextRiderId && !mongoose.Types.ObjectId.isValid(nextRiderId)) {
+    throw new Error(
+        `Dispatch Invariant Violation: Extracted candidate unit identifier [${nextRiderId}] at queue index [${nextIndex}] fails strict ObjectId parsing rules.`
+    );
+}
 
     return {
     $set: {
@@ -349,6 +366,3 @@ orderSchema.index(
 const Order = mongoose.model('Order', orderSchema);
 
 module.exports = Order;
-
-
-
