@@ -28,10 +28,11 @@ if (
                     { currentActiveOrderId: { $exists: false } }
                 ],
                 currentLocation: {
-                    $near: {
-                        $geometry: restaurantLocation
-                    }
-                }
+    $near: {
+        $geometry: restaurantLocation,
+        $maxDistance: 3000 // 3 KM
+    }
+}
             })
             .select('_id name phone')
             .limit(10)
