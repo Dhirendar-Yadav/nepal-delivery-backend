@@ -1,6 +1,5 @@
 const Order = require('../models/Order');
 const User = require('../models/User');
-const Order = require('../models/Order');
 
 const dispatchService = {
     async triggerAutomatedRiderDispatch(orderId, restaurantLocation, appIoContext) {
@@ -58,10 +57,11 @@ if (riderQueueIds.length === 0) {
 
             const updatedOrder = await Order.findOneAndUpdate(
                 {
-                    _id: orderId,
-                    offeredRiderId: null,
-                    assignedRiderId: null
-                },
+    _id: orderId,
+    status: "Ready for Pickup",
+    offeredRiderId: null,
+    assignedRiderId: null
+},
                 {
                     $set: {
     dispatchQueue: riderQueueIds,
@@ -142,11 +142,14 @@ dispatchService.advanceDispatchQueue = async function (orderId, appIoContext) {
         .populate('customerId', 'name phone')
         .populate('restaurantId', 'name address phone location');
 
-        if (!updatedOrder || !updatedOrder.offeredRiderId) {
+        if (!updatedOrder) {
+    return null;
+}
+
+if (!updatedOrder.offeredRiderId) {
 
     // Queue exhausted -> create a fresh dispatch cycle
     if (
-        updatedOrder &&
         !updatedOrder.assignedRiderId &&
         updatedOrder.status === "Ready for Pickup" &&
         updatedOrder.restaurantId?.location
