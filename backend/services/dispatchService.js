@@ -82,7 +82,10 @@ $push: {
                 }
             )
             .populate('customerId', 'name phone')
-            .populate('restaurantId', 'name address phone');
+            .populate(
+    'restaurantId',
+    'name address phone location'
+);
 
             if (updatedOrder && appIoContext) {
                 appIoContext
@@ -102,7 +105,7 @@ dispatchService.advanceDispatchQueue = async function (orderId, appIoContext) {
         const order = await Order.findById(orderId)
             .select('dispatchQueue currentDispatchIndex offeredRiderId assignedRiderId')
             .populate('customerId', 'name phone')
-            .populate('restaurantId', 'name address phone');
+            .populate('restaurantId', 'name address phone location');
 
         if (!order || order.assignedRiderId) {
             return null;
@@ -137,11 +140,26 @@ dispatchService.advanceDispatchQueue = async function (orderId, appIoContext) {
             }
         )
         .populate('customerId', 'name phone')
-        .populate('restaurantId', 'name address phone');
+        .populate('restaurantId', 'name address phone location');
 
         if (!updatedOrder || !updatedOrder.offeredRiderId) {
-            return null;
-        }
+
+    // Queue exhausted -> create a fresh dispatch cycle
+    if (
+        updatedOrder &&
+        !updatedOrder.assignedRiderId &&
+        updatedOrder.status === "Ready for Pickup" &&
+        updatedOrder.restaurantId?.location
+    ) {
+        return await dispatchService.triggerAutomatedRiderDispatch(
+            updatedOrder._id,
+            updatedOrder.restaurantId.location,
+            appIoContext
+        );
+    }
+
+    return null;
+}
 
         if (appIoContext) {
             appIoContext
