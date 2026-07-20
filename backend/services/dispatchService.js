@@ -90,11 +90,12 @@ dispatchService.advanceDispatchQueue = async function (orderId, appIoContext) {
 
         const updatedOrder = await Order.findOneAndUpdate(
             {
-                _id: orderId,
-                assignedRiderId: null,
-                offeredRiderId: order.offeredRiderId,
-                currentDispatchIndex: order.currentDispatchIndex
-            },
+    _id: orderId,
+    status: "Ready for Pickup",
+    assignedRiderId: null,
+    offeredRiderId: order.offeredRiderId,
+    currentDispatchIndex: order.currentDispatchIndex
+},
             {
     ...payload,
     $push: {
