@@ -550,15 +550,18 @@ exports.completeOrder = async (req, res) => {
         }
 
         // STEP 3: Validate financial breakdown using model helper
-        const financialStatus = Order.validateFinancialBreakdown({
-            foodCost: order.foodCost,
-            deliveryFee: order.deliveryFee,
-            platformFee: 0,
-            taxAmount: order.taxAmount,
-            discountAmount: order.discountAmount,
-            totalAmount: order.totalAmount
-        });
-
+        const financialStatus = Order.validateFinancialBreakdown(
+{
+    foodCost: order.foodCost,
+    deliveryFee: order.deliveryFee,
+    platformFee: order.platformFee,
+    taxAmount: order.taxAmount,
+    discountAmount: order.discountAmount,
+    totalAmount: order.totalAmount
+},
+{
+    includePlatformFee: false
+});
         if (!financialStatus.valid) {
             console.error(`Financial validation failed - Order: ${orderId}, Delta: ${financialStatus.delta}`);
             await session.abortTransaction();
@@ -703,7 +706,6 @@ exports.completeOrder = async (req, res) => {
 ];
 
 await LedgerEntry.insertMany(ledgerEntries, { session });
-        await LedgerEntry.insertMany(ledgerEntries, { session });
 
         // STEP 7: Update rider wallet
         const updatedRiderProfile = await RiderProfile.findOneAndUpdate(

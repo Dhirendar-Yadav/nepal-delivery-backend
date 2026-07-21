@@ -130,9 +130,6 @@ const orderSchema = new mongoose.Schema({
     }, 
     processingStartedAt: { type: Date },
     completedAt: { type: Date, default: null, index: true },
-    processingLock: { type: Boolean, default: false, index: true },
-    processingOwner: { type: String, default: null, index: true },
-    processingVersion: { type: Number, default: 0 },
     otpAttempts: { type: Number, default: 0, min: 0 }, 
     
     // Secure OTP Infrastructure Tokens
@@ -356,7 +353,15 @@ orderSchema.index(
     { customerId: 1, clientOrderId: 1 }, 
     { unique: true, partialFilterExpression: { clientOrderId: { $type: "string" } } }
 );
-
+orderSchema.index(
+    { settlementId: 1 },
+    {
+        unique: true,
+        partialFilterExpression: {
+            settlementId: { $type: "string" }
+        }
+    }
+);
 // Multi-Gateway Tenant Isolation Indexing
 orderSchema.index(
     { paymentProvider: 1, paymentReference: 1 },
