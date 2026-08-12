@@ -458,7 +458,16 @@ app.get('/api/orders/:id', authMiddleware, async (req, res, next) => {
             return res.status(404).json({ success: false, error: 'ORDER_NOT_FOUND' });
         }
 
-        return res.json({ success: true, order });
+        const responseOrder = { ...order };
+
+if (responseOrder.status !== 'Out for Delivery') {
+    delete responseOrder.deliveryOTP;
+}
+
+return res.json({
+    success: true,
+    order: responseOrder
+});
     } catch (err) {
         next(err);
     }
