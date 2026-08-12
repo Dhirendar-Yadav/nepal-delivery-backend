@@ -1,57 +1,115 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import Home from './Home';
-import Menu from './Menu';
-import Dashboard from './Dashboard';
-import Checkout from './Checkout'; 
-import Login from './Login';                
-import Signup from './Signup';              
-import SellerSignup from './SellerSignup'; 
-import { CartProvider } from './cart/CartContext';
-// ✨ NAYE RIDER IMPORTS 
-import RiderSignup from './RiderSignup';
-import RiderDashboard from './pages/rider/RiderDashboard'; 
-// 👑 ADMIN & SECRET IMPORTS
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+
+import { CartProvider } from "./cart/CartContext";
+
+import Home from "./Home";
+import Menu from "./Menu";
+import Checkout from "./Checkout";
+
+import Login from "./Login";
+import Signup from "./Signup";
+import SellerSignup from "./SellerSignup";
+import RiderSignup from "./RiderSignup";
+
+import Dashboard from "./Dashboard";
+import RiderDashboard from "./pages/rider/RiderDashboard";
 import AdminDashboard from "./pages/admin/AdminDashboard";
+import CustomerLayout from "./layouts/CustomerLayout";
+
+import SearchPage from "./pages/customer/SearchPage";
+import CustomerOrders from "./pages/customer/CustomerOrders";
 
 function App() {
-  return (
-    <CartProvider>
-      <Router>
-        <Routes>
-        {/* 1. Home Page: List of all restaurants */}
-        <Route path="/" element={<Home />} />
+    return (
+        <CartProvider>
+            <Router>
 
-        {/* 2. Menu Page: Displays food items for a specific restaurant */}
-        <Route path="/menu/:id" element={<Menu />} />
+                <Routes>
 
-        {/* 3. Dashboard Page: Seller panel to manage menu items */}
-        <Route path="/dashboard" element={<Dashboard />} />
+                    {/* ---------------- CUSTOMER LAYOUT ---------------- */}
 
-        {/* 4. Checkout Page: Map and Delivery details selector */}
-        <Route path="/checkout" element={<Checkout />} />
+                   <Route element={<CustomerLayout />}>
 
-        {/* 5. 🚀 MASTER LOGIN: Admin, Rider, Seller, ra Customer sabaiko lagi eutai rasta */}
-        <Route path="/login" element={<Login />} />
+    <Route
+        path="/"
+        element={<Home />}
+    />
 
-        {/* 6. Customer Signup Page: For ordering food */}
-        <Route path="/signup" element={<Signup />} />
+    <Route
+        path="/search"
+        element={<SearchPage />}
+    />
 
-        {/* 7. Seller Signup Page: For restaurant owners */}
-        <Route path="/seller/signup" element={<SellerSignup />} />
+    <Route
+        path="/orders"
+        element={<CustomerOrders />}
+    />
 
-        {/* 9. ✨ Rider Routes: Delivery partners ko lagi naya setup */}
-        <Route path="/rider/signup" element={<RiderSignup />} />
-        <Route path="/rider/dashboard" element={<RiderDashboard />} /> 
+</Route>
 
-        {/* 10. 🕵️‍♂️ SECRET ADMIN ROUTES (Dhiru Special) */}
-        {/* Aba Admin le pani sidhai /login bata login garchhan, login pachi Dashboard khulcha */}
-        <Route path="/admin-dhiru-portal-99" element={<AdminDashboard />} /> 
-        {/* Fallback Route */}
-        <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </Router>
-    </CartProvider>
-  );
+                    {/* ---------------- MENU ---------------- */}
+
+                    <Route
+                        path="/menu/:id"
+                        element={<Menu />}
+                    />
+
+                    <Route
+                        path="/checkout"
+                        element={<Checkout />}
+                    />
+
+                    {/* ---------------- AUTH ---------------- */}
+
+                    <Route
+                        path="/login"
+                        element={<Login />}
+                    />
+
+                    <Route
+                        path="/signup"
+                        element={<Signup />}
+                    />
+
+                    <Route
+                        path="/seller/signup"
+                        element={<SellerSignup />}
+                    />
+
+                    <Route
+                        path="/rider/signup"
+                        element={<RiderSignup />}
+                    />
+
+                    {/* ---------------- DASHBOARDS ---------------- */}
+
+                    <Route
+                        path="/dashboard"
+                        element={<Dashboard />}
+                    />
+
+                    <Route
+                        path="/rider/dashboard"
+                        element={<RiderDashboard />}
+                    />
+
+                    <Route
+                        path="/admin-dhiru-portal-99"
+                        element={<AdminDashboard />}
+                    />
+
+                    {/* ---------------- FALLBACK ---------------- */}
+
+                    <Route
+                        path="*"
+                        element={<Navigate to="/" replace />}
+                    />
+
+                </Routes>
+
+            </Router>
+        </CartProvider>
+    );
 }
 
 export default App;

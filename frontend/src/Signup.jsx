@@ -36,7 +36,11 @@ function Signup() {
         } catch {
           data = {};
         }
-        alert(data.message || "Signup failed. Please try again.");
+        alert(
+    data.message ||
+    data.error ||
+    JSON.stringify(data)
+);
       }
     } catch (err) { 
       console.error("Signup error:", err); 

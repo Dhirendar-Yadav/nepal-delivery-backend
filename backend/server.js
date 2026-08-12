@@ -373,7 +373,58 @@ if (paymentMethod === 'ONLINE') {
         }
     }
 });
+app.get('/api/orders', authMiddleware, async (req, res, next) => {
+    try {
 
+        const orders = await Order.find({
+    customerId: req.user.id
+})
+.populate('restaurantId', 'name image address')
+.populate('assignedRiderId', 'name phone bikeNumber')
+.select(`
+    _id
+    items
+    status
+    totalAmount
+    foodCost
+    deliveryFee
+    paymentMethod
+    paymentStatus
+    deliveryOTP
+    createdAt
+    completedAt
+    deliveryDetails
+    restaurantId
+    assignedRiderId
+    statusHistory
+`)
+.sort({ createdAt: -1 })
+.lean();
+
+        const activeOrders = orders.filter(order =>
+    ![
+        "Delivered",
+        "Cancelled"
+    ].includes(order.status)
+);
+
+const historyOrders = orders.filter(order =>
+    [
+        "Delivered",
+        "Cancelled"
+    ].includes(order.status)
+);
+
+return res.json({
+    success: true,
+    activeOrders,
+    historyOrders
+});
+
+    } catch (err) {
+        next(err);
+    }
+});
 app.get('/api/orders/:id', authMiddleware, async (req, res, next) => {
     try {
         if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
@@ -386,14 +437,24 @@ app.get('/api/orders/:id', authMiddleware, async (req, res, next) => {
 })
 .select(`
     _id
+    items
     status
     statusUpdatedAt
     statusHistory
-    assignedRiderId
+    totalAmount
+    foodCost
+    deliveryFee
+    paymentMethod
+    paymentStatus
     deliveryOTP
     createdAt
+    completedAt
+    deliveryDetails
+    assignedRiderId
+    restaurantId
 `)
 .populate('assignedRiderId', 'name phone bikeNumber')
+.populate('restaurantId', 'name image address')
 .lean();
 
         if (!order) {

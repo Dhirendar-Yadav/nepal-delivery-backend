@@ -299,7 +299,8 @@ function Checkout() {
         body: JSON.stringify({
           restaurantId,
           items: formattedItems, 
-          clientOrderId: attempt.attemptId,        
+          clientOrderId: attempt.attemptId, 
+          paymentMethod,       
           totalAmount: grandTotal,
           deliveryFee: deliveryFee, 
           deliveryDetails: { address, phone: safePhone, latitude: position[0], longitude: position[1] }

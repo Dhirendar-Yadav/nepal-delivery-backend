@@ -121,7 +121,10 @@ const orderSchema = new mongoose.Schema({
     }, 
     paymentReference: { type: String, default: null },
     clientOrderId: { type: String, default: null },
-    settlementId: { type: String, default: null, index: true },
+    settlementId:{
+type:String,
+default:null
+},
     settlementStatus: {
         type: String,
         enum: ['PENDING','COMPLETED','FAILED','REVERSED'],
@@ -133,8 +136,8 @@ const orderSchema = new mongoose.Schema({
     otpAttempts: { type: Number, default: 0, min: 0 }, 
     
     // Secure OTP Infrastructure Tokens
-    deliveryOTP: { type: String, default: null }, 
-    deliveryOTPExpiresAt: { type: Date, default: null }, 
+deliveryOTP: { type: String, default: null },
+deliveryOTPExpiresAt: { type: Date, default: null },
     
     // --- 📍 Logistics & Geolocation Metadata ---
     deliveryDetails: {

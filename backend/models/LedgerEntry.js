@@ -54,7 +54,11 @@ const ledgerEntrySchema = new mongoose.Schema({
 // 🚫 Prevent duplicate ledger entries for the same entity in a single settlement
 ledgerEntrySchema.index(
     { settlementId: 1, entityType: 1, entityId: 1, type: 1 },
-    { unique: true, partialFilterExpression: { entityId: { $ne: null } } }
+    { unique: true, partialFilterExpression: {
+    entityId: {
+        $type: "objectId"
+    }
+} }
 ); 
 
 // 📊 Fast Queries for Wallet History & Dashboards
