@@ -26,9 +26,9 @@ function Dashboard() {
     const token = localStorage.getItem('token');
     
     if (role !== 'Seller' || !token) {
-      navigate('/seller/login');
-      return;
-    }
+  navigate('/login');
+  return;
+}
 
     // Initialize Audio Objects ONCE
     newOrderSoundRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3');
@@ -249,9 +249,9 @@ socketRef.current = io(API_BASE, {
 };
 
   const handleLogout = () => {
-    localStorage.clear(); 
-    navigate('/seller/login');
-  };
+  localStorage.clear(); 
+  navigate('/login');
+};
 
   return (
     <div className="min-h-screen bg-gray-900 text-white font-sans pb-20">
