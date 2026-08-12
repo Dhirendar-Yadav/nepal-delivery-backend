@@ -381,8 +381,7 @@ app.get('/api/orders', authMiddleware, async (req, res, next) => {
 })
 .populate('restaurantId', 'name image address')
 .populate('assignedRiderId', 'name phone bikeNumber')
-.select(`
-    _id
+.select(`    _id
     items
     status
     totalAmount
@@ -390,14 +389,12 @@ app.get('/api/orders', authMiddleware, async (req, res, next) => {
     deliveryFee
     paymentMethod
     paymentStatus
-    deliveryOTP
     createdAt
     completedAt
     deliveryDetails
     restaurantId
     assignedRiderId
-    statusHistory
-`)
+    statusHistory`)
 .sort({ createdAt: -1 })
 .lean();
 
