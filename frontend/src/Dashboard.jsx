@@ -5,6 +5,7 @@ import { io } from 'socket.io-client';
 function Dashboard() {
   const navigate = useNavigate();
   const restaurantName = localStorage.getItem('userName') || "My Restaurant";
+  const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5005";
 
   const [orders, setOrders] = useState([]);
   const [myItems, setMyItems] = useState([]);
@@ -37,9 +38,6 @@ function Dashboard() {
     if ("Notification" in window) {
       Notification.requestPermission();
     }
-
-    // 🚀 CHATGPT FIX: Initialize Socket ONCE
-    const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5005";
 
 socketRef.current = io(API_BASE, {
   auth: { token },
