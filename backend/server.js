@@ -17,7 +17,6 @@ const hpp = require('hpp');
 const pino = require('pino');
 const path = require('path');
 const { authMiddleware } = require('./middlewares/auth');
-const paymentWebhookRoutes = require('./routes/paymentWebhookRoutes');
 const {
     initializeSocket,
     emitToUser,
@@ -76,10 +75,6 @@ app.use(helmet({
 
 // 📁 FIX: Expose the uploads folder to the frontend so images don't get blocked
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-app.use(
-    '/api/payment',
-    paymentWebhookRoutes
-);
 // ✅ Data Parsers
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
@@ -591,10 +586,6 @@ app.use('/api/restaurants', require('./routes/restaurantRoutes'));
 
 // ✨ FIX: Routed the customer menu request to the same restaurant routes file
 app.use('/api/menu', require('./routes/restaurantRoutes'));
-
-// ?? Payment Gateway Routes
-app.use('/api/payment', require('./routes/paymentRoutes'));
-app.use('/api/customer-payment', require('./routes/customerPaymentRoutes'));
 
 // Centralized Error Handler
 app.use((err, req, res, next) => {
