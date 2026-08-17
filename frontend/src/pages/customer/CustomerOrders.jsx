@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../../context/AuthContext";
+import { useAuth } from "../../hooks/useAuth";
 import OrderCard from "../../components/customer/OrderCard";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5005";
@@ -12,14 +12,9 @@ function CustomerOrders() {
     const [historyOrders, setHistoryOrders] = useState([]);
 
     const navigate = useNavigate();
-    const { token, loading: authLoading, logout } = useAuth();
+    const { isAuthenticated, loading: authLoading, logout } = useAuth();
 
-    useEffect(() => {
-    if (!authLoading && token) {
-        fetchOrders();
-    }
-}, [authLoading, token]);
-    const fetchOrders = async () => {
+    const fetchOrders = useCallback(async () => {
         try {
             setLoading(true);
             setError("");
@@ -28,16 +23,14 @@ function CustomerOrders() {
     return;
 }
 
-if (!token) {
+if (!isAuthenticated) {
     navigate("/login", { replace: true });
     return;
 }
 
             const response = await fetch(`${API_BASE}/api/orders`, {
-                headers: {
-                    Authorization: `Bearer ${token}`
-                }
-            });
+    credentials: 'include'
+});
 
             const data = await response.json();
 
@@ -68,7 +61,13 @@ if (!token) {
         } finally {
             setLoading(false);
         }
-    };
+    }, [authLoading, isAuthenticated, navigate, logout]);
+
+    useEffect(() => {
+        if (!authLoading && isAuthenticated) {
+            fetchOrders();
+        }
+    }, [authLoading, isAuthenticated, fetchOrders]);
 if (authLoading) {
     return (
         <div className="min-h-screen flex items-center justify-center">

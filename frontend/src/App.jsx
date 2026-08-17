@@ -1,30 +1,32 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 
-import { CartProvider } from "./cart/CartContext";
+import { CartProvider } from "./cart/CartContext.jsx";
 
-import Home from "./Home";
-import Menu from "./Menu";
-import Checkout from "./Checkout";
+const Home = lazy(() => import("./Home"));
+const Menu = lazy(() => import("./Menu"));
+const Checkout = lazy(() => import("./Checkout"));
 
-import Login from "./Login";
-import Signup from "./Signup";
-import SellerSignup from "./SellerSignup";
-import RiderSignup from "./RiderSignup";
+const Login = lazy(() => import("./Login"));
+const Signup = lazy(() => import("./Signup"));
+const SellerSignup = lazy(() => import("./SellerSignup"));
+const RiderSignup = lazy(() => import("./RiderSignup"));
 
-import Dashboard from "./Dashboard";
-import RiderDashboard from "./pages/rider/RiderDashboard";
-import AdminDashboard from "./pages/admin/AdminDashboard";
-import CustomerLayout from "./layouts/CustomerLayout";
+const Dashboard = lazy(() => import("./Dashboard"));
+const RiderDashboard = lazy(() => import("./pages/rider/RiderDashboard"));
+const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
+const CustomerLayout = lazy(() => import("./layouts/CustomerLayout"));
 
-import SearchPage from "./pages/customer/SearchPage";
-import CustomerOrders from "./pages/customer/CustomerOrders";
+const SearchPage = lazy(() => import("./pages/customer/SearchPage"));
+const CustomerOrders = lazy(() => import("./pages/customer/CustomerOrders"));
 
 function App() {
     return (
-        <CartProvider>
+                <CartProvider>
             <Router>
 
-                <Routes>
+                <Suspense fallback={null}>
+                    <Routes>
 
                     {/* ---------------- CUSTOMER LAYOUT ---------------- */}
 
@@ -105,7 +107,8 @@ function App() {
                         element={<Navigate to="/" replace />}
                     />
 
-                </Routes>
+                    </Routes>
+                </Suspense>
 
             </Router>
         </CartProvider>

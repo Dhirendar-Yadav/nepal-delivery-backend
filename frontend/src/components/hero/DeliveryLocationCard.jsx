@@ -1,5 +1,5 @@
 import { MapPin } from "lucide-react";
-import { useLocation } from "../../context/LocationContext";
+import { useLocation } from "../../hooks/useLocation";
 
 function DeliveryLocationCard() {
 

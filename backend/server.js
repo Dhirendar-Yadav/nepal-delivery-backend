@@ -6,12 +6,13 @@ const PORT = process.env.PORT || 5005;
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const cookieParser = require('cookie-parser');
 const http = require('http');
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
 const { v4: uuidv4 } = require('uuid');
-const helmet = require('helmet'); 
+const helmet = require('helmet');
 const hpp = require('hpp');
 const pino = require('pino');
 const path = require('path');
@@ -37,7 +38,7 @@ const startDispatchMonitor = require('./services/dispatchMonitor');
 const { VALID_TRANSITIONS } = require('./constants/orderConstants');
 
 const app = express();
-app.disable('x-powered-by'); 
+app.disable('x-powered-by');
 const server = http.createServer(app);
 
 const requiredEnv = [
@@ -80,14 +81,15 @@ app.use(
     paymentWebhookRoutes
 );
 // ✅ Data Parsers
-app.use(express.json({ limit: '10kb' })); 
-app.use(express.urlencoded({ extended: true, limit: '10kb' })); 
+app.use(express.json({ limit: '10kb' }));
+app.use(express.urlencoded({ extended: true, limit: '10kb' }));
+app.use(cookieParser());
 
 // ✅ Parameter Pollution Guard
-app.use(hpp()); 
+app.use(hpp());
 
 // 🛡️ FIX: Added localhost:5173 to allow frontend connections
-const allowedOrigins = [process.env.FRONTEND_URL, 'http://localhost:3000', 'http://localhost:5173']; 
+const allowedOrigins = [process.env.FRONTEND_URL, 'http://localhost:3000', 'http://localhost:5173'];
 app.use(cors({
     origin: (origin, callback) => {
         if (!origin || allowedOrigins.includes(origin)) callback(null, true);
@@ -99,8 +101,8 @@ app.use(cors({
 // 🛡️ Request Context Binding
 app.use((req, res, next) => {
     req.requestId = req.header('x-request-id') || uuidv4();
-    req.log = logger.child({ requestId: req.requestId }); 
-    
+    req.log = logger.child({ requestId: req.requestId });
+
     const start = Date.now();
     res.on('finish', () => {
         req.log.info({
@@ -143,10 +145,10 @@ app.patch('/api/admin/orders/:id/status', authMiddleware, async (req, res) => {
 
         // Verify if the transition is allowed by the CEO Guard
         if (!VALID_TRANSITIONS[currentStatus].includes(nextStatus)) {
-            return res.status(400).json({ 
-                success: false, 
+            return res.status(400).json({
+                success: false,
                 error: 'INVALID_STATUS_TRANSITION',
-                message: `Error: Cannot move from ${currentStatus} to ${nextStatus}. System protocol violation.` 
+                message: `Error: Cannot move from ${currentStatus} to ${nextStatus}. System protocol violation.`
             });
         }
 
@@ -253,8 +255,8 @@ if (restaurant.isPaused) {
                 throw { status: 400, code: 'INVALID_DELIVERY_COORDINATES' };
             }
 
-            const dbItems = await MenuItem.find({ 
-                _id: { $in: Array.from(itemMap.keys()) }, 
+            const dbItems = await MenuItem.find({
+                _id: { $in: Array.from(itemMap.keys()) },
                 restaurantId,
                 isAvailable: true,
                 isDeleted: false
@@ -267,13 +269,13 @@ if (restaurant.isPaused) {
                 const qty = itemMap.get(dbItem._id.toString());
                 const itemPriceInteger = Math.round(dbItem.price); // Ensure integer format for strict schema
                 computedFoodCost += itemPriceInteger * qty;
-                
+
                 // ✨ FIX: Sending price directly inside items array to stop Mongoose crash
-                return { 
-                    menuItemId: dbItem._id, 
-                    name: dbItem.name, 
-                    price: itemPriceInteger, 
-                    quantity: qty 
+                return {
+                    menuItemId: dbItem._id,
+                    name: dbItem.name,
+                    price: itemPriceInteger,
+                    quantity: qty
                 };
             });
 
@@ -317,16 +319,16 @@ if (paymentMethod === 'ONLINE') {
 }
 
             const newOrder = new Order({
-                customerId: req.user.id, 
-                restaurantId, 
+                customerId: req.user.id,
+                restaurantId,
                 items: normalizedItems,
                 totalAmount: finalTotalAmount,
-                foodCost: computedFoodCost, 
+                foodCost: computedFoodCost,
                 deliveryFee: finalDeliveryFee,
                 platformFee,
-                deliveryDetails, 
-                clientOrderId, 
-                status: 'Pending', 
+                deliveryDetails,
+                clientOrderId,
+                status: 'Pending',
                 statusHistory: [{
                     from: 'Pending',
                     to: 'Pending',
@@ -341,7 +343,7 @@ if (paymentMethod === 'ONLINE') {
             });
 
             await newOrder.save({ session, maxTimeMS: 2000 });
-            await session.commitTransaction(); 
+            await session.commitTransaction();
             session.endSession();
 
             // ✨ CEO LIVE ORDER FEATURE: Emit to restaurant's socket room
@@ -480,7 +482,7 @@ const io = new Server(server, { cors: { origin: allowedOrigins } });
 app.set('io', io); // ✨ NEW: Expose IO to routes
 initializeSocket(io);
 
-const riderThrottle = new Map(); 
+const riderThrottle = new Map();
 
 const gcThrottle = setInterval(() => {
     const now = Date.now();
@@ -490,13 +492,35 @@ const gcThrottle = setInterval(() => {
 }, 60000);
 
 io.use((socket, next) => {
-    const token = socket.handshake.auth?.token;
+    const authToken = socket.handshake.auth?.token;
+
+    const cookieHeader = socket.handshake.headers?.cookie || '';
+    const cookieToken = cookieHeader
+        .split(';')
+        .map(part => part.trim())
+        .find(part => part.startsWith('access_token='))
+        ?.slice('access_token='.length);
+
+    const token = authToken || cookieToken;
+
     if (!token) return next(new Error('No token provided'));
+
     try {
-        socket.user = jwt.verify(token, process.env.JWT_SECRET, { issuer: 'food-samundar', audience: 'user-app' });
+        socket.user = jwt.verify(
+    token,
+    process.env.JWT_SECRET,
+    {
+        algorithms: ['HS256'],
+        issuer: 'food-samundar',
+        audience: 'user-app'
+    }
+);
+
         socket.joinCount = 0;
         next();
-    } catch { next(new Error('Auth failed')); }
+    } catch {
+        next(new Error('Auth failed'));
+    }
 });
 
 io.on('connection', (socket) => {
@@ -557,13 +581,13 @@ app.use('/api/kyc', require('./routes/kycRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
 
 // 🚀 FIX APPLIED HERE: The Rider Routes were entirely missing!
-app.use('/api/rider', require('./routes/riderRoutes')); 
+app.use('/api/rider', require('./routes/riderRoutes'));
 
 // ✨ ADDED: Seller route integration pointing to your existing restaurantRoutes file
-app.use('/api/seller', require('./routes/restaurantRoutes')); 
+app.use('/api/seller', require('./routes/restaurantRoutes'));
 
 // ✨ Integrated the Zomato-grade Restaurant & Search API (For Customer app)
-app.use('/api/restaurants', require('./routes/restaurantRoutes')); 
+app.use('/api/restaurants', require('./routes/restaurantRoutes'));
 
 // ✨ FIX: Routed the customer menu request to the same restaurant routes file
 app.use('/api/menu', require('./routes/restaurantRoutes'));
@@ -606,7 +630,7 @@ mongoose.connect(process.env.MONGO_URI, { maxPoolSize: 50, serverSelectionTimeou
 const shutdown = async () => {
     logger.info({ event: 'SHUTDOWN_INITIATED' });
     clearInterval(gcThrottle);
-    await new Promise(resolve => io.close(resolve)); 
+    await new Promise(resolve => io.close(resolve));
     server.close(async () => {
         await mongoose.connection.close();
         logger.info({ event: 'SHUTDOWN_COMPLETE' });

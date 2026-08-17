@@ -1,24 +1,24 @@
-import { createContext, useContext, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
-const LocationContext = createContext(null);
+import { LocationContext } from "./LocationContext";
 
 export function LocationProvider({ children }) {
     const [location, setLocation] = useState(null);
     const [permission, setPermission] = useState("unknown");
 
-    const updateLocation = (coords) => {
+    const updateLocation = useCallback((coords) => {
         setLocation(coords);
         setPermission("granted");
-    };
+    }, []);
 
-    const denyLocation = () => {
+    const denyLocation = useCallback(() => {
         setPermission("denied");
-    };
+    }, []);
 
-    const clearLocation = () => {
+    const clearLocation = useCallback(() => {
         setLocation(null);
         setPermission("unknown");
-    };
+    }, []);
 
     const value = useMemo(
         () => ({
@@ -28,7 +28,7 @@ export function LocationProvider({ children }) {
             denyLocation,
             clearLocation,
         }),
-        [location, permission]
+        [location, permission, updateLocation, denyLocation, clearLocation]
     );
 
     return (
@@ -36,14 +36,4 @@ export function LocationProvider({ children }) {
             {children}
         </LocationContext.Provider>
     );
-}
-
-export function useLocation() {
-    const context = useContext(LocationContext);
-
-    if (!context) {
-        throw new Error("useLocation must be used inside LocationProvider");
-    }
-
-    return context;
 }

@@ -1,9 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { useAuth } from './hooks/useAuth';
 import { io } from 'socket.io-client';
 
 function Dashboard() {
   const navigate = useNavigate();
+  const { isAuthenticated, loading: authLoading } = useAuth();
   const restaurantName = localStorage.getItem('userName') || "My Restaurant";
   const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5005";
 
@@ -14,18 +16,73 @@ function Dashboard() {
   const [itemDescription, setItemDescription] = useState('');
   const [restaurant, setRestaurant] = useState(null);
   const [updatingStoreStatus, setUpdatingStoreStatus] = useState(false);
-  
-  // 🚀 CHATGPT FIX: Use useRef for Socket and Audio to prevent memory leaks and infinite loops
+
+  // 🚀 Fix: Use useRef for Socket and Audio to prevent memory leaks and infinite loops
   const socketRef = useRef(null);
   const newOrderSoundRef = useRef(null);
   const riderAssignedSoundRef = useRef(null);
   const hasJoinedRoom = useRef(false); // To prevent multiple room joins
 
+  const fetchOrders = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/seller/orders`, {
+        credentials: 'include'
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        setOrders(data.data || []);
+      } else {
+        console.error("Orders 400 Error:", data.error || "Restaurant Not Linked");
+      }
+    } catch (err) {
+      console.error("Order fetch error:", err);
+    }
+  }, [API_BASE]);
+
+  const fetchMyMenu = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/seller/menu`, {
+        credentials: 'include'
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setMyItems(data);
+      } else {
+        console.error("Menu 400 Error:", data.error || "Restaurant Not Linked");
+      }
+    } catch (error) {
+      console.error("Menu fetch error:", error);
+    }
+  }, [API_BASE]);
+
+  const fetchRestaurant = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/seller/store`, {
+        credentials: 'include'
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setRestaurant(data.restaurant);
+      } else {
+        console.error(data);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  }, [API_BASE]);
+
   useEffect(() => {
     const role = localStorage.getItem('userRole');
-    const token = localStorage.getItem('token');
-    
-    if (role !== 'Seller' || !token) {
+
+if (authLoading) return;
+
+if (role !== 'Seller' || !isAuthenticated) {
   navigate('/login');
   return;
 }
@@ -33,49 +90,59 @@ function Dashboard() {
     // Initialize Audio Objects ONCE
     newOrderSoundRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3');
     riderAssignedSoundRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
-    
+
     // Ask for Browser Notification Permission
     if ("Notification" in window) {
       Notification.requestPermission();
     }
 
 socketRef.current = io(API_BASE, {
-  auth: { token },
+  withCredentials: true,
   transports: ["websocket"]
 });
 
-    fetchOrders(token);
-    fetchMyMenu(token);
-    fetchRestaurant(token);
+    setTimeout(() => {
+      fetchOrders();
+    }, 0);
+
+    setTimeout(() => {
+      fetchMyMenu();
+    }, 0);
+
+    setTimeout(() => {
+      fetchRestaurant();
+    }, 0);
 
     socketRef.current.on('newLiveOrder', (newOrder) => {
       console.log("🔥 New Order Received:", newOrder);
-      // 🚀 CHATGPT FIX: Functional State Update
+      // 🚀 Fix: Functional State Update
       setOrders((prevOrders) => [newOrder, ...prevOrders]);
-      
-      // 🚀 CHATGPT FIX: Removed blocking alert(), using native Notification
+
+      // 🚀 Fix: Removed blocking alert(), using native Notification
       if (Notification.permission === "granted") {
         new Notification(`🛎️ NEW ORDER!`, { body: `Customer: ${newOrder.customerId?.name || 'Guest'}` });
       }
 
       try {
         newOrderSoundRef.current.play();
-      } catch (e) { console.log("Sound play blocked by browser"); }
+      } catch {
+        console.log("Sound play blocked by browser");
+      }
     });
 
     socketRef.current.on('orderAssignedToRider', (data) => {
       console.log("🛵 Rider Assigned:", data);
-      
+
       setOrders((prevOrders) => prevOrders.map(order => {
         if (order._id === data.orderId) {
-          return { 
-            ...order, 
-            assignedRiderId: { 
-              name: data.riderName, 
-              phone: data.riderPhone, 
+          return {
+            ...order,
+            assignedRiderId: {
+              name: data.riderName,
+              phone: data.riderPhone,
               bikeNumber: data.riderBike,
-              distance: data.distance 
-            } 
+              distance: data.distance
+            }
           };
         }
         return order;
@@ -83,7 +150,9 @@ socketRef.current = io(API_BASE, {
 
       try {
         riderAssignedSoundRef.current.play();
-      } catch (e) { console.log("Sound play blocked by browser"); }
+      } catch {
+        console.log("Sound play blocked by browser");
+      }
     });
 
     socketRef.current.on('connect', () => console.log("🛰️ Connected to Live Server"));
@@ -96,9 +165,9 @@ socketRef.current = io(API_BASE, {
             socketRef.current.disconnect();
         }
     };
-  }, [navigate]);
+  }, [navigate, authLoading, isAuthenticated, fetchOrders, fetchMyMenu, fetchRestaurant, API_BASE]);
 
-  // 🚀 CHATGPT FIX: Stable Room Joiner Logic
+  // 🚀 Fix: Stable Room Joiner Logic
   useEffect(() => {
     if (socketRef.current && !hasJoinedRoom.current) {
       let activeRestId = null;
@@ -113,91 +182,46 @@ socketRef.current = io(API_BASE, {
     }
   }, [orders, myItems]);
 
-  const fetchOrders = async (token) => {
-    try {
-      const res = await fetch(`${API_BASE}/api/seller/orders`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setOrders(data.data || []);
-      } else {
-        console.error("Orders 400 Error:", data.error || "Restaurant Not Linked");
-      }
-    } catch (err) { console.error("Order fetch error:", err); }
-  };
-
   const updateOrderStatus = async (orderId, newStatus) => {
-    const token = localStorage.getItem('token');
-    try {
-      const res = await fetch(`${API_BASE}/api/seller/orders/${orderId}/status`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ status: newStatus })
-      });
-      if (res.ok) {
-        // 🚀 CHATGPT FIX: Functional State Update to prevent stale data
-        setOrders(prevOrders => prevOrders.map(order => 
-            order._id === orderId ? { ...order, status: newStatus } : order
-        ));
-      }
-    } catch (err) { console.error("Failed to update status."); }
-  };
-
-  const fetchMyMenu = async (token) => {
-    try {
-      const response = await fetch(`${API_BASE}/api/seller/menu`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await response.json();
-      if (response.ok) {
-        setMyItems(data);
-      } else {
-        console.error("Menu 400 Error:", data.error || "Restaurant Not Linked");
-      }
-    } catch (error) { console.error("Menu fetch error:", error); }
-  };
-  const fetchRestaurant = async (token) => {
   try {
-    const response = await fetch(
-`${API_BASE}/api/seller/store`, {
+    const res = await fetch(`${API_BASE}/api/seller/orders/${orderId}/status`, {
+      method: 'PUT',
+      credentials: 'include',
       headers: {
-        Authorization: `Bearer ${token}`
-      }
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ status: newStatus })
     });
-
-    const data = await response.json();
-
-    if (response.ok) {
-      setRestaurant(data.restaurant);
-    } else {
-      console.error(data);
+    if (res.ok) {
+      // Functional State Update to prevent stale data
+      setOrders(prevOrders => prevOrders.map(order =>
+        order._id === orderId ? { ...order, status: newStatus } : order
+      ));
     }
-  } catch (err) {
-    console.error(err);
+  } catch {
+    console.error("Failed to update status.");
   }
 };
 
   const handleAddItem = async (e) => {
     e.preventDefault();
-    const token = localStorage.getItem('token');
     try {
       const response = await fetch(`${API_BASE}/api/seller/menu`, {
-        method: 'POST',
-        headers: { 
-            'Content-Type': 'application/json', 
-            'Authorization': `Bearer ${token}` 
-        },
-        body: JSON.stringify({ 
-            name: itemName, 
-            price: Number(itemPrice), 
-            description: itemDescription 
-        })
-      });
-      
+  method: 'POST',
+  credentials: 'include',
+  headers: {
+      'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+      name: itemName,
+      price: Number(itemPrice),
+      description: itemDescription
+  })
+});
+
       if (response.ok) {
         setItemName(''); setItemPrice(''); setItemDescription('');
-        fetchMyMenu(token); 
+        fetchMyMenu();
         // Replaced alert with Notification for better UX
         if (Notification.permission === "granted") {
             new Notification(`✅ Item Added!`, { body: `${itemName} is now live.` });
@@ -206,37 +230,35 @@ socketRef.current = io(API_BASE, {
         const errorData = await response.json();
         console.error(`Failed: ${errorData.error || errorData.message || "Invalid Data"}`);
       }
-    } catch (error) { 
-        console.error("Network Error: Make sure backend is running."); 
+    } catch {
+        console.error("Network Error: Make sure backend is running.");
     }
   };
   const toggleStoreStatus = async () => {
   if (!restaurant) return;
 
-  const token = localStorage.getItem('token');
-
   setUpdatingStoreStatus(true);
 
   try {
     const response = await fetch(
-      `${API_BASE}/api/seller/store/status`,
-      {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          isOpen: !restaurant.isOpen
-        })
-      }
-    );
+  `${API_BASE}/api/seller/store/status`,
+  {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      isOpen: !restaurant.isOpen
+    })
+  }
+);
 
     const data = await response.json();
 
     if (response.ok) {
       setRestaurant(data.restaurant);
-      fetchOrders(token);
+      fetchOrders();
     } else {
       alert(data.error || "Failed");
     }
@@ -249,20 +271,20 @@ socketRef.current = io(API_BASE, {
 };
 
   const handleLogout = () => {
-  localStorage.clear(); 
+  localStorage.clear();
   navigate('/login');
 };
 
   return (
     <div className="min-h-screen bg-gray-900 text-white font-sans pb-20">
-      
+
       {/* 🧭 Top Navbar */}
       <nav className="bg-gray-800 border-b border-gray-700 py-4 px-8 flex justify-between items-center sticky top-0 z-50">
         <div className="flex items-center gap-6">
           <Link to="/" className="text-gray-400 hover:text-orange-500 flex items-center gap-2 font-bold transition-colors bg-gray-900 px-4 py-2 rounded-xl">
             ⬅ <span className="hidden sm:inline">Back to App</span>
           </Link>
-          
+
           <div className="border-l border-gray-700 pl-6">
             <h1 className="text-2xl font-black text-orange-500 tracking-tight">{restaurantName} 🏪</h1>
             <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mt-1">Partner Dashboard</p>
@@ -327,7 +349,7 @@ socketRef.current = io(API_BASE, {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {orders.map(order => (
                 <div key={order._id} className="bg-gray-800 p-6 rounded-[2rem] shadow-xl border border-gray-700 relative overflow-hidden transition-all hover:border-orange-500/50">
-                  
+
                   <div className={`absolute top-0 right-0 px-4 py-2 rounded-bl-2xl font-black text-xs uppercase tracking-wider text-white ${
                     order.status === 'Pending' ? 'bg-red-500 animate-pulse' : order.status === 'Cooking' ? 'bg-orange-500' : 'bg-green-500'
                   }`}>
@@ -370,14 +392,14 @@ socketRef.current = io(API_BASE, {
                       <p className="text-xs font-bold text-gray-500 uppercase">Your Earning</p>
                       <p className="text-2xl font-black text-green-400">NPR {order.foodCost}</p>
                     </div>
-                    
+
                     <div className="flex flex-col items-end">
                         {order.status === 'Pending' && (
                         <button onClick={() => updateOrderStatus(order._id, 'Confirmed')} className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-xl font-black shadow-lg active:scale-95 transition-all">
                             Accept Order ✅
                         </button>
                         )}
-                        
+
                         {(order.status === 'Confirmed' || order.status === 'Accepted') && !order.assignedRiderId && (
                         <div className="text-right">
                             <p className="text-sm text-gray-400 font-bold animate-pulse mb-2">📡 Finding Nearest Rider...</p>

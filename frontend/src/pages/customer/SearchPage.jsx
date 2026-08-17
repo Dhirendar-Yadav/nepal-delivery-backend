@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../../hooks/useAuth";
 
 import SearchBar from "../../components/common/SearchBar";
 import RestaurantCard from "../../components/RestaurantCard";
@@ -8,11 +9,12 @@ import EmptyState from "../../components/EmptyState";
 import SkeletonCard from "../../components/SkeletonCard";
 
 import { fetchRestaurants } from "../../services/restaurantService";
-import { useLocation } from "../../context/LocationContext";
+import { useLocation } from "../../hooks/useLocation";
 import { handleRestaurantClick } from "../../helpers/homeHelpers";
 
 function SearchPage() {
 
+    const { isAuthenticated } = useAuth();
     const navigate = useNavigate();
 
     const { location } = useLocation();
@@ -159,8 +161,7 @@ function SearchPage() {
 
                                             handleRestaurantClick={(id) =>
 
-                                                handleRestaurantClick(id, navigate)
-
+                                                 handleRestaurantClick(id, navigate, isAuthenticated)
                                             }
 
                                         />

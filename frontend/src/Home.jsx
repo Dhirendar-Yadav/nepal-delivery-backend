@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom'; 
-import { useUI } from './context/UIContext';
-import { useLocation } from './context/LocationContext';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from './hooks/useAuth';
+import { useUI } from "./hooks/useUI";
+import { useLocation } from "./hooks/useLocation";
 import CEOProfile from "./components/CEOProfile";
 import FilterSidebar from "./components/FilterSidebar";
 import RestaurantCard from "./components/RestaurantCard";
@@ -20,16 +21,18 @@ import {
 } from "./helpers/homeHelpers";
 import HeroSection from "./components/hero/HeroSection";
 function Home() {
+  const { isAuthenticated } = useAuth();
+
   const {
     restaurants,
     isLoading,
     apiError,
-} = useRestaurants(); 
-  const navigate = useNavigate(); 
+} = useRestaurants();
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedSorts, setSelectedSorts] = useState([]); 
-  const [isPureVeg, setIsPureVeg] = useState(false); 
-  const [selectedCategories, setSelectedCategories] = useState([]); 
+  const [selectedSorts, setSelectedSorts] = useState([]);
+  const [isPureVeg, setIsPureVeg] = useState(false);
+  const [selectedCategories, setSelectedCategories] = useState([]);
   const {
     showCEOProfile,
     setShowCEOProfile,
@@ -50,7 +53,6 @@ const {
 
   useLocationPermission(updateLocation, denyLocation);
 const {
-    dynamicIcons,
     dynamicSidebarCategories,
 } = useDynamicCategories(restaurants);
   // Processing Restaurants (Filters, Search, Distance, Mocks for UI)
@@ -71,11 +73,11 @@ if (showCEOProfile) {
         />
     );
 }
-  
+
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-800 pb-20 relative">
       {/* Top Navigation */}
-    
+
       {/* Main Banner (Nepali Hook Kept Intact) */}
       <div className="sticky top-[72px] sm:top-[80px] z-50 px-3 py-2 bg-gray-50/90 backdrop-blur-md">
     <div className="max-w-5xl mx-auto bg-orange-500 rounded-2xl px-4 py-3 text-center shadow-lg relative overflow-hidden">
@@ -92,7 +94,7 @@ if (showCEOProfile) {
       </div>
 
       <div className="max-w-[90rem] mx-auto p-4 sm:p-6 flex flex-col md:flex-row gap-8 mt-4">
-        
+
         {/* Left Sidebar */}
         <div className="hidden md:block w-64 lg:w-72 shrink-0">
           <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-gray-100 sticky top-[230px]">
@@ -137,7 +139,7 @@ if (showCEOProfile) {
     </span>
 
 </div>
-          
+
           {/* Short & Professional Empty State */}
           {!isLoading && apiError ? (
              <EmptyState
@@ -170,7 +172,7 @@ if (showCEOProfile) {
     restaurant={restaurant}
     userLocation={userLocation}
     handleRestaurantClick={(id) =>
-    handleRestaurantClick(id, navigate)
+    handleRestaurantClick(id, navigate, isAuthenticated)
 }
 />
               ))}

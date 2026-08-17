@@ -12,7 +12,7 @@ function RiderProfileTab({ riderName, riderDetails }) {
 
   // 🚀 NEW: Smart Back Button / Swipe Handler
   useEffect(() => {
-    const handlePopState = (e) => {
+    const handlePopState = () => {
       // Agar modal khula hai aur user ne back dabaya, toh sirf modal band karo, page back mat karo
       if (previewImage.isOpen) {
         setPreviewImage({ isOpen: false, url: '', title: '' });
@@ -150,7 +150,7 @@ function RiderProfileTab({ riderName, riderDetails }) {
 
         {/* 🚀 UPGRADED: Premium List Layout */}
         <div className="space-y-6">
-          
+
           {/* Basic Info Group */}
           <div>
             <h3 className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-3 ml-1">Contact Details</h3>
@@ -170,7 +170,7 @@ function RiderProfileTab({ riderName, riderDetails }) {
           <div>
             <h3 className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-3 ml-1 mt-8">Vehicles & Legal Documents</h3>
             <div className="bg-gray-50 dark:bg-gray-950 rounded-xl border border-gray-100 dark:border-gray-800 overflow-hidden flex flex-col divide-y divide-gray-100 dark:divide-gray-800">
-              
+
               <div className="flex justify-between items-center p-4">
                 <div>
                   <p className="text-[10px] font-bold text-gray-500 uppercase mb-1">Vehicle Number</p>
@@ -212,7 +212,7 @@ function RiderProfileTab({ riderName, riderDetails }) {
       </div>
 
       {previewImage.isOpen && (
-        <div 
+        <div
           id="image-preview-modal"
           className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-md p-4"
         >
@@ -220,22 +220,22 @@ function RiderProfileTab({ riderName, riderDetails }) {
           <button onClick={closeModal} className="app-close-btn absolute top-6 right-6 text-white bg-white/10 hover:bg-white/20 w-10 h-10 rounded-full hidden md:flex items-center justify-center transition-all z-50">
             ✕
           </button>
-          
+
           <div className="app-close-btn hidden" onClick={closeModal}></div>
 
           <p className="absolute top-8 text-white/40 text-[10px] font-bold tracking-widest uppercase md:hidden animate-pulse">
             Swipe Back or Tap anywhere to Close
           </p>
 
-          <div 
+          <div
             className="max-w-4xl w-full flex flex-col items-center justify-center cursor-pointer md:cursor-default h-full relative z-10"
             onClick={(e) => {
               if(e.target === e.currentTarget) closeModal();
             }}
           >
-            <img 
-              src={previewImage.url} 
-              alt={previewImage.title} 
+            <img
+              src={previewImage.url}
+              alt={previewImage.title}
               className="max-w-full max-h-[75vh] object-contain rounded-xl shadow-2xl border border-white/10 pointer-events-none"
             />
             <p className="text-white font-black mt-6 text-lg tracking-widest uppercase bg-white/10 px-6 py-2 rounded-full border border-white/10">

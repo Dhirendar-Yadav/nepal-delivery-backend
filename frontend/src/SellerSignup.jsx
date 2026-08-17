@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-import imageCompression from 'browser-image-compression'; 
+import imageCompression from 'browser-image-compression';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5005';
 
@@ -27,22 +27,22 @@ function RecenterMap({ position }) {
 }
 
 function SellerSignup() {
-  const [formData, setFormData] = useState({ 
-    fullName: '', 
-    email: '', 
-    password: '', 
-    phone: '', 
+  const [formData, setFormData] = useState({
+    fullName: '',
+    email: '',
+    password: '',
+    phone: '',
     businessName: '',
     locationName: '',
-    panVatNumber: '', 
+    panVatNumber: '',
   });
-  
+
   const [selectedImage, setSelectedImage] = useState(null);
-  const [regDocument, setRegDocument] = useState(null); 
+  const [regDocument, setRegDocument] = useState(null);
   const [isCompressing, setIsCompressing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
-  const [position, setPosition] = useState([27.5020, 83.6661]); 
+
+  const [position, setPosition] = useState([27.5020, 83.6661]);
   const [isLocating, setIsLocating] = useState(false);
   const markerRef = useRef(null);
   const navigate = useNavigate();
@@ -67,7 +67,7 @@ function SellerSignup() {
       const compressedFile = await imageCompression(imageFile, options);
       setFile(compressedFile);
       setIsCompressing(false);
-    } catch (error) {
+    } catch {
       setIsCompressing(false);
     }
   };
@@ -125,7 +125,7 @@ function SellerSignup() {
     Object.keys(formData).forEach(key => data.append(key, formData[key].trim()));
     data.append('latitude', position[0]);
     data.append('longitude', position[1]);
-    data.append('role', 'Seller'); 
+    data.append('role', 'Seller');
 
     if (selectedImage) data.append('image', selectedImage);
     if (regDocument) data.append('registrationDoc', regDocument);
@@ -134,11 +134,11 @@ function SellerSignup() {
     try {
       const res = await fetch(`${API_BASE}/api/auth/signup`, {
         method: 'POST',
-        body: data, 
+        body: data,
       });
       if (res.ok) {
         alert("Badhai Chha! 🎉 Pasal saphalatapurvak darta bhayo. Aba login garnuhos.");
-        navigate('/login'); 
+        navigate('/login');
       } else {
         const responseText = await res.text();
         let result = {};
@@ -149,7 +149,7 @@ function SellerSignup() {
         }
         alert(result.message || "Registration failed.");
       }
-    } catch (err) { 
+    } catch {
       alert("Server connection error. Internet check garnuhos!");
     } finally {
       setIsSubmitting(false);
@@ -162,11 +162,11 @@ function SellerSignup() {
 
   return (
     <div className="min-h-screen bg-white flex flex-col font-sans text-gray-800 relative">
-      
+
       {/* ✨ Back Button Fixed (Non-Floating) */}
       <div className="w-full max-w-4xl mx-auto relative h-0">
-        <button 
-          onClick={() => navigate(-1)} 
+        <button
+          onClick={() => navigate(-1)}
           className="absolute top-8 left-8 text-gray-400 hover:text-orange-500 font-black text-xs uppercase tracking-widest transition-all z-[100] active:scale-95"
         >
           Back
@@ -175,9 +175,9 @@ function SellerSignup() {
 
       {/* ✨ Main Wrapper: Pure Edge-to-Edge */}
       <div className="w-full min-h-screen flex flex-col items-center p-6 sm:p-12 lg:p-20">
-        
+
         <div className="w-full max-w-4xl flex flex-col">
-          
+
           <div className="text-center mb-16 mt-16 md:mt-0">
             <h2 className="text-4xl sm:text-6xl font-black tracking-tighter text-gray-900 uppercase leading-none">
               Register Your Pasal
@@ -187,26 +187,26 @@ function SellerSignup() {
                <img src="https://raw.githubusercontent.com/lipis/flag-icons/main/flags/4x3/np.svg" className="w-6 h-auto" alt="Nepal" />
             </div>
           </div>
-          
+
           <form onSubmit={handleSellerSignup} className="flex flex-col gap-10">
-            
+
             {/* Section 1: Basic Info */}
             <div className="space-y-6">
               <h3 className="text-sm font-black text-orange-500 uppercase tracking-widest ml-1">Pasal Details</h3>
               <div className="grid md:grid-cols-2 gap-6">
                 <input type="text" placeholder="Owner Full Name" className="w-full p-5 bg-gray-50 rounded-2xl border-2 border-transparent focus:border-orange-500 outline-none font-bold text-base shadow-inner transition-all" onChange={(e) => setFormData({...formData, fullName: e.target.value})} required />
                 <input type="text" placeholder="Pasal ko Naam" className="w-full p-5 bg-gray-50 rounded-2xl border-2 border-transparent focus:border-orange-500 outline-none font-bold text-base shadow-inner transition-all" onChange={(e) => setFormData({...formData, businessName: e.target.value})} required />
-                
+
                 <div className="flex gap-0 shadow-inner rounded-2xl overflow-hidden border-2 border-transparent focus-within:border-orange-500 transition-all">
                   <span className="bg-gray-100 px-6 flex items-center text-base font-black text-gray-400">+977</span>
-                  <input 
-                    type="tel" 
-                    maxLength="10" 
-                    placeholder="98XXXXXXXX" 
+                  <input
+                    type="tel"
+                    maxLength="10"
+                    placeholder="98XXXXXXXX"
                     value={formData.phone}
                     onChange={handlePhoneInput}
-                    className="p-5 bg-gray-50 w-full outline-none font-bold text-base" 
-                    required 
+                    className="p-5 bg-gray-50 w-full outline-none font-bold text-base"
+                    required
                   />
                 </div>
                 <input type="text" placeholder="City Name (e.g. Parasi, Kathmandu)" className="w-full p-5 bg-gray-50 rounded-2xl border-2 border-transparent focus:border-orange-500 outline-none font-bold text-base shadow-inner" onChange={(e) => setFormData({...formData, locationName: e.target.value})} required />
@@ -218,7 +218,7 @@ function SellerSignup() {
                <h3 className="text-xs font-black text-gray-900 uppercase tracking-widest mb-2 flex items-center gap-2">
                  Legal KYC Verification 🛡️
                </h3>
-               
+
                <div className="grid md:grid-cols-2 gap-8">
                  <div className="space-y-4">
                     <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Business Registration</label>
@@ -267,9 +267,9 @@ function SellerSignup() {
                 <input type="password" placeholder="Create Password" className="w-full p-5 bg-gray-50 rounded-2xl border-2 border-transparent focus:border-orange-500 outline-none font-bold text-base shadow-inner" onChange={(e) => setFormData({...formData, password: e.target.value})} required />
               </div>
             </div>
-            
-            <button 
-              disabled={isCompressing || isSubmitting} 
+
+            <button
+              disabled={isCompressing || isSubmitting}
               className={`w-full text-white font-black py-6 rounded-3xl transition-all shadow-[0_20px_50px_rgba(234,88,12,0.3)] uppercase tracking-[0.2em] text-base mt-10 mb-6 ${isCompressing || isSubmitting ? 'bg-orange-300' : 'bg-orange-600 hover:bg-gray-900 active:scale-95'}`}
             >
               {isCompressing ? "Security Processing..." : isSubmitting ? "Submitting..." : "Register"}
@@ -280,8 +280,8 @@ function SellerSignup() {
               <p className="text-xs text-gray-400 font-black uppercase tracking-widest">
                   Already a partner?
               </p>
-              <Link 
-                  to="/login" 
+              <Link
+                  to="/login"
                   className="text-orange-500 hover:text-gray-900 font-black uppercase text-xs tracking-widest transition-colors border-b-2 border-orange-500 pb-1"
               >
                   Login here

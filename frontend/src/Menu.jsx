@@ -1,14 +1,14 @@
 import { useState, useEffect } from 'react';
-import { useCart } from "./cart/CartContext";
+import { useCart } from "./hooks/useCart";
 import { useParams, Link, useNavigate } from 'react-router-dom'; // ✨ ADDED useNavigate
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5005';
 
 function Menu() {
-  const { id } = useParams(); 
+  const { id } = useParams();
   const navigate = useNavigate(); // ✨ INITIALIZED navigate
   const [menuItems, setMenuItems] = useState([]);
-  const [restaurantName, setRestaurantName] = useState(""); 
+  const [restaurantName, setRestaurantName] = useState("");
   const [restaurant, setRestaurant] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [apiError, setApiError] = useState('');
@@ -61,7 +61,7 @@ function Menu() {
       }
     };
     fetchMenuAndDetails();
-  }, [id]);
+  }, [id, reconcileCart]);
 
   // ✨ THE FIX: Proper navigation function with data transfer
   const handleCheckout = () => {
@@ -75,7 +75,7 @@ function Menu() {
 
   return (
     <div className="w-full min-h-screen bg-[#F8FAFC] font-sans text-gray-900 m-0 p-0 overflow-x-hidden">
-      
+
       {/* 🧭 Navbar */}
       <nav className="w-full bg-white/70 backdrop-blur-lg sticky top-0 z-50 border-b border-gray-200">
         <div className="max-w-[1400px] mx-auto px-6 py-4 flex justify-between items-center">
@@ -95,7 +95,7 @@ function Menu() {
       {/* 🍱 Main Grid Layout */}
       <div className="max-w-[1400px] mx-auto px-4 md:px-8 py-10">
         <div className="flex flex-col lg:flex-row gap-12">
-          
+
           {/* 🥘 Left Side: Menu Cards */}
           <div className="w-full lg:w-2/3">
             <div className="mb-10">
@@ -118,18 +118,18 @@ function Menu() {
                   <div key={item._id} className="bg-white rounded-[2.5rem] p-8 shadow-[0_15px_50px_-15px_rgba(0,0,0,0.05)] border border-gray-50 hover:shadow-2xl hover:-translate-y-2 transition-all duration-500 group relative overflow-hidden">
                     <div className="absolute top-0 right-0 w-32 h-32 bg-orange-50/50 rounded-bl-[5rem] -mr-16 -mt-16 group-hover:bg-orange-500/10 transition-colors"></div>
                     <span className="bg-green-100 text-green-700 text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-tighter">{item.foodCategory || 'Not Specified'}</span>
-                    
+
                     <h3 className="text-2xl font-black text-gray-800 mt-6 group-hover:text-orange-600 transition-colors">{item.name}</h3>
                     <p className="text-gray-400 text-sm mt-3 leading-relaxed min-h-[50px]">
                       {item.description || "Freshly cooked and packed with authentic Nepali spices and lots of love."}
                     </p>
-                    
+
                     <div className="flex justify-between items-center mt-10">
                       <div className="flex flex-col">
                         <span className="text-[10px] font-bold text-gray-400 uppercase">Price</span>
                         <p className="text-2xl font-black text-gray-900">Rs. {item.price}</p>
                       </div>
-                      <button 
+                      <button
                         onClick={() => addItem({
                           ...item,
                           restaurant: restaurant || {
@@ -155,7 +155,7 @@ function Menu() {
                 Your Jhola 🧺
                 <span className="text-xs bg-gray-100 px-3 py-1 rounded-full text-gray-400 font-bold">{totalQuantity} Items</span>
               </h3>
-              
+
               {cart.items.length === 0 ? (
                 <div className="text-center py-16">
                   <div className="text-6xl mb-6 opacity-10 grayscale">🥘</div>
@@ -172,14 +172,14 @@ function Menu() {
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="font-bold text-sm">{item.quantity}</span>
-                          <button 
+                          <button
                             onClick={() => increaseQuantity(item._id)}
                             className="bg-gray-100 text-gray-600 hover:bg-orange-500 hover:text-white w-8 h-8 rounded-full flex items-center justify-center font-bold transition-all"
                           >
                             +
                           </button>
                         </div>
-                        <button 
+                        <button
                           onClick={() => item.quantity === 1 ? removeItem(item._id) : decreaseQuantity(item._id)}
                           className="bg-red-50 text-red-400 hover:bg-red-500 hover:text-white w-8 h-8 rounded-full flex items-center justify-center font-bold transition-all"
                         >
@@ -188,7 +188,7 @@ function Menu() {
                       </div>
                     ))}
                   </div>
-                  
+
                   <div className="border-t-4 border-double border-gray-100 pt-8 mt-6">
                     <div className="flex justify-between items-end mb-10">
                       <div className="flex flex-col">
@@ -198,8 +198,8 @@ function Menu() {
                     </div>
 
                     {/* ✨ UPDATED BUTTON */}
-                    <button 
-                      onClick={handleCheckout} 
+                    <button
+                      onClick={handleCheckout}
                       className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black py-6 rounded-[2rem] shadow-[0_20px_40px_rgba(249,115,22,0.3)] transition-all active:scale-95 text-xl tracking-widest uppercase"
                     >
                       Checkout Now ➔

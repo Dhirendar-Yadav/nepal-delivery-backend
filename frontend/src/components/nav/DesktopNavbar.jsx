@@ -2,12 +2,6 @@ import { Link } from "react-router-dom";
 
 function DesktopNavbar({
 
-    user,
-
-    currentLocation,
-
-    notificationCount,
-
     onShowCEOProfile,
 
 }) {

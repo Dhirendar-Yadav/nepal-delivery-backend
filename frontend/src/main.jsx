@@ -5,9 +5,9 @@ import "./index.css";
 
 import App from "./App.jsx";
 
-import { AuthProvider } from "./context/AuthContext";
-import { LocationProvider } from "./context/LocationContext";
-import { UIProvider } from "./context/UIContext";
+import { AuthProvider } from "./context/AuthContext.jsx";
+import { LocationProvider } from "./context/LocationContext.jsx";
+import { UIProvider } from "./context/UIContext.jsx";
 
 createRoot(document.getElementById("root")).render(
     <StrictMode>

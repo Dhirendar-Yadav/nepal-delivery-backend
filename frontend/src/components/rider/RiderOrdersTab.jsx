@@ -21,11 +21,11 @@ const dropoffIcon = new L.Icon({
   shadowSize: [41, 41]
 });
 
-function RiderOrdersTab({ 
-  activeOrder, 
-  deliveryStatus, 
-  handlePickedUp, 
-  handleDelivered 
+function RiderOrdersTab({
+  activeOrder,
+  deliveryStatus,
+  handlePickedUp,
+  handleDelivered
 }) {
   const [showMap, setShowMap] = useState(false);
   const [showOtpModal, setShowOtpModal] = useState(false);
@@ -59,7 +59,7 @@ function RiderOrdersTab({
 
   const openMap = () => setShowMap(true);
   const closeMap = () => setShowMap(false);
-  
+
   const openOtp = () => setShowOtpModal(true);
   const closeOtp = () => {
     setShowOtpModal(false);
@@ -88,16 +88,16 @@ function RiderOrdersTab({
     }
     setIsVerifying(true);
     setOtpError('');
-    
+
     let result;
     try {
       result = await handleDelivered(otpInput);
-    } catch (error) {
+    } catch {
       setIsVerifying(false);
       setOtpError('Network error. Please try again.');
       return;
     }
-    
+
     setIsVerifying(false);
     if (result && result.success) {
       closeOtp();
@@ -137,9 +137,9 @@ function RiderOrdersTab({
 
   const pickupCoords = getSafeCoords(activeOrder.restaurantId?.latitude, activeOrder.restaurantId?.longitude);
   const dropoffCoords = getSafeCoords(
-      activeOrder.deliveryDetails?.latitude, 
-      activeOrder.deliveryDetails?.longitude, 
-      pickupCoords[0] + 0.01, 
+      activeOrder.deliveryDetails?.latitude,
+      activeOrder.deliveryDetails?.longitude,
+      pickupCoords[0] + 0.01,
       pickupCoords[1] + 0.01
   );
 
@@ -150,10 +150,10 @@ function RiderOrdersTab({
   return (
     <div className="space-y-4">
       <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest pl-2">Active Orders List</h3>
-      
+
       {/* THIN LIST ROW DESIGN */}
       <div className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 flex flex-col lg:flex-row items-center justify-between p-3 gap-4 transition-all hover:shadow-md">
-        
+
         {/* Left Side: Order Info */}
         <div className="flex flex-col w-full lg:w-auto">
           <span className="text-[10px] font-bold text-orange-500 uppercase tracking-wider">
@@ -166,9 +166,9 @@ function RiderOrdersTab({
 
         {/* Right Side: Action Buttons in a line */}
         <div className="flex items-center gap-2 w-full lg:w-auto overflow-x-auto pb-1 lg:pb-0 hide-scrollbar">
-          
-          <a 
-            href={`tel:${sanitizePhone(deliveryStatus === 'pickup' ? activeOrder.restaurantId?.phone : activeOrder.deliveryDetails?.phone)}`} 
+
+          <a
+            href={`tel:${sanitizePhone(deliveryStatus === 'pickup' ? activeOrder.restaurantId?.phone : activeOrder.deliveryDetails?.phone)}`}
             aria-label="Call customer or restaurant"
             className="w-9 h-9 shrink-0 bg-blue-50 dark:bg-blue-500/10 text-blue-600 rounded-full flex items-center justify-center text-sm hover:bg-blue-100 transition-colors border border-blue-200 dark:border-blue-500/20"
             title="Call"
@@ -176,18 +176,18 @@ function RiderOrdersTab({
             📞
           </a>
 
-          <button 
-            onClick={openMap} 
+          <button
+            onClick={openMap}
             aria-label="Open Map Modal"
             className="px-3 h-9 shrink-0 bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg text-xs font-bold hover:bg-gray-100 border border-gray-200 dark:border-gray-700 transition-colors flex items-center gap-1.5"
           >
             📍 Map
           </button>
 
-          <a 
-            href={mapsLink} 
-            target="_blank" 
-            rel="noopener noreferrer" 
+          <a
+            href={mapsLink}
+            target="_blank"
+            rel="noopener noreferrer"
             aria-label="Navigate with Google Maps"
             className="px-3 h-9 shrink-0 bg-gray-50 dark:bg-gray-800 text-blue-600 dark:text-blue-400 rounded-lg text-xs font-bold hover:bg-blue-50 border border-gray-200 dark:border-gray-700 transition-colors flex items-center gap-1.5"
           >
@@ -195,8 +195,8 @@ function RiderOrdersTab({
           </a>
 
           {deliveryStatus === 'pickup' ? (
-            <button 
-              onClick={onPickedUpClick} 
+            <button
+              onClick={onPickedUpClick}
               disabled={isPickingUp}
               aria-label="Mark order as picked up"
               className={`px-4 h-9 shrink-0 text-white rounded-lg text-xs font-black transition-colors shadow-sm whitespace-nowrap ${isPickingUp ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 active:scale-95'}`}
@@ -204,8 +204,8 @@ function RiderOrdersTab({
               {isPickingUp ? 'Processing...' : '✅ Picked Up'}
             </button>
           ) : (
-            <button 
-              onClick={openOtp} 
+            <button
+              onClick={openOtp}
               aria-label="Open Delivery OTP Modal"
               className="px-4 h-9 shrink-0 bg-orange-500 text-white rounded-lg text-xs font-black hover:bg-orange-600 transition-colors shadow-sm active:scale-95 flex items-center gap-1.5 whitespace-nowrap"
             >
@@ -216,22 +216,22 @@ function RiderOrdersTab({
       </div>
 
       {showMap && (
-        <div 
+        <div
           className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
           onClick={closeMap} // 🚀 CHATGPT FIX: Close on Backdrop Click
         >
-          <div 
+          <div
             className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-2xl overflow-hidden flex flex-col h-[70vh] shadow-2xl border border-gray-200 dark:border-gray-800 animate-slide-up"
             onClick={(e) => e.stopPropagation()} // Prevent close when clicking inside modal
           >
-            
+
             <div className="flex justify-between items-center p-4 border-b border-gray-100 dark:border-gray-800">
               <div>
                 <h3 className="font-black text-gray-900 dark:text-white">Delivery Route</h3>
                 <p className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">Follow the map to your destination</p>
               </div>
-              <button 
-                onClick={closeMap} 
+              <button
+                onClick={closeMap}
                 aria-label="Close Map Modal"
                 className="w-8 h-8 bg-gray-100 dark:bg-gray-800 rounded-full text-gray-500 font-bold flex items-center justify-center hover:bg-gray-200 transition-colors"
               >
@@ -260,11 +260,11 @@ function RiderOrdersTab({
 
       {/* OTP Verification Modal */}
       {showOtpModal && (
-        <div 
+        <div
           className="fixed inset-0 z-[200] flex items-end md:items-center justify-center bg-black/80 backdrop-blur-sm p-4 pb-0 md:pb-4"
           onClick={closeOtp} // 🚀 CHATGPT FIX: Close on Backdrop Click
         >
-          <div 
+          <div
             className="bg-white dark:bg-gray-900 w-full max-w-sm rounded-t-3xl md:rounded-3xl p-6 shadow-2xl border-t border-gray-200 dark:border-gray-800 animate-slide-up transition-all"
             onClick={(e) => e.stopPropagation()} // Prevent close when clicking inside modal
           >
@@ -272,15 +272,15 @@ function RiderOrdersTab({
               <h3 className="text-xl font-black text-gray-900 dark:text-white">Enter Delivery OTP</h3>
               <button onClick={closeOtp} aria-label="Close OTP Modal" className="w-8 h-8 bg-gray-100 dark:bg-gray-800 rounded-full text-gray-500 hover:bg-gray-200 transition-colors font-bold flex items-center justify-center">✕</button>
             </div>
-            
+
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-6 text-center">
               Ask <span className="font-bold text-gray-900 dark:text-gray-200">{activeOrder.customerId?.name || 'the customer'}</span> for the 4-digit PIN.
             </p>
 
             <div className="flex flex-col items-center gap-4 mb-6">
-              <input 
-                type="text" 
-                maxLength="4" 
+              <input
+                type="text"
+                maxLength="4"
                 inputMode="numeric"
                 pattern="[0-9]*"
                 value={otpInput}
@@ -289,14 +289,14 @@ function RiderOrdersTab({
                   setOtpError('');
                 }}
                 autoFocus
-                placeholder="0000" 
-                className={`w-40 text-center bg-gray-50 dark:bg-gray-950 border-2 ${otpError ? 'border-red-500 animate-pulse' : 'border-gray-300 dark:border-gray-700'} text-gray-900 dark:text-white py-4 rounded-xl text-3xl tracking-[0.5em] font-mono outline-none focus:border-orange-500 transition-colors`} 
+                placeholder="0000"
+                className={`w-40 text-center bg-gray-50 dark:bg-gray-950 border-2 ${otpError ? 'border-red-500 animate-pulse' : 'border-gray-300 dark:border-gray-700'} text-gray-900 dark:text-white py-4 rounded-xl text-3xl tracking-[0.5em] font-mono outline-none focus:border-orange-500 transition-colors`}
               />
               {otpError && <p className="text-red-500 text-xs font-bold">{otpError}</p>}
             </div>
 
-            <button 
-              onClick={submitDeliveryOtp} 
+            <button
+              onClick={submitDeliveryOtp}
               disabled={isVerifying || otpInput.length < 4}
               aria-label="Submit Delivery OTP"
               className={`w-full py-4 rounded-xl font-bold text-white transition-all shadow-md flex items-center justify-center gap-2 ${isVerifying || otpInput.length < 4 ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 shadow-green-500/30 active:scale-[0.98]'}`}

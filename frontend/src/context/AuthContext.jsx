@@ -1,40 +1,47 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
-
-const AuthContext = createContext(null);
+import { useEffect, useMemo, useState } from "react";
+import { AuthContext } from "./AuthContext";
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5005';
 
 export function AuthProvider({ children }) {
     const [user, setUser] = useState(null);
-    const [token, setToken] = useState(null);
+
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const storedToken = localStorage.getItem("token");
-        const storedRole = localStorage.getItem("userRole");
-        const storedName = localStorage.getItem("userName");
-        const storedPhone = localStorage.getItem("userPhone");
+    const restoreSession = async () => {
+        try {
+            const response = await fetch(`${API_BASE}/api/auth/me`, {
+                credentials: 'include'
+            });
 
-        if (storedToken) {
-            setToken(storedToken);
+            if (!response.ok) return false;
 
-            setUser({
-    role: storedRole || "customer",
-    name: storedName || "",
-    phone: storedPhone || "",
-});
+            const data = await response.json();
 
-            setIsAuthenticated(true);
+            if (data.success && data.user) {
+                setUser(data.user);
+                setIsAuthenticated(true);
+                return true;
+            }
+        } catch (err) {
+            console.error('Session restore failed:', err);
         }
 
+        return false;
+    };
+
+    const initializeAuth = async () => {
+        await restoreSession();
         setLoading(false);
-    }, []);
+    };
 
-    const login = ({ token, user }) => {
-        localStorage.setItem("token", token);
-
-        if (user?.role) {
-            localStorage.setItem("userRole", user.role);
-        }
+    initializeAuth();
+}, []);
+    const login = ({ user }) => {
+    if (user?.role) {
+        localStorage.setItem("userRole", user.role);
+    }
 
         if (user?.name) {
             localStorage.setItem("userName", user.name);
@@ -43,32 +50,39 @@ export function AuthProvider({ children }) {
     localStorage.setItem("userPhone", user.phone);
 }
 
-        setToken(token);
-        setUser(user);
-        setIsAuthenticated(true);
+
+setUser(user);
+setIsAuthenticated(true);
     };
 
-    const logout = () => {
-        localStorage.removeItem("token");
-        localStorage.removeItem("userRole");
-        localStorage.removeItem("userName");
-        localStorage.removeItem("userPhone");
+    const logout = async () => {
+    try {
+        await fetch(`${API_BASE}/api/auth/logout`, {
+            method: 'POST',
+            credentials: 'include'
+        });
+    } catch (err) {
+        console.error('Logout request failed:', err);
+    }
 
-        setToken(null);
-        setUser(null);
-        setIsAuthenticated(false);
-    };
+    localStorage.removeItem("userRole");
+    localStorage.removeItem("userName");
+    localStorage.removeItem("userPhone");
+
+
+    setUser(null);
+    setIsAuthenticated(false);
+};
 
     const value = useMemo(
         () => ({
             user,
-            token,
             loading,
             isAuthenticated,
             login,
             logout,
         }),
-        [user, token, loading, isAuthenticated]
+        [user, loading, isAuthenticated]
     );
 
     return (
@@ -76,14 +90,4 @@ export function AuthProvider({ children }) {
             {children}
         </AuthContext.Provider>
     );
-}
-
-export function useAuth() {
-    const context = useContext(AuthContext);
-
-    if (!context) {
-        throw new Error("useAuth must be used inside AuthProvider");
-    }
-
-    return context;
 }

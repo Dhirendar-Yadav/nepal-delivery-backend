@@ -1,12 +1,15 @@
 import { useState } from 'react';
+import { useAuth } from '../../hooks/useAuth';
 
 export default function DataTables({ activeTab, filteredData, handleRestaurantStatus, handleRestaurantOperation }) {
+
+
     // ✨ UNIVERSAL MODAL STATE: Handles Rider, Pasal and Customer modals
-    const [modalData, setModalData] = useState(null); 
+    const [modalData, setModalData] = useState(null);
 
     // 🚀 UNIVERSAL API HANDLER: One function to control all entities
     const handleEntityAction = async (id, entityType, actionType, item) => {
-        // 🏪 RESTAURANT LOGIC 
+        // 🏪 RESTAURANT LOGIC
         if (entityType === 'Pasal') {
             if (actionType === 'APPROVE') {
                 handleRestaurantStatus(id, { status: 'ACTIVE', isVerifiedByAdmin: true });
@@ -26,18 +29,17 @@ export default function DataTables({ activeTab, filteredData, handleRestaurantSt
             return;
         }
 
-        // 🛵 & 👤 RIDER / CUSTOMER LOGIC 
+        // 🛵 & 👤 RIDER / CUSTOMER LOGIC
         try {
-            const token = localStorage.getItem('token');
             let body = {};
-            let endpoint = `http://localhost:5005/api/admin/riders/${id}/status`; 
+            let endpoint = `http://localhost:5005/api/admin/riders/${id}/status`;
             let method = 'PATCH';
 
             if (actionType === 'APPROVE') {
                 body = { status: 'VERIFIED', isActive: true };
             } else if (actionType === 'REJECT') {
                 const reason = window.prompt(`⚠️ Enter reason for rejecting this ${entityType}:`);
-                if (!reason) return; 
+                if (!reason) return;
                 body = { status: 'REJECTED', isActive: false, rejectionReason: reason };
             } else if (actionType === 'SUSPEND') {
                 if (!window.confirm(`Are you sure you want to SUSPEND this ${entityType}?`)) return;
@@ -49,22 +51,25 @@ export default function DataTables({ activeTab, filteredData, handleRestaurantSt
             }
 
             const options = {
-                method,
-                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-            };
+    method,
+    credentials: 'include',
+    headers: {
+        'Content-Type': 'application/json',
+    },
+};
             if (method !== 'DELETE') options.body = JSON.stringify(body);
 
             const res = await fetch(endpoint, options);
             const data = await res.json();
-            
+
             if (res.ok && data.success) {
                 alert(`✅ ${entityType} ${actionType} action successful!`);
                 setModalData(null);
-                window.location.reload(); 
+                window.location.reload();
             } else {
                 alert(`❌ Error: ${data.error || data.message}`);
             }
-        } catch (err) {
+        } catch {
             alert('Network Error! Cannot connect to Server.');
         }
     };
@@ -87,10 +92,10 @@ export default function DataTables({ activeTab, filteredData, handleRestaurantSt
                         // Safe extraction for different item structures
                         const itemId = activeTab === 'Riders' ? item.userId?._id : item._id;
                         const itemStatus = activeTab === 'Pasals' ? item.status : (item.userId?.kycStatus || item.kycStatus || 'PENDING');
-                        
+
                         return (
                         <tr key={item._id || idx} className="hover:bg-gray-800/30 transition-colors border-b border-gray-800">
-                            
+
                             {/* 🏪 RESTAURANT / PASALS VIEW */}
                             {activeTab === 'Pasals' && (
                                 <>
@@ -102,18 +107,18 @@ export default function DataTables({ activeTab, filteredData, handleRestaurantSt
                                         </span>
                                     </td>
                                     <td className="font-mono text-orange-400 font-bold p-3">{(item.walletBalance / 100 || 0).toFixed(2)}</td>
-                                    
+
                                     <td className="flex gap-2 p-3 flex-wrap">
                                         <button onClick={() => setModalData({ type: 'Pasal', data: item })} className="bg-purple-600/20 text-purple-500 border border-purple-500/30 px-3 py-1 rounded text-[9px] font-bold hover:bg-purple-600 hover:text-white transition">
                                             🔍 VERIFY DOCS
                                         </button>
-                                        
+
                                         {itemStatus !== 'ACTIVE' ? (
                                             <button onClick={() => handleEntityAction(item._id, 'Pasal', 'APPROVE', item)} className="bg-green-600/20 text-green-500 border border-green-500/30 px-3 py-1 rounded text-[9px] font-bold hover:bg-green-600 hover:text-white transition">APPROVE</button>
                                         ) : (
                                             <button onClick={() => handleEntityAction(item._id, 'Pasal', 'SUSPEND', item)} className="bg-orange-600/20 text-orange-500 border border-orange-500/30 px-3 py-1 rounded text-[9px] font-bold hover:bg-orange-600 hover:text-white transition">SUSPEND</button>
                                         )}
-                                        
+
                                         {itemStatus !== 'REJECTED' && (
                                             <button onClick={() => handleEntityAction(item._id, 'Pasal', 'REJECT', item)} className="bg-pink-600/20 text-pink-500 border border-pink-500/30 px-3 py-1 rounded text-[9px] font-bold hover:bg-pink-600 hover:text-white transition">REJECT</button>
                                         )}
@@ -139,7 +144,7 @@ export default function DataTables({ activeTab, filteredData, handleRestaurantSt
                                             {itemStatus}
                                         </span>
                                     </td>
-                                    
+
                                     {/* 🚀 CEO UPDATE: Now showing both Admin Approval AND Live Presence */}
                                     <td className="p-3 space-y-1">
                                         <div className={`px-2 py-0.5 rounded text-[8px] font-black text-center uppercase ${item.userId?.isActive ? 'bg-blue-500/10 text-blue-500' : 'bg-gray-500/10 text-gray-500'}`}>
@@ -151,18 +156,18 @@ export default function DataTables({ activeTab, filteredData, handleRestaurantSt
                                     </td>
 
                                     <td className="p-3 font-mono text-orange-400">{(item.walletBalance / 100 || 0).toFixed(2)}</td>
-                                    
+
                                     <td className="flex gap-2 p-3 flex-wrap">
                                         <button onClick={() => setModalData({ type: 'Rider', data: item })} className="bg-purple-600/20 text-purple-500 border border-purple-500/30 px-3 py-1 rounded text-[9px] font-bold hover:bg-purple-600 hover:text-white transition">
                                             🔍 VERIFY DOCS
                                         </button>
-                                        
+
                                         {itemStatus !== 'VERIFIED' ? (
                                             <button onClick={() => handleEntityAction(itemId, 'Rider', 'APPROVE')} className="bg-green-600/20 text-green-500 border border-green-500/30 px-3 py-1 rounded text-[9px] font-bold hover:bg-green-600 hover:text-white transition">APPROVE</button>
                                         ) : (
                                             <button onClick={() => handleEntityAction(itemId, 'Rider', 'SUSPEND')} className="bg-orange-600/20 text-orange-500 border border-orange-500/30 px-3 py-1 rounded text-[9px] font-bold hover:bg-orange-600 hover:text-white transition">SUSPEND</button>
                                         )}
-                                        
+
                                         {itemStatus !== 'REJECTED' && (
                                             <button onClick={() => handleEntityAction(itemId, 'Rider', 'REJECT')} className="bg-pink-600/20 text-pink-500 border border-pink-500/30 px-3 py-1 rounded text-[9px] font-bold hover:bg-pink-600 hover:text-white transition">REJECT</button>
                                         )}
@@ -182,19 +187,19 @@ export default function DataTables({ activeTab, filteredData, handleRestaurantSt
                                             {item.isActive ? 'ACTIVE' : 'BANNED'}
                                         </span>
                                     </td>
-                                    
+
                                     <td className="flex gap-2 p-3 flex-wrap">
                                         <button onClick={() => setModalData({ type: 'User', data: item })} className="bg-purple-600/20 text-purple-500 border border-purple-500/30 px-3 py-1 rounded text-[9px] font-bold hover:bg-purple-600 hover:text-white transition">
                                             🔍 VIEW PROFILE
                                         </button>
-                                        
+
                                         {/* Customers are auto-verified. Only show UNBAN if they are currently suspended. */}
                                         {!item.isActive ? (
                                             <button onClick={() => handleEntityAction(item._id, 'User', 'APPROVE')} className="bg-green-600/20 text-green-500 border border-green-500/30 px-3 py-1 rounded text-[9px] font-bold hover:bg-green-600 hover:text-white transition">UNBAN / RESTORE</button>
                                         ) : (
                                             <button onClick={() => handleEntityAction(item._id, 'User', 'SUSPEND')} className="bg-orange-600/20 text-orange-500 border border-orange-500/30 px-3 py-1 rounded text-[9px] font-bold hover:bg-orange-600 hover:text-white transition">SUSPEND (BAN)</button>
                                         )}
-                                        
+
                                         <button onClick={() => handleEntityAction(item._id, 'User', 'NUKE')} className="bg-red-600/20 text-red-500 border border-red-500/30 px-3 py-1 rounded text-[9px] font-bold hover:bg-red-600 hover:text-white transition">NUKE</button>
                                     </td>
                                 </>
@@ -222,23 +227,23 @@ export default function DataTables({ activeTab, filteredData, handleRestaurantSt
             {modalData && (
                 <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4 custom-scrollbar overflow-y-auto">
                     <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-4xl p-6 shadow-2xl relative mt-20 mb-20">
-                        
+
                         <button onClick={() => setModalData(null)} className="absolute top-4 right-6 text-gray-400 hover:text-red-500 font-black text-xl">✕</button>
-                        
+
                         <h2 className="text-2xl font-black text-white uppercase tracking-widest mb-6">
                             {modalData.type} Verification Hub 🛡️
                         </h2>
 
                         <div className="grid md:grid-cols-3 gap-6 mb-8 bg-gray-950 p-4 rounded-xl border border-gray-800">
                             <div><span className="block text-[10px] text-gray-500 uppercase font-black">Name</span><span className="text-white font-bold">{modalData.data.name || modalData.data.userId?.name}</span></div>
-                            
+
                             {modalData.type === 'Pasal' && (
                                 <>
                                     <div><span className="block text-[10px] text-gray-500 uppercase font-black">PAN/VAT No.</span><span className="text-orange-500 font-bold">{modalData.data.panVatNumber || 'N/A'}</span></div>
                                     <div><span className="block text-[10px] text-gray-500 uppercase font-black">Location</span><span className="text-white font-bold text-xs">{modalData.data.location || 'N/A'}</span></div>
                                 </>
                             )}
-                            
+
                             {modalData.type === 'Rider' && (
                                 <>
                                     <div><span className="block text-[10px] text-gray-500 uppercase font-black">Phone</span><span className="text-white font-bold">{modalData.data.userId?.phone}</span></div>
@@ -257,7 +262,7 @@ export default function DataTables({ activeTab, filteredData, handleRestaurantSt
                         </div>
 
                         <div className="grid md:grid-cols-2 gap-6 mb-8">
-                            
+
                             {modalData.type === 'Pasal' && (
                                 <div className="bg-gray-800/50 p-3 rounded-xl border border-gray-700">
                                     <span className="block text-[10px] text-orange-500 uppercase font-black mb-2">Restaurant Image</span>
@@ -293,7 +298,7 @@ export default function DataTables({ activeTab, filteredData, handleRestaurantSt
                                     ❌ REJECT & REQUIRE FIX
                                 </button>
                             )}
-                            
+
                             {/* For Users, if they are suspended, show UNBAN button. For others, show APPROVE */}
                             {(modalData.type !== 'User' || !modalData.data.isActive) && (
                                 <button onClick={() => handleEntityAction(modalData.type === 'Rider' ? modalData.data.userId._id : modalData.data._id, modalData.type, 'APPROVE', modalData.data)} className="bg-green-600 hover:bg-green-500 text-white px-6 py-2 rounded font-black tracking-widest text-xs transition-all shadow-[0_0_15px_rgba(34,197,94,0.3)]">

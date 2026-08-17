@@ -1,5 +1,6 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../hooks/useAuth';
 import io from 'socket.io-client';
 
 // ✨ MODULAR COMPONENTS
@@ -11,14 +12,14 @@ import FinancialHubView from '../../components/admin/FinancialHubView';
 import DataTables from '../../components/admin/DataTables';
 
 function AdminDashboard() {
-    const [ordersMap, setOrdersMap] = useState({}); 
+    const [ordersMap, setOrdersMap] = useState({});
     const [stats, setStats] = useState({ totalOrders: 0, totalRevenue: 0, netProfit: 0, dailyOrders: 0, dailyRevenue: 0, availableBalance: 0 });
-    const [riders, setRiders] = useState([]); 
+    const [riders, setRiders] = useState([]);
     const [sellers, setSellers] = useState([]);
     const [customers, setCustomers] = useState([]);
-    const [allOrders, setAllOrders] = useState([]); 
+    const [allOrders, setAllOrders] = useState([]);
     const [finHub, setFinHub] = useState({ pendingRiderPayouts: [], pendingSellerSettlements: [], masterWallet: {} });
-    
+
     const [searchQuery, setSearchQuery] = useState('');
     const [activeTab, setActiveTab] = useState('Overview');
     const [isLoading, setIsLoading] = useState(true);
@@ -28,66 +29,76 @@ function AdminDashboard() {
     const [isModalOpen, setIsModalOpen] = useState(false);
 
     const navigate = useNavigate();
-    const token = localStorage.getItem('token');
+    const { isAuthenticated } = useAuth();
     const socketRef = useRef(null);
 
-    const safeFetch = async (url) => {
+    const safeFetch = useCallback(async (url) => {
         try {
-            const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+            const res = await fetch(url, {
+                credentials: 'include'
+            });
+
             const data = await res.json();
             return res.ok ? data : null;
-        } catch (err) { return null; }
-    };
+        } catch {
+            return null;
+        }
+    }, []);
 
-    const fetchData = async () => {
+    const fetchData = useCallback(async () => {
         const base = 'http://localhost:5005/api/admin';
         const [s, r, sel, c, ao, f, o] = await Promise.all([
-            safeFetch(`${base}/full-stats`), 
+            safeFetch(`${base}/full-stats`),
             safeFetch(`${base}/all-riders`),
-            safeFetch(`${base}/restaurants`), 
+            safeFetch(`${base}/restaurants`),
             safeFetch(`${base}/all-customers`),
-            safeFetch(`${base}/active-tracking-orders`), 
+            safeFetch(`${base}/active-tracking-orders`),
             safeFetch(`${base}/financial-hub`),
             safeFetch(`${base}/all-orders`)
         ]);
 
-        if (s) setStats(s.data); 
-        if (r) setRiders(r.data); 
-        if (sel) setSellers(sel.data); 
-        if (c) setCustomers(c.data); 
-        if (f) setFinHub(f.data); 
+        if (s) setStats(s.data);
+        if (r) setRiders(r.data);
+        if (sel) setSellers(sel.data);
+        if (c) setCustomers(c.data);
+        if (f) setFinHub(f.data);
         if (o) setAllOrders(o.data);
-        
+
         if (ao && Array.isArray(ao.data)) {
             const normalized = {};
             ao.data.forEach(order => { normalized[order._id] = order; });
             setOrdersMap(normalized);
         }
         setIsLoading(false);
-    };
+    }, [safeFetch]);
 
     useEffect(() => {
-        if (!token) { navigate('/login'); return; }
-        socketRef.current = io('http://localhost:5005', { auth: { token } });
+        if (!isAuthenticated) { navigate('/login'); return; }
+        socketRef.current = io('http://localhost:5005', {
+    withCredentials: true
+});
         socketRef.current.on('riderMoved', (data) => {
             setOrdersMap(prev => ({
                 ...prev,
                 [data.orderId]: { ...prev[data.orderId], riderLocation: { lat: data.latitude, lng: data.longitude }, lastUpdate: new Date().toISOString() }
             }));
         });
-        const syncInterval = setInterval(fetchData, 45000); 
+        const syncInterval = setInterval(fetchData, 45000);
         fetchData();
         return () => { socketRef.current?.disconnect(); clearInterval(syncInterval); };
-    }, [token]);
+    }, [isAuthenticated, navigate, fetchData]);
 
     // 🛡️ GOD MODE: Update Restaurant Operations (Open/Close/Delete)
     const handleRestaurantOperation = async (id, data) => {
         try {
             const res = await fetch(`http://localhost:5005/api/admin/restaurants/${id}/operate`, {
-                method: 'PATCH',
-                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            });
+    method: 'PATCH',
+    credentials: 'include',
+    headers: {
+    'Content-Type': 'application/json'
+},
+    body: JSON.stringify(data)
+});
             const result = await res.json();
             if (res.ok && result.success) {
                 alert(`Action successful!`);
@@ -95,26 +106,29 @@ function AdminDashboard() {
             } else {
                 alert(`Operation Failed: ${result.error || 'Unknown error'}`);
             }
-        } catch (err) { alert("Network Error: Could not connect to server"); }
+        } catch { alert("Network Error: Could not connect to server"); }
     };
 
     // 🚦 GATEKEEPER: Approve/Suspend Restaurant (FIXED ALERTS)
     const handleRestaurantStatus = async (id, data) => {
         try {
             const res = await fetch(`http://localhost:5005/api/admin/restaurants/${id}/status`, {
-                method: 'PATCH',
-                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            });
+    method: 'PATCH',
+    credentials: 'include',
+    headers: {
+    'Content-Type': 'application/json'
+},
+    body: JSON.stringify(data)
+});
             const result = await res.json();
-            
+
             if (res.ok && result.success) {
                 alert(`Restaurant status updated to ${data.status} successfully!`);
                 fetchData();
             } else {
                 alert(`Update Failed: ${result.error || result.message || 'Unknown error'}`);
             }
-        } catch (err) { alert("Network Error: Status update failed"); }
+        } catch { alert("Network Error: Status update failed"); }
     };
 
     // 💰 SETTLEMENT: Individual Payout
@@ -124,31 +138,37 @@ function AdminDashboard() {
 
         try {
             const res = await fetch(`http://localhost:5005/api/admin/restaurants/${id}/settle`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ settlementAmount: amount, transactionReference: ref })
-            });
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+    'Content-Type': 'application/json'
+},
+    body: JSON.stringify({ settlementAmount: amount, transactionReference: ref })
+});
             if (res.ok) { alert("Settlement successful"); fetchData(); }
             else { const err = await res.json(); alert(err.message || "Failed"); }
-        } catch (err) { alert("Settlement Error"); }
+        } catch { alert("Settlement Error"); }
     };
 
     // 🚀 ELITE BULK PAYOUT
     const approveBulkPayout = async (targetType) => {
         if (!window.confirm(`CEO Command: Settle ALL ${targetType}s in this batch?`)) return;
-        
+
         setIsProcessing(true);
-        const batchId = `B-${Date.now()}`; 
-        
+        const batchId = `B-${Date.now()}`;
+
         const processChunk = async (cursor = null) => {
             try {
                 const res = await fetch(`http://localhost:5005/api/admin/payouts/bulk-approve`, {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ targetType, batchId, lastId: cursor })
-                });
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+    'Content-Type': 'application/json'
+},
+    body: JSON.stringify({ targetType, batchId, lastId: cursor })
+});
                 const result = await res.json();
-                
+
                 if (result.success) {
                     if (result.nextCursor) {
                         await processChunk(result.nextCursor);
@@ -174,16 +194,16 @@ function AdminDashboard() {
         setIsProcessing(true);
         try {
             const res = await fetch(`http://localhost:5005/api/admin/sync-legacy-data`, {
-                method: 'GET',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+    method: 'GET',
+    credentials: 'include'
+});
             const data = await res.json();
             if (res.ok && data.success) {
                 alert(`✅ Sync Complete: ${data.message}`);
             } else {
                 alert(`❌ Sync Failed: ${data.error || 'Server error'}`);
             }
-        } catch (err) {
+         } catch {
             alert("Network Error: Could not connect to sync route.");
         }
         setIsProcessing(false);
@@ -231,9 +251,9 @@ function AdminDashboard() {
 
                 {['Riders', 'Pasals', 'Users', 'Orders'].includes(activeTab) && (
                     <div className="mb-4">
-                        <input 
-                            type="text" 
-                            placeholder={`Scan ${activeTab} database...`} 
+                        <input
+                            type="text"
+                            placeholder={`Scan ${activeTab} database...`}
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             className="bg-gray-900 border border-gray-800 p-2.5 px-4 rounded-xl text-xs w-full max-w-md outline-none focus:border-orange-500 text-white transition-all"
@@ -242,23 +262,23 @@ function AdminDashboard() {
                 )}
 
                 <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden shadow-2xl">
-                    <DataTables 
-                        activeTab={activeTab} 
-                        filteredData={filteredData} 
-                        riders={riders} 
-                        handleRestaurantStatus={handleRestaurantStatus} 
-                        handleRestaurantOperation={handleRestaurantOperation} 
-                        setSelectedOrder={setSelectedOrder} 
-                        setIsModalOpen={setIsModalOpen} 
+                    <DataTables
+                        activeTab={activeTab}
+                        filteredData={filteredData}
+                        riders={riders}
+                        handleRestaurantStatus={handleRestaurantStatus}
+                        handleRestaurantOperation={handleRestaurantOperation}
+                        setSelectedOrder={setSelectedOrder}
+                        setIsModalOpen={setIsModalOpen}
                     />
 
                     {activeTab === 'Live Tracking' && <LiveTrackingMap activeOrdersArray={activeOrdersArray} isIdle={isIdle} />}
 
                     {activeTab === 'Financial Hub' && (
-                        <FinancialHubView 
-                            finHub={finHub} 
-                            handleSettlement={handleSettlement} 
-                            approveBulkPayout={approveBulkPayout} 
+                        <FinancialHubView
+                            finHub={finHub}
+                            handleSettlement={handleSettlement}
+                            approveBulkPayout={approveBulkPayout}
                         />
                     )}
 
@@ -276,8 +296,8 @@ function AdminDashboard() {
                             <div className="mt-12 p-6 bg-purple-900/10 border border-purple-500/20 rounded-2xl max-w-xl mx-auto">
                                 <h3 className="text-purple-400 font-black mb-3 uppercase tracking-widest text-sm">🛠️ Admin Maintenance Tools</h3>
                                 <p className="text-gray-400 mb-4">Click the button below to upgrade all older Seller accounts to the new active system. This fixes the "Account Disabled" login error instantly.</p>
-                                <button 
-                                    onClick={handleSyncLegacyData} 
+                                <button
+                                    onClick={handleSyncLegacyData}
                                     className="bg-purple-600 hover:bg-purple-500 text-white px-6 py-3 rounded font-black tracking-wider transition-all shadow-[0_0_15px_rgba(147,51,234,0.3)]">
                                     SYNC & FIX LEGACY SELLERS
                                 </button>

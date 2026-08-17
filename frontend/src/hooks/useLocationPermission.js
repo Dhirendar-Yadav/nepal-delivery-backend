@@ -30,6 +30,6 @@ export default function useLocationPermission(updateLocation, denyLocation) {
 
         );
 
-    }, []);
+    }, [denyLocation, updateLocation]);
 
 }

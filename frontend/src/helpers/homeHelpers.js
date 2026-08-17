@@ -1,8 +1,6 @@
-export const handleRestaurantClick = (id, navigate) => {
+export const handleRestaurantClick = (id, navigate, isAuthenticated) => {
 
-    const token = localStorage.getItem("token");
-
-    if (!token) {
+    if (!isAuthenticated) {
 
         alert("Please log in to place an order!");
 

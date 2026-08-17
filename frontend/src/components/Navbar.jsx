@@ -1,6 +1,6 @@
 import DesktopNavbar from "./nav/DesktopNavbar";
 import MobileNavbar from "./nav/MobileNavbar";
-import { useLocation } from "../context/LocationContext";
+import { useLocation } from "../hooks/useLocation";
 
 function Navbar({
 

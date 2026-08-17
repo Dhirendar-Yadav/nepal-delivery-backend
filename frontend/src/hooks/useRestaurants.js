@@ -29,7 +29,24 @@ export default function useRestaurants() {
     };
 
     useEffect(() => {
-        loadRestaurants();
+        let isMounted = true;
+
+        fetchRestaurants().then((result) => {
+            if (!isMounted) return;
+
+            if (result.success) {
+                setRestaurants(result.data);
+                setApiError("");
+            } else {
+                setApiError(result.error);
+            }
+
+            setIsLoading(false);
+        });
+
+        return () => {
+            isMounted = false;
+        };
     }, []);
 
     return {

@@ -1,7 +1,7 @@
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useCart } from "./cart/CartContext";
+import { useCart } from "./hooks/useCart";
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
@@ -27,7 +27,7 @@ function RecenterMap({ position }) {
 }
 
 // ==========================================
-// 🚀 LIVE ORDER TRACKING SCREEN (INJECTED)
+// LIVE ORDER TRACKING SCREEN (INJECTED)
 // ==========================================
 function OrderTrackingScreen({ orderId }) {
   const [order, setOrder] = useState(null);
@@ -35,22 +35,27 @@ function OrderTrackingScreen({ orderId }) {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    const controller = new AbortController(); // 🚀 CHATGPT FIX: Prevent Fetch Memory Leaks
-    
+  const controller = new AbortController(); //  Prevent Fetch Memory Leaks
+
     const fetchOrder = async () => {
       try {
         const res = await fetch(`${API_BASE}/api/orders/${orderId}`, {
-          headers: { 'Authorization': `Bearer ${token}` },
-          signal: controller.signal
-        });
+    credentials: 'include',
+    signal: controller.signal
+});
         if (res.ok) {
           const data = await res.json();
-          setOrder(data.order || data); 
+          setOrder(data.order || data);
         } else if (res.status === 401 || res.status === 403) {
-          localStorage.clear();
-          navigate('/login');
-        } else {
+    await fetch(`${API_BASE}/api/auth/logout`, {
+        method: 'POST',
+        credentials: 'include'
+    });
+    localStorage.removeItem('userRole');
+    localStorage.removeItem('userName');
+    localStorage.removeItem('userPhone');
+    navigate('/login');
+} else {
           setTrackingError('Unable to load order tracking. Please try again.');
         }
       } catch (e) {
@@ -63,8 +68,8 @@ function OrderTrackingScreen({ orderId }) {
 
     fetchOrder();
     // Polling is fine for MVP. Real-time scales later.
-    const interval = setInterval(fetchOrder, 3000); 
-    
+    const interval = setInterval(fetchOrder, 3000);
+
     return () => {
       clearInterval(interval);
       controller.abort();
@@ -93,13 +98,13 @@ function OrderTrackingScreen({ orderId }) {
             <h1 className="text-3xl font-black italic text-orange-500">Live Status 🍔</h1>
             <p className="font-bold text-gray-400 mt-2 tracking-widest uppercase text-[10px]">Order ID: #{order._id.substring(order._id.length - 6).toUpperCase()}</p>
          </div>
-         
+
          <div className="p-8 flex flex-col items-center">
             {/* Live Status Indicator */}
             <div className="bg-orange-50 text-orange-600 px-6 py-2 rounded-full font-black text-lg mb-2 shadow-sm border border-orange-100">
                {order.status || 'Pending'}
             </div>
-            
+
             <p className="text-xs font-bold text-gray-400 mb-8 text-center uppercase tracking-widest">
                {order.status === 'Pending' && "Waiting for restaurant to accept..."}
                {order.status === 'Accepted' && "Restaurant accepted! Finding a rider..."}
@@ -113,7 +118,7 @@ function OrderTrackingScreen({ orderId }) {
             <div className="bg-gray-50 border-2 border-dashed border-gray-300 w-full rounded-2xl p-6 flex flex-col items-center justify-center relative overflow-hidden">
                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-orange-400 to-orange-600"></div>
                <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">Delivery PIN</p>
-               
+
                {/* 🚀 CHATGPT SECURITY FIX: Only show OTP when status is Out for Delivery */}
                {order.status === 'Out for Delivery' && order.deliveryOTP ? (
                  <div className="bg-white border-2 border-orange-500 text-orange-500 px-10 py-4 rounded-2xl text-5xl font-mono font-black tracking-[0.4em] shadow-lg animate-pulse">
@@ -121,11 +126,11 @@ function OrderTrackingScreen({ orderId }) {
                  </div>
                ) : (
                  <div className="bg-gray-100 text-gray-400 border border-gray-200 px-8 py-5 rounded-2xl text-sm font-black tracking-widest uppercase flex items-center gap-2">
-                    <span className="w-3 h-3 bg-gray-300 rounded-full animate-ping"></span> 
+                    <span className="w-3 h-3 bg-gray-300 rounded-full animate-ping"></span>
                     {order.status === 'Delivered' ? 'Delivered ✅' : 'Waiting for Rider'}
                  </div>
                )}
-               
+
                <p className="text-[10px] font-bold text-gray-400 mt-5 text-center px-4">
                   Share this PIN with the rider <span className="text-red-500 font-black">ONLY</span> when they deliver your food.
                </p>
@@ -169,11 +174,11 @@ function Checkout() {
   const foodTotal = totalAmount;
 
   // ⛽ CEO DYNAMIC PRICING STATES
-  const [petrolPrice, setPetrolPrice] = useState(175); 
-  const [deliveryFee, setDeliveryFee] = useState(25);  
+  const [petrolPrice] = useState(175);
+  const [deliveryFee, setDeliveryFee] = useState(25);
   const [distance, setDistance] = useState(0);
 
-  const [position, setPosition] = useState([27.5020, 83.6661]); 
+  const [position, setPosition] = useState([27.5020, 83.6661]);
   const [address, setAddress] = useState("Locating your hunger...");
   const [isLocating, setIsLocating] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState('COD');
@@ -183,7 +188,7 @@ function Checkout() {
   const markerRef = useRef(null);
 
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
-    const R = 6371; 
+    const R = 6371;
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
     const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
@@ -199,9 +204,9 @@ function Checkout() {
     const dist = calculateDistance(restaurantLatitude, restaurantLongitude, position[0], position[1]);
     setDistance(dist.toFixed(2));
 
-    const fuelCostPerKM = petrolPrice / 40; 
-    const riderProfitPerKM = 12; 
-    
+    const fuelCostPerKM = petrolPrice / 40;
+    const riderProfitPerKM = 12;
+
     let calculatedFee = (fuelCostPerKM + riderProfitPerKM) * dist;
     setDeliveryFee(calculatedFee < 25 ? 25 : Math.round(calculatedFee));
   }, [position, petrolPrice, restaurantLatitude, restaurantLongitude]);
@@ -214,8 +219,8 @@ function Checkout() {
       const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}`, { signal });
       const data = await response.json();
       setAddress(data.display_name || "Location Selected");
-    } catch (error) { 
-      if (error.name !== 'AbortError') console.error("Address Error", error); 
+    } catch (error) {
+      if (error.name !== 'AbortError') console.error("Address Error", error);
     }
   };
 
@@ -223,7 +228,7 @@ function Checkout() {
   useEffect(() => {
     const controller = new AbortController();
     setAddress("Locating your hunger..."); // Show loading state
-    
+
     const timeout = setTimeout(() => {
       fetchAddress(position[0], position[1], controller.signal);
     }, 700); // 700ms delay
@@ -263,11 +268,9 @@ function Checkout() {
   }), []);
 
   const handlePlaceOrder = async () => {
-    if (isPlacingOrder) return; // 🚀 CHATGPT FIX: Prevent Double Submit
+    if (isPlacingOrder) return; //  Prevent Double Submit
 
-    const token = localStorage.getItem('token');
-    if (!token) { navigate('/login'); return; }
-    if (paymentMethod === 'Online') { alert("Online payment coming soon!"); return; }
+if (paymentMethod === 'Online') { alert("Online payment coming soon!"); return; }
 
     if (!restaurantId) {
       alert("⚠️ Error: Restaurant ID is missing! Please go back to the cart and try again.");
@@ -282,8 +285,8 @@ function Checkout() {
     const safePhone = localStorage.getItem('userPhone') || localStorage.getItem('phone') || "Number Not Provided";
 
     const formattedItems = cart.items.map(item => ({
-        menuItemId: item._id, 
-        quantity: item.quantity || 1, 
+        menuItemId: item._id,
+        quantity: item.quantity || 1,
         name: item.name
     }));
 
@@ -294,15 +297,18 @@ function Checkout() {
           ? pendingCheckout
           : beginCheckoutAttempt();
       const response = await fetch(`${API_BASE}/api/orders`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({
+  method: 'POST',
+  credentials: 'include',
+  headers: {
+    'Content-Type': 'application/json'
+},
+  body: JSON.stringify({
           restaurantId,
-          items: formattedItems, 
-          clientOrderId: attempt.attemptId, 
-          paymentMethod,       
+          items: formattedItems,
+          clientOrderId: attempt.attemptId,
+          paymentMethod,
           totalAmount: grandTotal,
-          deliveryFee: deliveryFee, 
+          deliveryFee: deliveryFee,
           deliveryDetails: { address, phone: safePhone, latitude: position[0], longitude: position[1] }
         }),
       });
@@ -314,17 +320,17 @@ function Checkout() {
       } catch {
         data = {};
       }
-      if (response.ok) { 
+      if (response.ok) {
         const finalOrderId = data.order?._id || data.orderId || data._id;
         if (finalOrderId) clearCheckoutAttempt();
         setPlacedOrderId(finalOrderId);
-      } else { 
-        alert(`Order Failed: ${data.error || data.message || "Unknown Error"}`); 
-      } 
-    } catch (error) { 
-      alert("Network Error! Could not connect to the server."); 
-    } finally { 
-      setIsPlacingOrder(false); 
+      } else {
+        alert(`Order Failed: ${data.error || data.message || "Unknown Error"}`);
+      }
+    } catch {
+      alert("Network Error! Could not connect to the server.");
+    } finally {
+      setIsPlacingOrder(false);
     }
   };
 

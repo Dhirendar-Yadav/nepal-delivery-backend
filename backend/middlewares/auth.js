@@ -1,17 +1,22 @@
 const jwt = require('jsonwebtoken');
 
 const authMiddleware = (req, res, next) => {
-    const authHeader = req.header('Authorization');
+const authHeader = req.header('Authorization');
+const bearerToken = authHeader && authHeader.startsWith('Bearer ')
+    ? authHeader.split(' ')[1]
+    : null;
+const cookieToken = req.cookies?.access_token;
+const token = bearerToken || cookieToken;
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({
-            success: false,
-            error: 'AUTH_REQUIRED',
-            message: 'Authentication required.'
-        });
-    }
+if (!token) {
+    return res.status(401).json({
+        success: false,
+        error: 'AUTH_REQUIRED',
+        message: 'Authentication required.'
+    });
+}
 
-    if (!process.env.JWT_SECRET) {
+if (!process.env.JWT_SECRET) {
         console.error('FATAL: JWT_SECRET missing.');
         return res.status(500).json({
             success: false,
@@ -20,16 +25,14 @@ const authMiddleware = (req, res, next) => {
     }
 
     try {
-        const token = authHeader.split(' ')[1];
+    req.user = jwt.verify(token, process.env.JWT_SECRET, {
+        algorithms: ['HS256'],
+        issuer: 'food-samundar',
+        audience: 'user-app'
+    });
 
-        req.user = jwt.verify(token, process.env.JWT_SECRET, {
-            algorithms: ['HS256'],
-            issuer: 'food-samundar',
-            audience: 'user-app'
-        });
-
-        next();
-    } catch (err) {
+    next();
+} catch (err) {
         return res.status(401).json({
             success: false,
             error: 'INVALID_TOKEN',

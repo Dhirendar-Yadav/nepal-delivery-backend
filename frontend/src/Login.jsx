@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate, Link } from 'react-router-dom';
-import { useAuth } from './context/AuthContext';
+import { useAuth } from './hooks/useAuth';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5005';
 
@@ -16,13 +16,16 @@ const Login = () => {
         setIsLoading(true);
         try {
             // Internal logic: Authenticating user via backend engine
-            const res = await axios.post(`${API_BASE}/api/auth/login`, formData);
+            const res = await axios.post(
+    `${API_BASE}/api/auth/login`,
+    formData,
+    { withCredentials: true }
+);
             console.log("LOGIN RESPONSE:", res.data);
 console.log("USER:", res.data.user);
 console.log("PHONE:", res.data.user?.phone);
             // Securely storing authentication artifacts
             login({
-    token: res.data.token,
     user: res.data.user,
 });
 
@@ -34,17 +37,17 @@ console.log("PHONE:", res.data.user?.phone);
             if (userRole === 'admin') {
                 alert("Welcome back, CEO Dhiru! 🛡️ Accessing Master Portal...");
                 navigate('/admin-dhiru-portal-99');
-            } 
+            }
             // Rider Dashboard Redirection
             else if (userRole === 'rider') {
                 alert(`Welcome back, Rider ${res.data.user.name}! 🏍️`);
                 navigate('/rider/dashboard');
-            } 
+            }
             // Partner/Seller Dashboard Redirection
             else if (userRole === 'seller') {
                 alert(`Welcome back to Partner Dashboard, ${res.data.user.name}! 🏪`);
-                navigate('/dashboard'); 
-            } 
+                navigate('/dashboard');
+            }
             // Default Customer Home
             else {
                 navigate('/');
@@ -65,9 +68,9 @@ console.log("PHONE:", res.data.user?.phone);
     return (
         <div className="min-h-screen bg-white flex flex-col font-sans text-gray-800 relative overflow-y-auto">
             <div className="w-full min-h-screen flex items-center justify-center px-4 py-8 sm:px-6 lg:px-20">
-                
+
                 <div className="w-full max-w-4xl flex flex-col">
-                    
+
                     <div className="mb-4">
 
     {/* Brand */}
@@ -97,7 +100,7 @@ console.log("PHONE:", res.data.user?.phone);
     </div>
 
 </div>
-                    
+
                     <form
     onSubmit={handleLogin}
     className="flex flex-col gap-5"
@@ -105,28 +108,28 @@ console.log("PHONE:", res.data.user?.phone);
                         <div className="flex flex-col gap-4">
                             <div className="flex flex-col gap-3">
                                 <label className="text-xs font-black text-orange-500 uppercase tracking-wide ml-1">Email</label>
-                                <input 
-                                    type="email" 
-                                    placeholder="your@email.com" 
+                                <input
+                                    type="email"
+                                    placeholder="your@email.com"
                                     className="w-full h-11 px-4 bg-white border border-gray-200 rounded-xl outline-none focus:border-orange-500 focus:ring-4 focus:ring-orange-100 transition text-[13px] font-medium placeholder:text-xs placeholder:text-gray-400"
-                                    onChange={(e) => setFormData({...formData, email: e.target.value})} 
-                                    required 
+                                    onChange={(e) => setFormData({...formData, email: e.target.value})}
+                                    required
                                 />
                             </div>
 
                             <div className="flex flex-col gap-4">
                                 <label className="text-xs font-black text-orange-500 uppercase tracking-wide ml-1">Password</label>
-                                <input 
-                                    type="password" 
-                                    placeholder="••••••••" 
+                                <input
+                                    type="password"
+                                    placeholder="••••••••"
                                     className="w-full h-11 px-4 bg-white border border-gray-200 rounded-xl outline-none focus:border-orange-500 focus:ring-4 focus:ring-orange-100 transition text-[13px] font-medium placeholder:text-xs placeholder:text-gray-400"
-                                    onChange={(e) => setFormData({...formData, password: e.target.value})} 
-                                    required 
+                                    onChange={(e) => setFormData({...formData, password: e.target.value})}
+                                    required
                                 />
                             </div>
                         </div>
-                        
-                        <button 
+
+                        <button
                             disabled={isLoading}
                             className={`w-2/3 mx-auto text-white font-black py-3 rounded-xl transition-all shadow-lg uppercase tracking-wide text-sm mt-6 ${isLoading ? 'bg-orange-300 cursor-not-allowed' : 'bg-black hover:bg-orange-600 active:scale-95'}`}
                         >

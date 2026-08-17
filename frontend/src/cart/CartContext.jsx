@@ -1,5 +1,5 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { CartContext } from "./CartContext";
 const CART_STORAGE_KEY = "foodsamundar:cart:v1";
 
 const createEmptyCheckoutAttempt = () => ({
@@ -96,7 +96,7 @@ const getItemRestaurant = (item) => {
   return null;
 };
 
-const CartContext = createContext(null);
+
 
 export function CartProvider({ children }) {
   const [cart, setCart] = useState(readStoredCart);
@@ -245,14 +245,4 @@ export function CartProvider({ children }) {
   }), [cart, beginCheckoutAttempt, clearCheckoutAttempt, reconcileCart, totalAmount, totalQuantity]);
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
-}
-
-export function useCart() {
-  const cart = useContext(CartContext);
-
-  if (!cart) {
-    throw new Error('useCart must be used within a CartProvider');
-  }
-
-  return cart;
 }

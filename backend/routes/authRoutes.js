@@ -3,8 +3,8 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
-const rateLimit = require('express-rate-limit'); 
-const { v4: uuidv4 } = require('uuid'); 
+const rateLimit = require('express-rate-limit');
+const { v4: uuidv4 } = require('uuid');
 const multer = require('multer'); // 🛡️ ADDED: For parsing FormData & Images
 const path = require('path');
 const fs = require('fs');
@@ -51,8 +51,8 @@ const upload = multer({
 
 // 🛡️ Elite Brute-Force Protection
 const loginLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, 
-    max: 10, 
+    windowMs: 15 * 60 * 1000,
+    max: 10,
     message: { success: false, message: "Too many login attempts. System locked for 15 minutes." }
 });
 
@@ -82,10 +82,10 @@ router.post('/signup', upload.any(), async (req, res) => {
 
         if (!email || !/^\S+@\S+\.\S+$/.test(email)) throw { status: 400, message: "Valid email is required." };
         if (!phone || !/^\d{10,15}$/.test(phone)) throw { status: 400, message: "Valid phone number (10-15 digits) is required." };
-        
+
         if (!password || password.length < 8) throw { status: 400, message: "Password must be at least 8 characters long." };
         if (!fullName) throw { status: 400, message: "Full name is required." };
-        
+
         email = email.toLowerCase().trim();
         phone = String(phone).trim().replace(/^\+977/, "");
         const role = businessName ? 'Seller' : 'Customer';
@@ -120,16 +120,16 @@ if (existingUser) {
             : "Phone number already registered."
     };
 }
-        const newUser = new User({ 
-            name: fullName, 
-            email, 
+        const newUser = new User({
+            name: fullName,
+            email,
             password: password,
-            phone, 
-            role, 
+            phone,
+            role,
             businessName,
-            isActive, 
-            kycStatus, 
-            currentLocation: { type: 'Point', coordinates: userCoordinates } 
+            isActive,
+            kycStatus,
+            currentLocation: { type: 'Point', coordinates: userCoordinates }
         });
         await newUser.save({ session });
 
@@ -149,33 +149,33 @@ if (existingUser) {
                 safeLocationString = 'Auto-Pinned Location';
             }
 
-            const newRestaurant = new Restaurant({ 
-                ownerId: newUser._id, 
-                name: businessName, 
-                image: imagePath, 
-                location: safeLocationString, 
+            const newRestaurant = new Restaurant({
+                ownerId: newUser._id,
+                name: businessName,
+                image: imagePath,
+                location: safeLocationString,
                 currentLocation: {
                     type: 'Point',
                     coordinates: userCoordinates
                 },
-                latitude: hasValidCoordinates ? lat : null, 
-                longitude: hasValidCoordinates ? lng : null, 
-                panVatNumber: panVatNumber || null 
+                latitude: hasValidCoordinates ? lat : null,
+                longitude: hasValidCoordinates ? lng : null,
+                panVatNumber: panVatNumber || null
             });
             await newRestaurant.save({ session });
         }
-        
+
         await session.commitTransaction();
         session.endSession();
-        
+
         if (req.log) req.log.info({ event: 'USER_SIGNUP_SUCCESS', userId: newUser._id, role });
-        
+
         if (role === 'Seller') {
             return res.status(201).json({ success: true, message: "Seller account created! Please wait for Admin approval." });
         }
         res.status(201).json({ success: true, message: "Account created successfully!" });
 
-    } catch (err) { 
+    } catch (err) {
         if (session && session.inTransaction()) {
             await session.abortTransaction();
             session.endSession();
@@ -195,10 +195,10 @@ if (existingUser) {
                 : "Duplicate data."
     });
 }
-        
+
         const status = err.status || 500;
         if (req.log) req.log.error({ event: 'USER_SIGNUP_FAILED', error: err.message });
-        res.status(status).json({ success: false, error: err.message }); 
+        res.status(status).json({ success: false, error: err.message });
     }
 });
 
@@ -214,14 +214,14 @@ router.post('/rider/signup', upload.any(), async (req, res) => {
 
         // 🛡️ FIX 2: If FormData appends phone twice, it becomes an array. Extract the last one (+977...)
         if (Array.isArray(phone)) {
-            phone = phone[phone.length - 1]; 
+            phone = phone[phone.length - 1];
         }
 
         // Basic Validation
         if (!email || !password || !fullName || !phone) {
             return res.status(400).json({ success: false, message: "All basic fields are required." });
         }
-        
+
         const formattedEmail = email.toLowerCase().trim();
         phone = String(phone).trim().replace(/^\+977/, "");
 
@@ -250,16 +250,16 @@ router.post('/rider/signup', upload.any(), async (req, res) => {
             };
         }
 // 1. Create Base User Account
-        const newUser = new User({ 
-            name: fullName, 
-            email: formattedEmail, 
-            password: password, 
-            phone, 
-            role: 'Rider', 
+        const newUser = new User({
+            name: fullName,
+            email: formattedEmail,
+            password: password,
+            phone,
+            role: 'Rider',
             isActive: false, // Riders need admin approval
             kycStatus: 'PENDING',
             // 🛡️ FIX 3: Added currentLocation to prevent MongoDB validation crashes for Rider accounts
-            currentLocation: { type: 'Point', coordinates: [0, 0] } 
+            currentLocation: { type: 'Point', coordinates: [0, 0] }
         });
         await newUser.save({ session });
 
@@ -282,7 +282,7 @@ router.post('/rider/signup', upload.any(), async (req, res) => {
         session.endSession();
 
         if (req.log) req.log.info({ event: 'RIDER_SIGNUP_SUCCESS', userId: newUser._id });
-        
+
         res.status(201).json({ success: true, message: "Rider application submitted! Please wait for Admin approval." });
 
     } catch (err) {
@@ -321,12 +321,12 @@ router.post('/rider/signup', upload.any(), async (req, res) => {
 router.post('/login', loginLimiter, async (req, res) => {
     try {
         let { email, password } = req.body;
-        
+
         if (!email || !password) return res.status(400).json({ success: false, message: "Email and password required." });
         email = email.toLowerCase().trim();
 
         const user = await User.findOne({ email }).select('+password +isActive +isBlocked +kycStatus +role +name +phone');
-        
+
         const passwordToCheck = user ? user.password : DUMMY_HASH;
         const isMatch = await bcrypt.compare(password, passwordToCheck);
 
@@ -334,7 +334,7 @@ router.post('/login', loginLimiter, async (req, res) => {
 
         if (!user || !isMatch) {
             if (req.log) req.log.warn({ event: 'LOGIN_FAILED', reason: 'INVALID_CREDENTIALS', email });
-            return res.status(400).json({ success: false, message: "Invalid credentials!" }); 
+            return res.status(400).json({ success: false, message: "Invalid credentials!" });
         }
 
         if (!user.isActive || user.isBlocked) {
@@ -347,35 +347,91 @@ router.post('/login', loginLimiter, async (req, res) => {
         }
 
         const token = jwt.sign(
-            { id: user._id, role: user.role, name: user.name }, 
-            process.env.JWT_SECRET, 
-            { 
+            { id: user._id, role: user.role, name: user.name },
+            process.env.JWT_SECRET,
+            {
                 expiresIn: '1d',
-                issuer: 'food-samundar', 
+                issuer: 'food-samundar',
                 audience: 'user-app',
-                jwtid: uuidv4() 
+                jwtid: uuidv4()
             }
         );
 
-        if (req.log) req.log.info({ event: 'USER_LOGIN_SUCCESS', userId: user._id, role: user.role });
+            if (req.log) req.log.info({ event: 'USER_LOGIN_SUCCESS', userId: user._id, role: user.role });
 
-        res.status(200).json({ 
-            success: true,
-            message: "Login successful!",
-            token, 
-            user: {
-                id: user._id,
-                name: user.name, 
-                role: user.role, 
-                phone: user.phone
-            }
-        });
-    } catch (err) { 
-        if (req.log) req.log.error({ event: 'LOGIN_SYSTEM_ERROR', error: err.message });
-        res.status(500).json({ success: false, error: "Internal Server Error" }); 
+    res.cookie('access_token', token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        maxAge: 24 * 60 * 60 * 1000,
+        path: '/'
+    });
+
+    res.status(200).json({
+    success: true,
+    message: "Login successful!",
+    user: {
+        id: user._id,
+        name: user.name,
+        role: user.role,
+        phone: user.phone
     }
 });
+    } catch (err) {
+        if (req.log) req.log.error({ event: 'LOGIN_SYSTEM_ERROR', error: err.message });
+        res.status(500).json({ success: false, error: "Internal Server Error" });
+    }
+});
+router.get('/me', authMiddleware, async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id)
+            .select('_id name email phone role isActive isBlocked isDeleted kycStatus');
 
+        if (!user || user.isDeleted || user.isBlocked || !user.isActive) {
+            return res.status(401).json({
+                success: false,
+                error: 'AUTH_REQUIRED',
+                message: 'User account is not available.'
+            });
+        }
+
+        res.json({
+            success: true,
+            user: {
+                id: user._id,
+                name: user.name,
+                email: user.email,
+                phone: user.phone,
+                role: user.role,
+                isActive: user.isActive,
+                kycStatus: user.kycStatus
+            }
+        });
+    } catch (err) {
+        if (req.log) req.log.error({
+            event: 'AUTH_SESSION_ERROR',
+            error: err.message
+        });
+
+        res.status(500).json({
+            success: false,
+            error: 'INTERNAL_SERVER_ERROR'
+        });
+    }
+});
+router.post('/logout', (req, res) => {
+    res.clearCookie('access_token', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        path: '/'
+    });
+
+    res.json({
+        success: true,
+        message: 'Logout successful.'
+    });
+});
 // ==========================================
 // ✨ NEW: RIDER ONLINE/OFFLINE TOGGLE
 // ==========================================
@@ -388,12 +444,12 @@ router.put('/rider/status', loginLimiter, authMiddleware, async (req, res) => {
         error: "Unauthorized"
     });
 }
-        
+
         const { isOnline } = req.body; // Expecting { isOnline: true/false }
 
         const user = await User.findByIdAndUpdate(
-            req.user.id, 
-            { isOnline: isOnline, shiftStartTime: isOnline ? new Date() : null }, 
+            req.user.id,
+            { isOnline: isOnline, shiftStartTime: isOnline ? new Date() : null },
             { new: true }
         );
 

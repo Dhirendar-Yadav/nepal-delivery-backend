@@ -1,6 +1,6 @@
-import { createContext, useContext, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
-const UIContext = createContext(null);
+import { UIContext } from "./UIContext";
 
 export function UIProvider({ children }) {
     const [isSidebarOpen, setSidebarOpen] = useState(false);
@@ -30,14 +30,4 @@ export function UIProvider({ children }) {
             {children}
         </UIContext.Provider>
     );
-}
-
-export function useUI() {
-    const context = useContext(UIContext);
-
-    if (!context) {
-        throw new Error("useUI must be used inside UIProvider");
-    }
-
-    return context;
 }
