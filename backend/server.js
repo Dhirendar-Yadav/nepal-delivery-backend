@@ -84,7 +84,13 @@ app.use(cookieParser());
 app.use(hpp());
 
 // 🛡️ FIX: Added localhost:5173 to allow frontend connections
-const allowedOrigins = [process.env.FRONTEND_URL, 'http://localhost:3000', 'http://localhost:5173'];
+const allowedOrigins = isProd
+    ? [process.env.FRONTEND_URL].filter(Boolean)
+    : [
+        process.env.FRONTEND_URL,
+        'http://localhost:3000',
+        'http://localhost:5173'
+    ].filter(Boolean);
 app.use(cors({
     origin: (origin, callback) => {
         if (!origin || allowedOrigins.includes(origin)) callback(null, true);
@@ -473,7 +479,12 @@ return res.json({
 // ==========================================
 // 4. SOCKET ENGINE (DoS Protected)
 // ==========================================
-const io = new Server(server, { cors: { origin: allowedOrigins } });
+const io = new Server(server, {
+    cors: {
+        origin: allowedOrigins,
+        credentials: true
+    }
+});
 app.set('io', io); // ✨ NEW: Expose IO to routes
 initializeSocket(io);
 
