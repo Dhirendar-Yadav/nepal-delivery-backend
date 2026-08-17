@@ -40,7 +40,21 @@ router.get('/full-stats', verifyAdmin, statsLimiter, async (req, res) => {
             dailyOrders: dailyStats[0]?.count || 0,
             dailyRevenue: ((dailyStats[0]?.revenue || 0) / 100).toFixed(2)
         }});
-    } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+    } catch (err) {
+        if (req.log) {
+            req.log.error({
+                event: 'ADMIN_FULL_STATS_FAILED',
+                error: err.message,
+                stack: err.stack
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            error: 'INTERNAL_SERVER_ERROR',
+            message: 'Unable to load dashboard statistics.'
+        });
+    }
 });
 
 // ==========================================
@@ -77,7 +91,21 @@ router.get('/all-riders', verifyAdmin, statsLimiter, async (req, res) => {
         });
 
         res.json({ success: true, data: formattedRiders });
-    } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+        } catch (err) {
+        if (req.log) {
+            req.log.error({
+                event: 'ADMIN_RIDERS_FETCH_FAILED',
+                error: err.message,
+                stack: err.stack
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            error: 'INTERNAL_SERVER_ERROR',
+            message: 'Unable to load rider data.'
+        });
+    }
 });
 
 // ✨ NEW: RIDER APPROVAL & KYC GATEKEEPER (For your Admin Control)
@@ -93,7 +121,19 @@ router.patch('/riders/:id/status', verifyAdmin, criticalLimiter, async (req, res
         await user.save();
         res.json({ success: true, message: `Rider successfully updated!` });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        if (req.log) {
+            req.log.error({
+                event: 'ADMIN_RIDER_STATUS_UPDATE_FAILED',
+                error: err.message,
+                stack: err.stack
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            error: 'INTERNAL_SERVER_ERROR',
+            message: 'Unable to update rider status.'
+        });
     }
 });
 
@@ -101,7 +141,21 @@ router.get('/all-customers', verifyAdmin, statsLimiter, async (req, res) => {
     try {
         const customers = await User.find({ role: 'Customer' }).select('-password').lean();
         res.json({ success: true, data: customers });
-    } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+    } catch (err) {
+        if (req.log) {
+            req.log.error({
+                event: 'ADMIN_CUSTOMERS_FETCH_FAILED',
+                error: err.message,
+                stack: err.stack
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            error: 'INTERNAL_SERVER_ERROR',
+            message: 'Unable to load customer data.'
+        });
+    }
 });
 
 router.get('/live-rider-shifts', verifyAdmin, statsLimiter, async (req, res) => {
@@ -112,7 +166,21 @@ router.get('/live-rider-shifts', verifyAdmin, statsLimiter, async (req, res) => 
             return { ...rider, shiftDurationMinutes: shiftDuration, isOvertime: shiftDuration >= 720, isInBuffer: shiftDuration >= 700 && shiftDuration < 720, isBusy: !!rider.currentActiveOrderId };
         });
         res.json({ success: true, data: riderData });
-    } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+    } catch (err) {
+        if (req.log) {
+            req.log.error({
+                event: 'ADMIN_RIDER_SHIFTS_FETCH_FAILED',
+                error: err.message,
+                stack: err.stack
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            error: 'INTERNAL_SERVER_ERROR',
+            message: 'Unable to load rider shift data.'
+        });
+    }
 });
 
 router.post('/reset-rider-shift', verifyAdmin, criticalLimiter, async (req, res) => {
@@ -142,7 +210,21 @@ router.post('/reset-rider-shift', verifyAdmin, criticalLimiter, async (req, res)
 
         await session.commitTransaction(); res.json({ success: true, message: `Rider ${user.name} settled and shift restarted.` });
     } catch (err) {
-        await session.abortTransaction(); res.status(400).json({ success: false, message: err.message });
+        await session.abortTransaction();
+
+        if (req.log) {
+            req.log.error({
+                event: 'ADMIN_RIDER_SHIFT_RESET_FAILED',
+                error: err.message,
+                stack: err.stack
+            });
+        }
+
+        res.status(400).json({
+            success: false,
+            error: 'RIDER_SHIFT_RESET_FAILED',
+            message: 'Unable to reset rider shift.'
+        });
     } finally { session.endSession(); }
 });
 
@@ -164,14 +246,42 @@ router.get('/all-orders', verifyAdmin, orderLimiter, async (req, res) => {
 
         const orders = await Order.find(query).populate('customerId', 'name phone').populate('restaurantId', 'name').sort({ _id: -1 }).limit(limit).lean(); 
         res.json({ success: true, data: orders });
-    } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+    } catch (err) {
+        if (req.log) {
+            req.log.error({
+                event: 'ADMIN_ORDERS_FETCH_FAILED',
+                error: err.message,
+                stack: err.stack
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            error: 'INTERNAL_SERVER_ERROR',
+            message: 'Unable to load order data.'
+        });
+    }
 });
 
 router.get('/active-tracking-orders', verifyAdmin, orderLimiter, async (req, res) => {
     try {
         const activeOrders = await Order.find({ status: { $in: ['Confirmed', 'Preparing', 'Out for Delivery'] } }).populate('restaurantId assignedRiderId').lean();
         res.json({ success: true, data: activeOrders });
-    } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+    } catch (err) {
+        if (req.log) {
+            req.log.error({
+                event: 'ADMIN_ACTIVE_ORDERS_FETCH_FAILED',
+                error: err.message,
+                stack: err.stack
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            error: 'INTERNAL_SERVER_ERROR',
+            message: 'Unable to load active order tracking.'
+        });
+    }
 });
 
 // Deprecated: Delivery settlement handled only via riderController.completeOrder
@@ -180,7 +290,21 @@ router.delete('/purge/:type/:id', verifyAdmin, criticalLimiter, async (req, res)
     try {
         await AdminAuditLog.create({ _id: crypto.randomUUID(), adminId: req.user.id, action: `SOFT_DELETE_${req.params.type.toUpperCase()}`, targetId: req.params.id });
         res.json({ success: true, message: `Resource marked for deletion.` });
-    } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+        } catch (err) {
+        if (req.log) {
+            req.log.error({
+                event: 'ADMIN_PURGE_FAILED',
+                error: err.message,
+                stack: err.stack
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            error: 'INTERNAL_SERVER_ERROR',
+            message: 'Unable to process the requested operation.'
+        });
+    }
 });
 
 module.exports = router;

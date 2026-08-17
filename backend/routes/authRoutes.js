@@ -197,8 +197,15 @@ if (existingUser) {
 }
 
         const status = err.status || 500;
-        if (req.log) req.log.error({ event: 'USER_SIGNUP_FAILED', error: err.message });
-        res.status(status).json({ success: false, error: err.message });
+if (req.log) req.log.error({ event: 'USER_SIGNUP_FAILED', error: err.message });
+
+res.status(status).json({
+    success: false,
+    error: status >= 500 ? 'INTERNAL_SERVER_ERROR' : 'REGISTRATION_FAILED',
+    message: status >= 500
+        ? 'Unable to complete registration.'
+        : 'Registration failed.'
+});
     }
 });
 
@@ -310,8 +317,12 @@ router.post('/rider/signup', upload.any(), async (req, res) => {
 }
 
         if (req.log) req.log.error({ event: 'RIDER_SIGNUP_FAILED', error: err.message });
-        // 🛡️ FIX 5: Send the actual error message back to the frontend alert
-        res.status(500).json({ success: false, message: `Registration Failed: ${err.message}` });
+
+res.status(500).json({
+    success: false,
+    error: 'INTERNAL_SERVER_ERROR',
+    message: 'Registration failed. Please try again.'
+});
     }
 });
 
@@ -457,8 +468,20 @@ router.put('/rider/status', loginLimiter, authMiddleware, async (req, res) => {
 
         res.json({ success: true, isOnline: user.isOnline, message: `Rider is now ${user.isOnline ? 'ONLINE' : 'OFFLINE'}` });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+    if (req.log) {
+        req.log.error({
+            event: 'RIDER_STATUS_UPDATE_FAILED',
+            error: err.message,
+            stack: err.stack
+        });
     }
+
+    res.status(500).json({
+        success: false,
+        error: 'INTERNAL_SERVER_ERROR',
+        message: 'Unable to update rider status.'
+    });
+}
 });
 
 module.exports = router;

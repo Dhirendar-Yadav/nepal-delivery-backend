@@ -45,7 +45,21 @@ router.get('/financial-hub', verifyAdmin, criticalLimiter, async (req, res) => {
         const wallet = await AdminWallet.findOne({ date: todayString }).lean();
 
         res.json({ success: true, data: { pendingRiderPayouts: riders, pendingSellerSettlements: sellers, masterWallet: wallet } });
-    } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+    } catch (err) {
+    if (req.log) {
+        req.log.error({
+            event: 'FINANCIAL_HUB_FAILED',
+            error: err.message,
+            stack: err.stack
+        });
+    }
+
+    res.status(500).json({
+        success: false,
+        error: 'INTERNAL_SERVER_ERROR',
+        message: 'Unable to load financial data.'
+    });
+}
 });
 
 // 🛡️ FIX: Using financeController here
@@ -140,9 +154,26 @@ router.post('/payouts/bulk-approve', verifyAdmin, criticalLimiter, async (req, r
 
         res.json({ success: true, message: `Batch chunk processed.`, stats: { processed: processedCount, failed: failedCount, totalAmount: totalPayoutAmount, batchId, status: finalBatchStatus }, nextCursor: entities.length === 50 ? nextCursor : null });
     } catch (err) {
-        if (req.user && req.user.id) await SystemLock.deleteOne({ _id: `BULK_LOCK_${req.body.batchId}` }).catch(() => {});
-        res.status(400).json({ success: false, message: err.message });
+    if (req.user && req.user.id) {
+        await SystemLock.deleteOne({
+            _id: `BULK_LOCK_${req.body.batchId}`
+        }).catch(() => {});
     }
+
+    if (req.log) {
+        req.log.error({
+            event: 'BULK_PAYOUT_FAILED',
+            error: err.message,
+            stack: err.stack
+        });
+    }
+
+    res.status(400).json({
+        success: false,
+        error: 'BULK_PAYOUT_FAILED',
+        message: 'Unable to process the payout batch.'
+    });
+}
 });
 
 module.exports = router;
