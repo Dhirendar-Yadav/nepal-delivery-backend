@@ -301,7 +301,8 @@ exports.acceptOrder = async (req, res) => {
         riderLocked = await User.findOneAndUpdate(
             {
                 _id: riderId,
-                currentActiveOrderId: null  // Only succeed if currently unlocked
+                isOnline: true,
+                currentActiveOrderId: null
             },
             {
                 $set: { currentActiveOrderId: orderId }
@@ -882,7 +883,11 @@ exports.toggleStatus = async (req, res) => {
 
             const shiftStartTime = new Date();
             const updatedUser = await User.findOneAndUpdate(
-                { _id: req.user.id },
+                {
+                    _id: req.user.id,
+                    currentActiveOrderId: null,
+                    isOnline: false
+                },
                 { $set: { isOnline: true, shiftStartTime } },
                 { new: true }
             );
@@ -914,7 +919,11 @@ exports.toggleStatus = async (req, res) => {
             }
 
             const updatedUser = await User.findOneAndUpdate(
-                { _id: req.user.id },
+                {
+                    _id: req.user.id,
+                    currentActiveOrderId: null,
+                    isOnline: true
+                },
                 { $set: { isOnline: false, shiftStartTime: null } },
                 { new: true }
             );
@@ -933,11 +942,6 @@ exports.toggleStatus = async (req, res) => {
         return res.status(500).json({ success: false, message: "Failed to update shift status" });
     }
 };
-
-
-
-
-
 
 /**
  * ? Rider Reject Order
