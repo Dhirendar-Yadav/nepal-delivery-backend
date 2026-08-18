@@ -198,14 +198,37 @@ router.post('/reset-rider-shift', verifyAdmin, criticalLimiter, async (req, res)
         if (clearCOD) {
             const riderProfile = await RiderProfile.findOne({ userId: riderId })
                 .session(session)
-                .select('wallet.balance');
-            const walletBalance = riderProfile?.wallet?.balance || 0;
+                .select('wallet.balance wallet.codPending');
 
-            await RiderProfile.findOneAndUpdate(
-                { userId: riderId, "wallet.balance": walletBalance },
-                { $inc: { "wallet.balance": -walletBalance } },
-                { session, upsert: true }
+            if (!riderProfile) {
+                throw new Error("Rider profile not found");
+            }
+
+            const walletBalance = riderProfile.wallet?.balance || 0;
+            const codPending = riderProfile.wallet?.codPending || 0;
+
+            const updatedRiderProfile = await RiderProfile.findOneAndUpdate(
+                {
+                    userId: riderId,
+                    "wallet.balance": walletBalance,
+                    "wallet.codPending": codPending
+                },
+                {
+                    $inc: {
+                        "wallet.balance": -walletBalance,
+                        "wallet.codPending": -codPending
+                    }
+                },
+                {
+                    session,
+                    new: true,
+                    runValidators: true
+                }
             );
+
+            if (!updatedRiderProfile) {
+                throw new Error("Rider wallet changed during settlement reset");
+            }
         }
 
         await session.commitTransaction(); res.json({ success: true, message: `Rider ${user.name} settled and shift restarted.` });
