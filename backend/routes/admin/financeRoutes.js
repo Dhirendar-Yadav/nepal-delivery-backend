@@ -110,29 +110,77 @@ router.post('/payouts/bulk-approve', verifyAdmin, criticalLimiter, async (req, r
         }
 
         for (const entity of entities) {
+            const payoutAmount = targetType === 'RIDER'
+                ? (entity.wallet?.balance ?? 0)
+                : entity.walletBalance;
+
             const session = await mongoose.startSession();
             session.startTransaction();
+
             try {
-                const payoutAmount = targetType === 'RIDER' ? (entity.wallet?.balance ?? 0) : entity.walletBalance;
                 const settlementId = generateHash(chunkHash, entity._id.toString());
                 const todayString = new Date().toISOString().split('T')[0];
-                
+
+                const adminWalletIncrement = {
+                    transactionCount: 1
+                };
+
+                if (targetType === 'RIDER') {
+                    adminWalletIncrement.totalRiderBonusesPaid = payoutAmount;
+                }
+
                 const adminWalletUpdate = await AdminWallet.findOneAndUpdate(
                     { date: todayString },
-                    { $inc: { totalRiderBonusesPaid: payoutAmount, transactionCount: 1 } },
+                    { $inc: adminWalletIncrement },
                     { session, new: true, upsert: true }
                 );
 
-                if (!adminWalletUpdate) throw new Error("Unable to update daily admin wallet.");
-
-                let updatedEntity;
-                if (targetType === 'RIDER') {
-                    updatedEntity = await RiderProfile.findOneAndUpdate({ _id: entity._id, "wallet.balance": payoutAmount }, { $inc: { "wallet.balance": -payoutAmount } }, { session, new: true });
-                } else {
-                    updatedEntity = await Restaurant.findOneAndUpdate({ _id: entity._id, walletBalance: payoutAmount }, { $inc: { walletBalance: -payoutAmount, totalSettled: payoutAmount, walletVersion: 1 } }, { session, new: true });
+                if (!adminWalletUpdate) {
+                    throw new Error("Unable to update daily admin wallet.");
                 }
 
-                if (!updatedEntity) throw new Error("Balance snapshot mismatch (Race condition).");
+                let updatedEntity;
+
+                if (targetType === 'RIDER') {
+                    updatedEntity = await RiderProfile.findOneAndUpdate(
+                        {
+                            _id: entity._id,
+                            "wallet.balance": payoutAmount
+                        },
+                        {
+                            $inc: {
+                                "wallet.balance": -payoutAmount,
+                                "wallet.transactionCount": 1
+                            }
+                        },
+                        {
+                            session,
+                            new: true
+                        }
+                    );
+                } else {
+                    updatedEntity = await Restaurant.findOneAndUpdate(
+                        {
+                            _id: entity._id,
+                            walletBalance: payoutAmount
+                        },
+                        {
+                            $inc: {
+                                walletBalance: -payoutAmount,
+                                totalSettled: payoutAmount,
+                                walletVersion: 1
+                            }
+                        },
+                        {
+                            session,
+                            new: true
+                        }
+                    );
+                }
+
+                if (!updatedEntity) {
+                    throw new Error("Balance snapshot mismatch (Race condition).");
+                }
 
                 const ledgerEntries = [
                     { settlementId, orderId: null, entityType: targetType, entityId: targetType === 'RIDER' ? entity.userId : entity._id, type: 'CREDIT', amount: payoutAmount, balanceAfter: 0, description: `Bulk Payout via Admin (Batch: ${batchId})` },
@@ -144,7 +192,13 @@ router.post('/payouts/bulk-approve', verifyAdmin, criticalLimiter, async (req, r
                 processedCount++; totalPayoutAmount += payoutAmount; nextCursor = entity._id;
             } catch (err) {
                 await session.abortTransaction(); failedCount++;
-                await BulkPayoutFailure.create({ batchId, entityId: entity._id.toString(), targetType, amount: 0, reason: err.message });
+                await BulkPayoutFailure.create({
+    batchId,
+    entityId: entity._id.toString(),
+    targetType,
+    amount: payoutAmount,
+    reason: err.message
+});
             } finally { session.endSession(); }
         }
 
