@@ -182,9 +182,30 @@ router.post('/payouts/bulk-approve', verifyAdmin, criticalLimiter, async (req, r
                     throw new Error("Balance snapshot mismatch (Race condition).");
                 }
 
+                const ledgerEntityType = targetType === 'RIDER' ? 'RIDER' : 'RESTAURANT';
+                const ledgerEntityId = targetType === 'RIDER' ? entity.userId : entity._id;
+
                 const ledgerEntries = [
-                    { settlementId, orderId: null, entityType: targetType, entityId: targetType === 'RIDER' ? entity.userId : entity._id, type: 'CREDIT', amount: payoutAmount, balanceAfter: 0, description: `Bulk Payout via Admin (Batch: ${batchId})` },
-                    { settlementId, orderId: null, entityType: 'SYSTEM_CLEARING', entityId: null, type: 'DEBIT', amount: payoutAmount, balanceAfter: 0, description: `Daily Admin Wallet Deduction (Batch: ${batchId})` }
+                    {
+                        settlementId,
+                        orderId: null,
+                        entityType: ledgerEntityType,
+                        entityId: ledgerEntityId,
+                        type: 'CREDIT',
+                        amount: payoutAmount,
+                        balanceAfter: 0,
+                        description: `Bulk Payout via Admin (Batch: ${batchId})`
+                    },
+                    {
+                        settlementId,
+                        orderId: null,
+                        entityType: 'SYSTEM_CLEARING',
+                        entityId: null,
+                        type: 'DEBIT',
+                        amount: payoutAmount,
+                        balanceAfter: 0,
+                        description: `Daily Admin Wallet Deduction (Batch: ${batchId})`
+                    }
                 ];
 
                 await LedgerEntry.insertMany(ledgerEntries, { session, ordered: false });
