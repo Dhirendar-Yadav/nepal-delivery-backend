@@ -73,8 +73,7 @@ app.use(helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" }
 }));
 
-// 📁 FIX: Expose the uploads folder to the frontend so images don't get blocked
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// Private uploads are served only through authorized application routes.
 // ✅ Data Parsers
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));

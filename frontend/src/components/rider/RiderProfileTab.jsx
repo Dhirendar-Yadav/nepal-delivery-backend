@@ -1,4 +1,15 @@
 import React, { useState, useEffect } from 'react';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5005';
+
+const getDocumentFilename = (value) => {
+  if (typeof value !== 'string') return null;
+
+  const normalized = value
+    .split('?')[0]
+    .replace(/\\/g, '/');
+
+  return normalized.split('/').filter(Boolean).pop() || null;
+};
 
 function RiderProfileTab({ riderName, riderDetails }) {
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
@@ -22,19 +33,51 @@ function RiderProfileTab({ riderName, riderDetails }) {
     return () => window.removeEventListener('popstate', handlePopState);
   }, [previewImage.isOpen]);
 
-  const openModal = (url, title) => {
+  const openModal = async (url, title) => {
     if (!url || url === 'Loading...') {
       return alert(`${title} is not uploaded or currently unavailable.`);
     }
-    setPreviewImage({ isOpen: true, url, title });
-    // Fake push state takki back button trap ho jaye
-    window.history.pushState({ modal: true }, "");
+
+    const filename = getDocumentFilename(url);
+
+    if (!filename) {
+      return alert(`${title} is not uploaded or currently unavailable.`);
+    }
+
+    try {
+      const response = await fetch(
+        `${API_BASE}/api/kyc/documents/${encodeURIComponent(filename)}`,
+        {
+          credentials: 'include'
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Document access denied.');
+      }
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+
+      setPreviewImage({
+        isOpen: true,
+        url: objectUrl,
+        title
+      });
+
+      window.history.pushState({ modal: true }, "");
+    } catch {
+      alert(`${title} is not uploaded or currently unavailable.`);
+    }
   };
 
   const closeModal = () => {
+    if (previewImage.url.startsWith('blob:')) {
+      URL.revokeObjectURL(previewImage.url);
+    }
+
     setPreviewImage({ isOpen: false, url: '', title: '' });
-    // 🚀 THE FIX: history.back() ki jagah hum state ko silently replace kar rahe hain
-    // Isse 'popstate' event fire nahi hoga aur Dashboard confuse hoke Home par nahi jayega.
+
     if (window.history.state?.modal) {
       window.history.replaceState({ page: 'dashboard' }, "");
     }

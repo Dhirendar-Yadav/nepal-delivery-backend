@@ -1,4 +1,78 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5005';
+
+const getDocumentFilename = (value) => {
+    if (typeof value !== 'string') return null;
+
+    const normalized = value
+        .split('?')[0]
+        .replace(/\\/g, '/');
+
+    return normalized.split('/').filter(Boolean).pop() || null;
+};
+
+const ProtectedDocumentImage = ({ value, alt }) => {
+    const [src, setSrc] = useState(null);
+
+    useEffect(() => {
+        let objectUrl = null;
+        let cancelled = false;
+
+        const loadDocument = async () => {
+            const filename = getDocumentFilename(value);
+            if (!filename) return;
+
+            try {
+                const response = await fetch(
+                    `${API_BASE}/api/kyc/documents/${encodeURIComponent(filename)}`,
+                    {
+                        credentials: 'include'
+                    }
+                );
+
+                if (!response.ok) {
+                    throw new Error('Document access denied.');
+                }
+
+                const blob = await response.blob();
+                objectUrl = URL.createObjectURL(blob);
+
+                if (!cancelled) {
+                    setSrc(objectUrl);
+                }
+            } catch {
+                if (!cancelled) {
+                    setSrc(null);
+                }
+            }
+        };
+
+        loadDocument();
+
+        return () => {
+            cancelled = true;
+            if (objectUrl) {
+                URL.revokeObjectURL(objectUrl);
+            }
+        };
+    }, [value]);
+
+    if (!src) {
+        return (
+            <div className="w-full h-48 flex items-center justify-center bg-gray-900 rounded text-gray-600 font-black text-xs">
+                DOCUMENT UNAVAILABLE
+            </div>
+        );
+    }
+
+    return (
+        <img
+            src={src}
+            alt={alt}
+            className="w-full h-48 object-cover rounded shadow-lg"
+        />
+    );
+};
 import { useAuth } from '../../hooks/useAuth';
 
 export default function DataTables({ activeTab, filteredData, handleRestaurantStatus, handleRestaurantOperation }) {
@@ -276,18 +350,25 @@ export default function DataTables({ activeTab, filteredData, handleRestaurantSt
 
                             {modalData.type === 'Rider' && ['citizenshipFront', 'citizenshipBack', 'licenseFront', 'bluebookImage'].map((docKey) => {
                                 const docUrl = modalData.data.documents?.[docKey];
+
                                 return (
                                     <div key={docKey} className="bg-gray-800/50 p-3 rounded-xl border border-gray-700">
-                                        <span className="block text-[10px] text-orange-500 uppercase font-black mb-2">{docKey.replace(/([A-Z])/g, ' $1').trim()}</span>
+                                        <span className="block text-[10px] text-orange-500 uppercase font-black mb-2">
+                                            {docKey.replace(/([A-Z])/g, ' $1').trim()}
+                                        </span>
+
                                         {docUrl ? (
-                                            <a href={docUrl} target="_blank" rel="noopener noreferrer">
-                                                <img src={docUrl} alt={docKey} className="w-full h-48 object-cover rounded shadow-lg hover:opacity-80 transition cursor-pointer" />
-                                            </a>
+                                            <ProtectedDocumentImage
+                                                value={docUrl}
+                                                alt={docKey}
+                                            />
                                         ) : (
-                                            <div className="w-full h-48 flex items-center justify-center bg-gray-900 rounded text-gray-600 font-black text-xs">NOT UPLOADED</div>
+                                            <div className="w-full h-48 flex items-center justify-center bg-gray-900 rounded text-gray-600 font-black text-xs">
+                                                NOT UPLOADED
+                                            </div>
                                         )}
                                     </div>
-                                )
+                                );
                             })}
                         </div>
 

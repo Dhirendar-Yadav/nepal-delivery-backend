@@ -22,17 +22,22 @@ router.get('/documents/:filename', authMiddleware, async (req, res, next) => {
     }
 
     try {
-        const documentPattern = new RegExp(`${escapeRegex(`/uploads/${filename}`)}$`);
+        const legacyDocumentPattern = new RegExp(`${escapeRegex(`/uploads/${filename}`)}$`);
+        const documentValues = { $in: [filename, legacyDocumentPattern] };
+
         const rider = await Rider.findOne({
             $or: [
-                { 'documents.citizenshipFront': documentPattern },
-                { 'documents.citizenshipBack': documentPattern },
-                { 'documents.licenseFront': documentPattern },
-                { 'documents.bluebookImage': documentPattern },
-                { 'documents.nidDoc': documentPattern }
+                { 'documents.citizenshipFront': documentValues },
+                { 'documents.citizenshipBack': documentValues },
+                { 'documents.licenseFront': documentValues },
+                { 'documents.bluebookImage': documentValues },
+                { 'documents.nidDoc': documentValues }
             ]
         }).select('userId').lean();
-        const restaurant = rider ? null : await Restaurant.findOne({ image: documentPattern }).select('ownerId').lean();
+
+        const restaurant = rider
+            ? null
+            : await Restaurant.findOne({ image: documentValues }).select('ownerId').lean();
         const ownerId = rider?.userId || restaurant?.ownerId;
 
         if (!ownerId) {

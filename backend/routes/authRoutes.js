@@ -24,10 +24,22 @@ const storage = multer.diskStorage({
         cb(null, 'uploads/'); // Ensure an 'uploads' folder exists in your backend root
     },
     filename: function (req, file, cb) {
-        cb(null, Date.now() + '-' + Math.round(Math.random() * 1E9) + path.extname(file.originalname));
+    const extensionByMimeType = {
+        'image/jpeg': '.jpg',
+        'image/png': '.png',
+        'image/webp': '.webp'
+    };
+
+    const extension = extensionByMimeType[file.mimetype];
+
+    if (!extension) {
+        return cb(new Error('Unsupported image type.'));
     }
+
+    cb(null, `${uuidv4()}${extension}`);
+}
 });
-const baseUrl = process.env.UPLOAD_BASE_URL || 'http://localhost:5005';
+// KYC documents are stored as private filenames and served through /api/kyc.
 
 const upload = multer({
     storage,
@@ -237,7 +249,7 @@ router.post('/rider/signup', upload.any(), async (req, res) => {
         if (req.files && req.files.length > 0) {
             req.files.forEach(file => {
                 // file.fieldname matches what you appended in frontend: 'citizenshipFront', 'licenseFront', etc.
-                docs[file.fieldname] = `${baseUrl}/uploads/${file.filename}`;
+                docs[file.fieldname] = file.filename;
             });
         }
 
