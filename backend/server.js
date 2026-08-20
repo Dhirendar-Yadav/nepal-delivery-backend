@@ -349,8 +349,12 @@ if (paymentMethod === 'ONLINE') {
 
             // ✨ CEO LIVE ORDER FEATURE: Emit to restaurant's socket room
             try {
-                const liveOrderData = await Order.findById(newOrder._id).populate('customerId', 'name phone').lean();
-                req.app.get('io').to(restaurantId.toString()).emit('newLiveOrder', liveOrderData);
+                const liveOrderData = await Order.findById(newOrder._id)
+    .select('_id status restaurantId customerId items foodCost deliveryDetails.phone')
+    .populate('customerId', 'name phone')
+    .lean();
+
+req.app.get('io').to(restaurantId.toString()).emit('newLiveOrder', liveOrderData);
             } catch (socketErr) {
                 req.log.error({ event: 'SOCKET_EMIT_FAILED', error: socketErr.message });
             }
@@ -539,7 +543,7 @@ io.on('connection', (socket) => {
 
     // ✨ NEW: Seller dashboard room join
     socket.on('joinRestaurantDashboard', async (restaurantId) => {
-        if (!mongoose.Types.ObjectId.isValid(restaurantId)) return;
+        if (++socket.joinCount > 15 || !mongoose.Types.ObjectId.isValid(restaurantId)) return;
 
         const restaurant = socket.user.role === 'Admin'
             ? await Restaurant.findById(restaurantId).select('_id').lean()
@@ -566,12 +570,33 @@ io.on('connection', (socket) => {
     });
 
     socket.on('updateRiderLocation', async (data) => {
-        if (socket.user.role !== 'Rider' || !mongoose.Types.ObjectId.isValid(data.orderId)) return;
+        if (!data || typeof data !== 'object') return;
+
+        if (
+            socket.user.role !== 'Rider' ||
+            typeof data.orderId !== 'string' ||
+            !mongoose.Types.ObjectId.isValid(data.orderId)
+        ) {
+            return;
+        }
+
         const now = Date.now();
         if (now - (riderThrottle.get(socket.user.id) || 0) < 2000) return;
         riderThrottle.set(socket.user.id, now);
 
-        if (typeof data.lat !== 'number' || typeof data.lng !== 'number' || Math.abs(data.lat) > 90 || Math.abs(data.lng) > 180) return;
+        if (
+            typeof data.lat !== 'number' ||
+            typeof data.lng !== 'number' ||
+            !Number.isFinite(data.lat) ||
+            !Number.isFinite(data.lng) ||
+            data.lat < -90 ||
+            data.lat > 90 ||
+            data.lng < -180 ||
+            data.lng > 180
+        ) {
+            return;
+        }
+
         try {
             await Order.updateOne({ _id: data.orderId, assignedRiderId: socket.user.id, status: 'Out for Delivery' }, { $set: { riderLocation: { type: 'Point', coordinates: [data.lng, data.lat] }, lastLocationUpdate: new Date() }});
             io.to(data.orderId).emit('riderMoved', { orderId: data.orderId, lat: data.lat, lng: data.lng, latitude: data.lat, longitude: data.lng });
