@@ -720,8 +720,7 @@ await LedgerEntry.insertMany(ledgerEntries, { session });
         : {}),
 
     "wallet.incentiveEarnings": riderBonus,
-    "wallet.transactionCount": 1,
-    "wallet.walletVersion": 1
+    "wallet.transactionCount": 1
 }
             },
             { new: true, runValidators: true, session }
@@ -736,11 +735,10 @@ await LedgerEntry.insertMany(ledgerEntries, { session });
             order.restaurantId,
             {
                 $inc: {
-                    "walletBalance": order.foodCost,
-                    "totalEarnings": order.foodCost,
-                    "transactionCount": 1,
-                    "walletVersion": 1
-                },
+    "walletBalance": order.foodCost,
+    "totalEarnings": order.foodCost,
+    "transactionCount": 1
+},
                 $set: {
                     "lastProcessedOrderId": orderId,
                     "lastSettlementId": settlementId

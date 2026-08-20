@@ -114,8 +114,20 @@ router.post('/payouts/bulk-approve', verifyAdmin, criticalLimiter, async (req, r
                 ? (entity.wallet?.balance ?? 0)
                 : entity.walletBalance;
 
-            const session = await mongoose.startSession();
-            session.startTransaction();
+if (!Number.isSafeInteger(payoutAmount) || payoutAmount <= 0) {
+    failedCount++;
+    await BulkPayoutFailure.create({
+        batchId,
+        entityId: entity._id.toString(),
+        targetType,
+        amount: payoutAmount,
+        reason: 'INVALID_PAYOUT_AMOUNT'
+    });
+    continue;
+}
+
+const session = await mongoose.startSession();
+session.startTransaction();
 
             try {
                 const settlementId = generateHash(chunkHash, entity._id.toString());
@@ -167,8 +179,7 @@ router.post('/payouts/bulk-approve', verifyAdmin, criticalLimiter, async (req, r
                         {
                             $inc: {
                                 walletBalance: -payoutAmount,
-                                totalSettled: payoutAmount,
-                                walletVersion: 1
+                                totalSettled: payoutAmount
                             }
                         },
                         {

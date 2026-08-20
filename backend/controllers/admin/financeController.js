@@ -13,7 +13,7 @@ exports.processRestaurantSettlement = async (req, res) => {
 }
         const { settlementAmount, transactionReference } = req.body; 
         if (
-    !Number.isFinite(settlementAmount) ||
+    !Number.isSafeInteger(settlementAmount) ||
     settlementAmount <= 0
 ) {
     return res.status(400).json({
@@ -46,21 +46,32 @@ if (existingSettlement) {
         try {
             const updatedRestaurant = await Restaurant.findOneAndUpdate(
                 { _id: id, walletBalance: { $gte: settlementAmount } },
-                { $inc: { walletBalance: -settlementAmount, totalSettled: settlementAmount, walletVersion: 1 }, $set: { lastSettlementId: transactionReference } },
+                { $inc: { walletBalance: -settlementAmount, totalSettled: settlementAmount }, $set: { lastSettlementId: transactionReference } },
                 { session, new: true }
             );
 
             if (!updatedRestaurant) throw new Error('Insufficient balance');
 
-            await LedgerEntry.create([{
-                settlementId: transactionReference,
-                entityType: 'RESTAURANT',
-                entityId: id,
-                type: 'DEBIT', 
-                amount: settlementAmount,
-                balanceAfter: updatedRestaurant.walletBalance,
-                description: `Admin Payout Processed`
-            }], { session });
+            await LedgerEntry.create([
+                {
+                    settlementId: transactionReference,
+                    entityType: 'RESTAURANT',
+                    entityId: id,
+                    type: 'CREDIT',
+                    amount: settlementAmount,
+                    balanceAfter: updatedRestaurant.walletBalance,
+                    description: 'Admin Payout Processed'
+                },
+                {
+                    settlementId: transactionReference,
+                    entityType: 'SYSTEM_CLEARING',
+                    entityId: null,
+                    type: 'DEBIT',
+                    amount: settlementAmount,
+                    balanceAfter: null,
+                    description: 'Admin Restaurant Settlement Clearing'
+                }
+            ], { session });
 
             await session.commitTransaction();
             session.endSession();
@@ -71,6 +82,18 @@ if (existingSettlement) {
             throw txnErr;
         }
     } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
+        if (req.log) {
+            req.log.error({
+                event: 'RESTAURANT_SETTLEMENT_FAILED',
+                error: error.message,
+                stack: error.stack
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            error: 'INTERNAL_SERVER_ERROR',
+            message: 'Unable to process restaurant settlement.'
+        });
     }
 };
