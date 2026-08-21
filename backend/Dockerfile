@@ -10,7 +10,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 COPY . .
 
-RUN mkdir -p /app/uploads
+RUN mkdir -p /app/uploads && chown -R node:node /app/uploads
 
 USER node
 

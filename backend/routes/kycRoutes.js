@@ -21,6 +21,17 @@ router.get('/documents/:filename', authMiddleware, async (req, res, next) => {
         return res.status(400).json({ success: false, error: 'INVALID_DOCUMENT_PATH' });
     }
 
+    const normalizeStoredFilename = (value) => {
+        if (typeof value !== 'string') return null;
+
+        const normalized = value
+            .split('?')[0]
+            .replace(/\\/g, '/')
+            .trim();
+
+        return normalized.split('/').filter(Boolean).pop() || null;
+    };
+
     try {
         const legacyDocumentPattern = new RegExp(`${escapeRegex(`/uploads/${filename}`)}$`);
         const documentValues = { $in: [filename, legacyDocumentPattern] };
@@ -33,17 +44,59 @@ router.get('/documents/:filename', authMiddleware, async (req, res, next) => {
                 { 'documents.bluebookImage': documentValues },
                 { 'documents.nidDoc': documentValues }
             ]
-        }).select('userId').lean();
+        }).select('userId documents').lean();
 
-        const restaurant = rider
-    ? null
-    : await Restaurant.findOne({
-        $or: [
-            { image: documentValues },
-            { registrationDoc: documentValues }
-        ]
-    }).select('ownerId').lean();
-        const ownerId = rider?.userId || restaurant?.ownerId;
+        let ownerId = null;
+        let managedDocumentPath = null;
+
+        if (rider) {
+            ownerId = rider.userId;
+
+            const riderDocumentField = [
+                'citizenshipFront',
+                'citizenshipBack',
+                'licenseFront',
+                'bluebookImage',
+                'nidDoc'
+            ].find((field) => normalizeStoredFilename(rider.documents?.[field]) === filename);
+
+            if (riderDocumentField) {
+                managedDocumentPath = path.resolve(
+                    uploadDirectory,
+                    'riders',
+                    rider._id.toString(),
+                    riderDocumentField,
+                    filename
+                );
+            }
+        } else {
+            const restaurant = await Restaurant.findOne({
+                $or: [
+                    { image: documentValues },
+                    { registrationDoc: documentValues }
+                ]
+            }).select('ownerId image registrationDoc').lean();
+
+            ownerId = restaurant?.ownerId || null;
+
+            if (restaurant) {
+                const documentType = normalizeStoredFilename(restaurant.registrationDoc) === filename
+                    ? 'registrationDoc'
+                    : normalizeStoredFilename(restaurant.image) === filename
+                        ? 'image'
+                        : null;
+
+                if (documentType) {
+                    managedDocumentPath = path.resolve(
+                        uploadDirectory,
+                        'restaurants',
+                        restaurant._id.toString(),
+                        documentType,
+                        filename
+                    );
+                }
+            }
+        }
 
         if (!ownerId) {
             log.warn({ event: 'KYC_DOCUMENT_ACCESS_DENIED', userId: req.user.id, reason: 'DOCUMENT_NOT_FOUND' });
@@ -55,20 +108,40 @@ router.get('/documents/:filename', authMiddleware, async (req, res, next) => {
             return res.status(403).json({ success: false, error: 'UNAUTHORIZED_DOCUMENT_ACCESS' });
         }
 
-        const documentPath = path.resolve(uploadDirectory, filename);
-        if (!documentPath.startsWith(`${uploadDirectory}${path.sep}`)) {
+        const legacyDocumentPath = path.resolve(uploadDirectory, filename);
+        const candidatePaths = [
+            managedDocumentPath,
+            legacyDocumentPath
+        ].filter(Boolean);
+
+        let documentPath = null;
+
+        for (const candidatePath of candidatePaths) {
+            if (!candidatePath.startsWith(`${uploadDirectory}${path.sep}`)) {
+                continue;
+            }
+
+            try {
+                await fs.promises.access(candidatePath, fs.constants.R_OK);
+                documentPath = candidatePath;
+                break;
+            } catch {
+                // Try the next compatible storage location.
+            }
+        }
+
+        if (!documentPath) {
             log.warn({ event: 'KYC_DOCUMENT_ACCESS_DENIED', userId: req.user.id, reason: 'FILE_NOT_FOUND' });
             return res.status(404).json({ success: false, error: 'DOCUMENT_NOT_FOUND' });
         }
 
-        try {
-            await fs.promises.access(documentPath, fs.constants.R_OK);
-        } catch {
-            log.warn({ event: 'KYC_DOCUMENT_ACCESS_DENIED', userId: req.user.id, reason: 'FILE_NOT_FOUND' });
-            return res.status(404).json({ success: false, error: 'DOCUMENT_NOT_FOUND' });
-        }
+        log.info({
+            event: 'KYC_DOCUMENT_ACCESS_GRANTED',
+            userId: req.user.id,
+            ownerId: ownerId.toString(),
+            filename
+        });
 
-        log.info({ event: 'KYC_DOCUMENT_ACCESS_GRANTED', userId: req.user.id, ownerId: ownerId.toString(), filename });
         return res.download(documentPath, filename, (err) => {
             if (err && !res.headersSent) next(err);
         });

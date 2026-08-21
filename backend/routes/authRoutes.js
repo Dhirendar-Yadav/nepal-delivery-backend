@@ -19,9 +19,21 @@ const { authMiddleware } = require('../middlewares/auth');
 // ==========================================
 // 🛡️ MULTER CONFIGURATION (Handles FormData)
 // ==========================================
+const uploadRoot = path.resolve(__dirname, '..', 'uploads');
+const stagingRoot = path.join(uploadRoot, '.staging');
+
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
-        cb(null, 'uploads/'); // Ensure an 'uploads' folder exists in your backend root
+        try {
+            if (!req.uploadStagingDirectory) {
+                req.uploadStagingDirectory = path.join(stagingRoot, uuidv4());
+                fs.mkdirSync(req.uploadStagingDirectory, { recursive: true });
+            }
+
+            cb(null, req.uploadStagingDirectory);
+        } catch (err) {
+            cb(err);
+        }
     },
     filename: function (req, file, cb) {
     const extensionByMimeType = {
@@ -71,16 +83,51 @@ const loginLimiter = rateLimit({
 const DUMMY_HASH = '$2a$12$C6UzMDM.H6dfI/f/IKcEeO6GZ5z6uGq5t1k8Kp1l9z0h9fQp7q9aW';
 
 
-// Cleanup uploaded files if transaction fails
-const cleanupUploadedFiles = (files = []) => {
+const moveUploadedFile = async (file, entityType, entityId, documentType) => {
+    const destinationDirectory = path.join(
+        uploadRoot,
+        entityType,
+        entityId.toString(),
+        documentType
+    );
+
+    await fs.promises.mkdir(destinationDirectory, { recursive: true });
+
+    const destinationPath = path.join(destinationDirectory, file.filename);
+
+    await fs.promises.rename(file.path, destinationPath);
+
+    file.finalPath = destinationPath;
+
+    return file.filename;
+};
+
+const cleanupUploadedFiles = async (files = []) => {
     for (const file of files) {
-        if (file?.path && fs.existsSync(file.path)) {
+        for (const candidate of [file?.path, file?.finalPath]) {
+            if (!candidate) continue;
+
             try {
-                fs.unlinkSync(file.path);
-            } catch (_) {
-                // Ignore cleanup failures
+                await fs.promises.unlink(candidate);
+            } catch (err) {
+                if (err.code !== 'ENOENT') {
+                    // Ignore cleanup failures
+                }
             }
         }
+    }
+};
+
+const cleanupUploadStaging = async (req) => {
+    if (!req?.uploadStagingDirectory) return;
+
+    try {
+        await fs.promises.rm(req.uploadStagingDirectory, {
+            recursive: true,
+            force: true
+        });
+    } catch (_) {
+        // Ignore staging cleanup failures after transaction outcome is known
     }
 };
 
@@ -146,20 +193,28 @@ if (existingUser) {
         await newUser.save({ session });
 
         if (role === 'Seller') {
-    const imageFile = req.files?.find(file => file.fieldname === 'image');
-    const registrationDocFile = req.files?.find(file => file.fieldname === 'registrationDoc');
+            const imageFile = req.files?.find(file => file.fieldname === 'image');
+            const registrationDocFile = req.files?.find(file => file.fieldname === 'registrationDoc');
 
-    if (!imageFile || !registrationDocFile) {
-        throw {
-            status: 400,
-            message: 'Restaurant image and registration document are required.'
-        };
-    }
+            if (!imageFile || !registrationDocFile) {
+                throw {
+                    status: 400,
+                    message: 'Restaurant image and registration document are required.'
+                };
+            }
 
-    const imagePath = imageFile.filename;
-    const registrationDocPath = registrationDocFile.filename;
+            const unexpectedFile = req.files?.find(
+                file => !['image', 'registrationDoc'].includes(file.fieldname)
+            );
 
-    let safeLocationString = 'Nepal';
+            if (unexpectedFile) {
+                throw {
+                    status: 400,
+                    message: 'Unsupported seller upload field.'
+                };
+            }
+
+            let safeLocationString = 'Nepal';
             if (typeof location === 'string') {
                 safeLocationString = location;
             } else if (req.body.address && typeof req.body.address === 'string') {
@@ -171,8 +226,8 @@ if (existingUser) {
             const newRestaurant = new Restaurant({
                 ownerId: newUser._id,
                 name: businessName,
-                image: imagePath,
-                registrationDoc: registrationDocPath,
+                image: null,
+                registrationDoc: null,
                 location: safeLocationString,
                 currentLocation: {
                     type: 'Point',
@@ -182,11 +237,27 @@ if (existingUser) {
                 longitude: hasValidCoordinates ? lng : null,
                 panVatNumber: panVatNumber || null
             });
+
+            newRestaurant.image = await moveUploadedFile(
+                imageFile,
+                'restaurants',
+                newRestaurant._id,
+                'image'
+            );
+
+            newRestaurant.registrationDoc = await moveUploadedFile(
+                registrationDocFile,
+                'restaurants',
+                newRestaurant._id,
+                'registrationDoc'
+            );
+
             await newRestaurant.save({ session });
         }
 
         await session.commitTransaction();
         session.endSession();
+        await cleanupUploadStaging(req);
 
         if (req.log) req.log.info({ event: 'USER_SIGNUP_SUCCESS', userId: newUser._id, role });
 
@@ -201,7 +272,8 @@ if (existingUser) {
             session.endSession();
         }
 
-        cleanupUploadedFiles(req.files);
+        await cleanupUploadedFiles(req.files);
+        await cleanupUploadStaging(req);
 
         if (err.code === 11000) {
     const field = Object.keys(err.keyPattern || {})[0];
@@ -252,13 +324,23 @@ router.post('/rider/signup', upload.any(), async (req, res) => {
         const formattedEmail = email.toLowerCase().trim();
         phone = String(phone).trim().replace(/^\+977/, "");
 
-        // Map uploaded files to URLs
+        const allowedRiderDocumentFields = new Set([
+            'citizenshipFront',
+            'citizenshipBack',
+            'licenseFront',
+            'bluebookImage',
+            'nidDoc'
+        ]);
+
         const docs = {};
-        if (req.files && req.files.length > 0) {
-            req.files.forEach(file => {
-                // file.fieldname matches what you appended in frontend: 'citizenshipFront', 'licenseFront', etc.
-                docs[file.fieldname] = file.filename;
-            });
+
+        for (const file of req.files || []) {
+            if (!allowedRiderDocumentFields.has(file.fieldname)) {
+                throw {
+                    status: 400,
+                    message: `Unsupported rider upload field: ${file.fieldname}`
+                };
+            }
         }
 
         session = await mongoose.startSession();
@@ -298,8 +380,20 @@ router.post('/rider/signup', upload.any(), async (req, res) => {
                 licenseNumber,
                 citizenshipNo,
                 bikeNumber,
-                documents: docs // Stores all the image URLs
+                documents: {}
             });
+
+            for (const file of req.files || []) {
+                docs[file.fieldname] = await moveUploadedFile(
+                    file,
+                    'riders',
+                    newRider._id,
+                    file.fieldname
+                );
+            }
+
+            newRider.documents = docs;
+
             await newRider.save({ session });
         } else {
              console.warn("⚠️ Rider model not imported/created. Rider specific details not saved.");
@@ -307,6 +401,7 @@ router.post('/rider/signup', upload.any(), async (req, res) => {
 
         await session.commitTransaction();
         session.endSession();
+        await cleanupUploadStaging(req);
 
         if (req.log) req.log.info({ event: 'RIDER_SIGNUP_SUCCESS', userId: newUser._id });
 
@@ -318,7 +413,8 @@ router.post('/rider/signup', upload.any(), async (req, res) => {
             session.endSession();
         }
 
-        cleanupUploadedFiles(req.files);
+        await cleanupUploadedFiles(req.files);
+        await cleanupUploadStaging(req);
 
         // 🚨 FIX 4: Explicitly log the exact MongoDB error to the terminal so we aren't guessing
         console.error("🚨 MONGODB REJECTED RIDER SIGNUP:", err.message);

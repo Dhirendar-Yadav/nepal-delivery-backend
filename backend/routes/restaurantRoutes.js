@@ -113,43 +113,79 @@ router.get('/:id/image', asyncHandler(async (req, res) => {
         return res.status(400).json({ success: false, error: 'INVALID_RESTAURANT_ID' });
     }
 
-    const restaurant = await Restaurant.findOne({ _id: restaurantId, isDiscoverable: true, image: { $ne: null } }).select('image').lean();
+    const restaurant = await Restaurant.findOne({
+        _id: restaurantId,
+        isDiscoverable: true,
+        image: { $ne: null }
+    }).select('image').lean();
+
     if (!restaurant?.image) {
         return res.status(404).json({ success: false, error: 'RESTAURANT_IMAGE_NOT_FOUND' });
     }
 
     const filename = typeof restaurant.image === 'string'
-    ? path.basename(restaurant.image.replace(/\\/g, '/'))
-    : '';
+        ? path.basename(restaurant.image.replace(/\\/g, '/'))
+        : '';
 
-if (
-    !filename ||
-    filename.includes('..') ||
-    filename.includes('/') ||
-    filename.includes('\\') ||
-    !/^[A-Za-z0-9._-]+(?:\.(?:jpe?g|png|webp))?$/i.test(filename)
-) {
-    return res.status(404).json({
-        success: false,
-        error: 'RESTAURANT_IMAGE_NOT_FOUND'
-    });
-}
-
-    const uploadDirectory = path.resolve(__dirname, '..', 'uploads');
-    const imagePath = path.resolve(uploadDirectory, filename);
-    if (!imagePath.startsWith(`${uploadDirectory}${path.sep}`)) {
-        return res.status(404).json({ success: false, error: 'RESTAURANT_IMAGE_NOT_FOUND' });
+    if (
+        !filename ||
+        filename.includes('..') ||
+        filename.includes('/') ||
+        filename.includes('\\') ||
+        !/^[A-Za-z0-9._-]+(?:\.(?:jpe?g|png|webp))?$/i.test(filename)
+    ) {
+        return res.status(404).json({
+            success: false,
+            error: 'RESTAURANT_IMAGE_NOT_FOUND'
+        });
     }
 
-    try {
-        await fs.promises.access(imagePath, fs.constants.R_OK);
-    } catch {
-        return res.status(404).json({ success: false, error: 'RESTAURANT_IMAGE_NOT_FOUND' });
+    const uploadDirectory = path.resolve(__dirname, '..', 'uploads');
+
+    const managedImagePath = path.resolve(
+        uploadDirectory,
+        'restaurants',
+        restaurantId,
+        'image',
+        filename
+    );
+
+    const legacyImagePath = path.resolve(uploadDirectory, filename);
+
+    const candidatePaths = [
+        managedImagePath,
+        legacyImagePath
+    ];
+
+    let imagePath = null;
+
+    for (const candidatePath of candidatePaths) {
+        if (!candidatePath.startsWith(`${uploadDirectory}${path.sep}`)) {
+            continue;
+        }
+
+        try {
+            await fs.promises.access(candidatePath, fs.constants.R_OK);
+            imagePath = candidatePath;
+            break;
+        } catch {
+            // Try legacy storage location.
+        }
+    }
+
+    if (!imagePath) {
+        return res.status(404).json({
+            success: false,
+            error: 'RESTAURANT_IMAGE_NOT_FOUND'
+        });
     }
 
     return res.sendFile(imagePath, (err) => {
         if (err && !res.headersSent) {
-            return res.status(err.statusCode === 404 ? 404 : 500).json({ success: false, error: 'RESTAURANT_IMAGE_NOT_FOUND' });
+            return res.status(err.statusCode === 404 ? 404 : 500).json({
+                success: false,
+                error: 'RESTAURANT_IMAGE_NOT_FOUND'
+            });
         }
     });
 }));

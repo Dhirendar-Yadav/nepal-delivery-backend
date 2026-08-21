@@ -341,9 +341,10 @@ export default function DataTables({ activeTab, filteredData, handleRestaurantSt
                                     <div className="bg-gray-800/50 p-3 rounded-xl border border-gray-700">
                                         <span className="block text-[10px] text-orange-500 uppercase font-black mb-2">Restaurant Image</span>
                                         {modalData.data.image ? (
-                                            <a href={modalData.data.image} target="_blank" rel="noopener noreferrer">
-                                                <img src={modalData.data.image} alt="Restaurant" className="w-full h-48 object-cover rounded shadow-lg hover:opacity-80 transition cursor-pointer" />
-                                            </a>
+                                            <ProtectedDocumentImage
+                                                value={modalData.data.image}
+                                                alt="Restaurant"
+                                            />
                                         ) : <div className="w-full h-48 flex items-center justify-center bg-gray-900 rounded text-gray-600 font-black text-xs">NO IMAGE</div>}
                                     </div>
 
