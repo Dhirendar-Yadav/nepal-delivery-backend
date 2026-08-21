@@ -621,7 +621,27 @@ app.use('/api/restaurants', require('./routes/restaurantRoutes'));
 
 // ✨ FIX: Routed the customer menu request to the same restaurant routes file
 app.use('/api/menu', require('./routes/restaurantRoutes'));
+// ==========================================
+// HEALTH & READINESS ENDPOINTS
+// ==========================================
 
+// Liveness: process is running.
+app.get('/healthz', (req, res) => {
+    res.status(200).json({
+        success: true,
+        status: 'ok'
+    });
+});
+
+// Readiness: process is running AND MongoDB is connected.
+app.get('/readyz', (req, res) => {
+    const ready = mongoose.connection.readyState === 1;
+
+    return res.status(ready ? 200 : 503).json({
+        success: ready,
+        status: ready ? 'ready' : 'not_ready'
+    });
+});
 // Centralized Error Handler
 app.use((err, req, res, next) => {
     const status = err.status || 500;
@@ -652,17 +672,78 @@ mongoose.connect(process.env.MONGO_URI, { maxPoolSize: 50, serverSelectionTimeou
 })
 .catch(err => { logger.error({ event: 'DB_CONNECTION_FAILED', error: err.message }); process.exit(1); });
 
-// 🛡️ PERFECTED GRACEFUL SHUTDOWN
-const shutdown = async () => {
-    logger.info({ event: 'SHUTDOWN_INITIATED' });
-    clearInterval(gcThrottle);
-    await new Promise(resolve => io.close(resolve));
-    server.close(async () => {
-        await mongoose.connection.close();
-        logger.info({ event: 'SHUTDOWN_COMPLETE' });
-        process.exit(0);
+// ==========================================
+// 🛡️ PRODUCTION GRACEFUL SHUTDOWN
+// ==========================================
+let isShuttingDown = false;
+
+const shutdown = async (signal) => {
+    if (isShuttingDown) {
+        logger.warn({
+            event: 'SHUTDOWN_ALREADY_IN_PROGRESS',
+            signal
+        });
+        return;
+    }
+
+    isShuttingDown = true;
+
+    logger.info({
+        event: 'SHUTDOWN_INITIATED',
+        signal
     });
+
+    clearInterval(gcThrottle);
+
+    const forceShutdownTimer = setTimeout(() => {
+        logger.error({
+            event: 'SHUTDOWN_TIMEOUT'
+        });
+        process.exit(1);
+    }, 15000);
+
+    forceShutdownTimer.unref();
+
+    try {
+        await new Promise((resolve) => {
+            io.close(() => resolve());
+        });
+
+        await new Promise((resolve, reject) => {
+    if (!server.listening) {
+        return resolve();
+    }
+
+    server.close((err) => {
+        if (err && err.code !== 'ERR_SERVER_NOT_RUNNING') {
+            return reject(err);
+        }
+
+        resolve();
+    });
+});
+
+        await mongoose.connection.close(false);
+
+        clearTimeout(forceShutdownTimer);
+
+        logger.info({
+            event: 'SHUTDOWN_COMPLETE'
+        });
+
+        process.exit(0);
+    } catch (err) {
+        clearTimeout(forceShutdownTimer);
+
+        logger.error({
+            event: 'SHUTDOWN_FAILED',
+            error: err.message,
+            stack: err.stack
+        });
+
+        process.exit(1);
+    }
 };
 
-process.on('SIGTERM', shutdown);
-process.on('SIGINT', shutdown);
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

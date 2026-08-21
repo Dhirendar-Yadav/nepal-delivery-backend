@@ -73,7 +73,6 @@ const ProtectedDocumentImage = ({ value, alt }) => {
         />
     );
 };
-import { useAuth } from '../../hooks/useAuth';
 
 export default function DataTables({ activeTab, filteredData, handleRestaurantStatus, handleRestaurantOperation }) {
 
