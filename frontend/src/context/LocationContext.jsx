@@ -12,6 +12,7 @@ export function LocationProvider({ children }) {
     }, []);
 
     const denyLocation = useCallback(() => {
+        setLocation(null);
         setPermission("denied");
     }, []);
 

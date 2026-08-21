@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { fetchRestaurants } from "../services/restaurantService";
+
+const RESTAURANT_REFRESH_INTERVAL_MS = 5000;
 
 export default function useRestaurants() {
 
@@ -7,52 +9,59 @@ export default function useRestaurants() {
     const [isLoading, setIsLoading] = useState(true);
     const [apiError, setApiError] = useState("");
 
-    const loadRestaurants = async () => {
+    const loadRestaurants = useCallback(async (showLoading = true) => {
 
-        setApiError("");
-        setIsLoading(true);
+        if (showLoading) {
+            setIsLoading(true);
+        }
 
         const result = await fetchRestaurants();
 
         if (result.success) {
-
             setRestaurants(result.data);
-
+            setApiError("");
         } else {
-
             setApiError(result.error);
-
         }
 
-        setIsLoading(false);
+        if (showLoading) {
+            setIsLoading(false);
+        }
 
-    };
+        return result;
+    }, []);
 
     useEffect(() => {
         let isMounted = true;
 
-        fetchRestaurants().then((result) => {
+        const initialLoad = async () => {
+            const result = await loadRestaurants(true);
+
             if (!isMounted) return;
 
-            if (result.success) {
-                setRestaurants(result.data);
-                setApiError("");
-            } else {
+            if (!result.success) {
                 setApiError(result.error);
             }
+        };
 
-            setIsLoading(false);
-        });
+        initialLoad();
+
+        const refreshTimer = window.setInterval(() => {
+            if (document.visibilityState !== "visible") return;
+
+            loadRestaurants(false);
+        }, RESTAURANT_REFRESH_INTERVAL_MS);
 
         return () => {
             isMounted = false;
+            window.clearInterval(refreshTimer);
         };
-    }, []);
+    }, [loadRestaurants]);
 
     return {
         restaurants,
         isLoading,
         apiError,
-        refreshRestaurants: loadRestaurants,
+        refreshRestaurants: () => loadRestaurants(true),
     };
 }
