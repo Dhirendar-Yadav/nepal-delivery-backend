@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const User = require('../models/User');
 const RiderProfile = require('../models/RiderProfile');
+const Rider = require('../models/Rider');
 const Order = require('../models/Order');
 const Restaurant = require('../models/Restaurant');
 const AdminWallet = require('../models/AdminWallet');
@@ -112,42 +113,90 @@ exports.signup = async (req, res) => {
 exports.getProfile = async (req, res) => {
     try {
         if (!req.user || !req.user.id) {
-            return res.status(401).json({ success: false, message: "Unauthorized" });
+            return res.status(401).json({
+                success: false,
+                message: "Unauthorized"
+            });
         }
 
-        let profile = await RiderProfile.findOne({ 
-            userId: new mongoose.Types.ObjectId(req.user.id) 
-        }).lean();
+        const userId = new mongoose.Types.ObjectId(req.user.id);
 
-        const user = await User.findById(req.user.id).lean();
+        const [profile, rider, user] = await Promise.all([
+            RiderProfile.findOne({ userId }).lean(),
+            Rider.findOne({ userId })
+                .select('_id userId licenseNumber citizenshipNo bikeNumber documents')
+                .lean(),
+            User.findById(userId).lean()
+        ]);
+
         if (!user) {
-            return res.status(404).json({ success: false, message: "User account not found" });
+            return res.status(404).json({
+                success: false,
+                message: "User account not found"
+            });
         }
 
-        // Merge data with consistent fallback
+        const riderDocuments = rider?.documents || {};
+
         const mergedData = {
             userId: user._id,
-            ...(profile || {}),
-            bikeNumber: profile?.bikeNumber || 'Not Set',
-            licenseNumber: profile?.licenseNumber || 'Not Set',
-            citizenshipNo: profile?.citizenshipNo || 'Not Set',
-            phone: user?.phone || 'Not Set',
-            email: user?.email || 'Not Set',
-            name: user?.name || 'Not Set',
-            isOnline: user?.isOnline === true,
-            shiftStartTime: user?.shiftStartTime || null,
-            walletBalance: Math.max(0, profile?.wallet?.balance || 0),
-            citizenshipFront: profile?.documents?.citizenshipFront || profile?.citizenshipFront || null,
-            citizenshipBack: profile?.documents?.citizenshipBack || profile?.citizenshipBack || null,
-            licenseFront: profile?.documents?.licenseFront || profile?.licenseFront || null,
-            bluebookDoc: profile?.documents?.bluebookDoc || profile?.documents?.bluebookImage || null,
-            isVerified: profile?.isVerified === true
+
+            // Prefer canonical Rider data for KYC/profile fields.
+            bikeNumber: rider?.bikeNumber || profile?.bikeNumber || 'Not Set',
+            licenseNumber: rider?.licenseNumber || profile?.licenseNumber || 'Not Set',
+            citizenshipNo: rider?.citizenshipNo || profile?.citizenshipNo || 'Not Set',
+
+            phone: user.phone || 'Not Set',
+            email: user.email || 'Not Set',
+            name: user.name || 'Not Set',
+
+            isOnline: user.isOnline === true,
+            shiftStartTime: user.shiftStartTime || null,
+
+            walletBalance: Math.max(
+                0,
+                Number(profile?.wallet?.balance || 0)
+            ),
+
+            // Documents are currently persisted by rider signup in Rider.documents.
+            citizenshipFront:
+                riderDocuments.citizenshipFront ||
+                profile?.documents?.citizenshipFront ||
+                profile?.citizenshipFront ||
+                null,
+
+            citizenshipBack:
+                riderDocuments.citizenshipBack ||
+                profile?.documents?.citizenshipBack ||
+                profile?.citizenshipBack ||
+                null,
+
+            licenseFront:
+                riderDocuments.licenseFront ||
+                profile?.documents?.licenseFront ||
+                profile?.licenseFront ||
+                null,
+
+            bluebookDoc:
+                riderDocuments.bluebookImage ||
+                riderDocuments.bluebookDoc ||
+                profile?.documents?.bluebookDoc ||
+                profile?.documents?.bluebookImage ||
+                null,
+
+            isVerified:
+                user.kycStatus === 'VERIFIED' ||
+                profile?.isVerified === true
         };
 
         return res.status(200).json(mergedData);
     } catch (err) {
         console.error('Get profile error:', err);
-        return res.status(500).json({ success: false, message: "Failed to retrieve profile" });
+
+        return res.status(500).json({
+            success: false,
+            message: "Failed to retrieve profile"
+        });
     }
 };
 
