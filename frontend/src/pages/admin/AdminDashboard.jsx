@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import io from 'socket.io-client';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5005';
 
 // ✨ MODULAR COMPONENTS
 import AdminSidebar from '../../components/admin/AdminSidebar';
@@ -46,7 +47,7 @@ function AdminDashboard() {
     }, []);
 
     const fetchData = useCallback(async () => {
-        const base = 'http://localhost:5005/api/admin';
+        const base = `${API_BASE}/api/admin`;
         const [s, r, sel, c, ao, f, o] = await Promise.all([
             safeFetch(`${base}/full-stats`),
             safeFetch(`${base}/all-riders`),
@@ -74,7 +75,7 @@ function AdminDashboard() {
 
     useEffect(() => {
         if (!isAuthenticated) { navigate('/login'); return; }
-        socketRef.current = io('http://localhost:5005', {
+        socketRef.current = io(API_BASE, {
     withCredentials: true
 });
         socketRef.current.on('riderMoved', (data) => {
@@ -91,7 +92,7 @@ function AdminDashboard() {
     // 🛡️ GOD MODE: Update Restaurant Operations (Open/Close/Delete)
     const handleRestaurantOperation = async (id, data) => {
         try {
-            const res = await fetch(`http://localhost:5005/api/admin/restaurants/${id}/operate`, {
+            const res = await fetch(`${API_BASE}/api/admin/restaurants/${id}/operate`, {
     method: 'PATCH',
     credentials: 'include',
     headers: {
@@ -112,7 +113,7 @@ function AdminDashboard() {
     // 🚦 GATEKEEPER: Approve/Suspend Restaurant (FIXED ALERTS)
     const handleRestaurantStatus = async (id, data) => {
         try {
-            const res = await fetch(`http://localhost:5005/api/admin/restaurants/${id}/status`, {
+            const res = await fetch(`${API_BASE}/api/admin/restaurants/${id}/status`, {
     method: 'PATCH',
     credentials: 'include',
     headers: {
@@ -137,7 +138,7 @@ function AdminDashboard() {
         if (!ref) return;
 
         try {
-            const res = await fetch(`http://localhost:5005/api/admin/restaurants/${id}/settle`, {
+            const res = await fetch(`${API_BASE}/api/admin/restaurants/${id}/settle`, {
     method: 'POST',
     credentials: 'include',
     headers: {
@@ -159,7 +160,7 @@ function AdminDashboard() {
 
         const processChunk = async (cursor = null) => {
             try {
-                const res = await fetch(`http://localhost:5005/api/admin/payouts/bulk-approve`, {
+                const res = await fetch(`${API_BASE}/api/admin/payouts/bulk-approve`, {
     method: 'POST',
     credentials: 'include',
     headers: {
@@ -193,7 +194,7 @@ function AdminDashboard() {
     const handleSyncLegacyData = async () => {
         setIsProcessing(true);
         try {
-            const res = await fetch(`http://localhost:5005/api/admin/sync-legacy-data`, {
+            const res = await fetch(`${API_BASE}/api/admin/sync-legacy-data`, {
     method: 'GET',
     credentials: 'include'
 });

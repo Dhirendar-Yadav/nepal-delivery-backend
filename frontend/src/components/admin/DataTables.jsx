@@ -105,7 +105,7 @@ export default function DataTables({ activeTab, filteredData, handleRestaurantSt
         // 🛵 & 👤 RIDER / CUSTOMER LOGIC
         try {
             let body = {};
-            let endpoint = `http://localhost:5005/api/admin/riders/${id}/status`;
+            let endpoint = `${API_BASE}/api/admin/riders/${id}/status`;
             let method = 'PATCH';
 
             if (actionType === 'APPROVE') {
@@ -119,7 +119,7 @@ export default function DataTables({ activeTab, filteredData, handleRestaurantSt
                 body = { status: 'SUSPENDED', isActive: false };
             } else if (actionType === 'NUKE') {
                 if (!window.confirm(`🔥 WARNING: This will PERMANENTLY DELETE the ${entityType}. Proceed?`)) return;
-                endpoint = `http://localhost:5005/api/admin/purge/${entityType.toLowerCase()}/${id}`;
+                endpoint = `${API_BASE}/api/admin/purge/${entityType.toLowerCase()}/${id}`;
                 method = 'DELETE';
             }
 

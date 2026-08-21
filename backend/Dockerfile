@@ -14,6 +14,6 @@ RUN mkdir -p /app/uploads
 
 USER node
 
-EXPOSE 5000
+EXPOSE 5005
 
 CMD ["node", "server.js"]
