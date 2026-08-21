@@ -109,7 +109,8 @@ lastActiveAt: { type: Date, default: Date.now, index: true },
     foodTypes: { type: [{ type: String }], default: [] }, // Enforced at API layer, not DB layer
     isPureVeg: { type: Boolean, default: false }, 
     image: { type: String },
-    panVatNumber: { type: String, default: null, sparse: true }, 
+    registrationDoc: { type: String, default: null },
+    panVatNumber: { type: String, default: null, sparse: true },
     
     // ⭐ METRICS, MARKETING & RANKING
     rating: { type: Number, default: 0, min: 0, max: 5 },

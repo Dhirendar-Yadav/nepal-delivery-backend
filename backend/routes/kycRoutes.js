@@ -36,8 +36,13 @@ router.get('/documents/:filename', authMiddleware, async (req, res, next) => {
         }).select('userId').lean();
 
         const restaurant = rider
-            ? null
-            : await Restaurant.findOne({ image: documentValues }).select('ownerId').lean();
+    ? null
+    : await Restaurant.findOne({
+        $or: [
+            { image: documentValues },
+            { registrationDoc: documentValues }
+        ]
+    }).select('ownerId').lean();
         const ownerId = rider?.userId || restaurant?.ownerId;
 
         if (!ownerId) {

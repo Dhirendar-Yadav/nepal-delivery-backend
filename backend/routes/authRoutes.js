@@ -146,13 +146,20 @@ if (existingUser) {
         await newUser.save({ session });
 
         if (role === 'Seller') {
-            let imagePath = null;
-            if (req.files && req.files.length > 0) {
-                // Taking the first uploaded image as the profile photo
-                imagePath = req.files[0].filename;
-            }
+    const imageFile = req.files?.find(file => file.fieldname === 'image');
+    const registrationDocFile = req.files?.find(file => file.fieldname === 'registrationDoc');
 
-            let safeLocationString = 'Nepal';
+    if (!imageFile || !registrationDocFile) {
+        throw {
+            status: 400,
+            message: 'Restaurant image and registration document are required.'
+        };
+    }
+
+    const imagePath = imageFile.filename;
+    const registrationDocPath = registrationDocFile.filename;
+
+    let safeLocationString = 'Nepal';
             if (typeof location === 'string') {
                 safeLocationString = location;
             } else if (req.body.address && typeof req.body.address === 'string') {
@@ -165,6 +172,7 @@ if (existingUser) {
                 ownerId: newUser._id,
                 name: businessName,
                 image: imagePath,
+                registrationDoc: registrationDocPath,
                 location: safeLocationString,
                 currentLocation: {
                     type: 'Point',

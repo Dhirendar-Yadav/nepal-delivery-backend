@@ -81,8 +81,8 @@ exports.getAllRestaurantsForAdmin = async (req, res, next) => {
         const limitValue = Math.min(Math.max(1, parseInt(limit) || 50), 100);
         
         const restaurants = await Restaurant.find(query)
-            .select('_id name status ownerId location foodType rating isOpen isDeleted isVerifiedByAdmin createdAt __v')
-            .sort({ createdAt: -1, _id: -1 })
+    .select('_id name status ownerId location foodType rating isOpen isDeleted isVerifiedByAdmin image registrationDoc panVatNumber createdAt __v')
+    .sort({ createdAt: -1, _id: -1 })
             .limit(limitValue)
             .lean();
 
