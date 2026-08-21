@@ -8,8 +8,8 @@ const { VALID_ORDER_STATUSES, VALID_TRANSITIONS, VALID_ACTORS } = require('../co
  * 🔒 ATOMIC ARCHITECTURE COMPLIANT: 100% hook-free execution layer driven explicitly via static factories.
  */
 const orderSchema = new mongoose.Schema({
-    customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-    restaurantId: { type: mongoose.Schema.Types.ObjectId, ref: 'Restaurant', required: true, index: true },
+    customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    restaurantId: { type: mongoose.Schema.Types.ObjectId, ref: 'Restaurant', required: true },
     assignedRiderId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true },
     
     // Sequential Dispatch Queue Control Fields

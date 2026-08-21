@@ -63,14 +63,28 @@ router.get('/full-stats', verifyAdmin, statsLimiter, async (req, res) => {
 router.get('/all-riders', verifyAdmin, statsLimiter, async (req, res) => {
     try {
         // 🛡️ CEO FIX: Frontend expects nested "userId" object (r.userId.name). We map it properly here!
-        const riders = await User.find({ role: 'Rider' }).select('-password').lean();
-        
-        // Fetch specific documents/bike data from Rider/RiderProfile model
-        const RiderModel = mongoose.models.Rider || mongoose.models.RiderProfile || RiderProfile;
-        const profiles = await RiderModel.find({}).lean();
-        const profilesByUserId = new Map(profiles
-            .filter(profile => profile.userId)
-            .map(profile => [profile.userId.toString(), profile]));
+        const MAX_ADMIN_RIDERS = 100;
+
+const riders = await User.find({ role: 'Rider' })
+    .select('-password')
+    .sort({ _id: 1 })
+    .limit(MAX_ADMIN_RIDERS)
+    .lean();
+
+// Fetch only profiles belonging to the riders already selected above.
+// This prevents loading the entire Rider/RiderProfile collection into memory.
+const RiderModel = mongoose.models.Rider || mongoose.models.RiderProfile || RiderProfile;
+const riderUserIds = riders.map(user => user._id);
+
+const profiles = riderUserIds.length
+    ? await RiderModel.find({ userId: { $in: riderUserIds } }).lean()
+    : [];
+
+const profilesByUserId = new Map(
+    profiles
+        .filter(profile => profile.userId)
+        .map(profile => [profile.userId.toString(), profile])
+);
 
         const formattedRiders = riders.map(user => {
             const profile = profilesByUserId.get(user._id.toString()) || {};
@@ -139,7 +153,13 @@ router.patch('/riders/:id/status', verifyAdmin, criticalLimiter, async (req, res
 
 router.get('/all-customers', verifyAdmin, statsLimiter, async (req, res) => {
     try {
-        const customers = await User.find({ role: 'Customer' }).select('-password').lean();
+        const MAX_ADMIN_CUSTOMERS = 200;
+
+const customers = await User.find({ role: 'Customer' })
+    .select('-password')
+    .sort({ _id: -1 })
+    .limit(MAX_ADMIN_CUSTOMERS)
+    .lean();
         res.json({ success: true, data: customers });
     } catch (err) {
         if (req.log) {
@@ -160,7 +180,16 @@ router.get('/all-customers', verifyAdmin, statsLimiter, async (req, res) => {
 
 router.get('/live-rider-shifts', verifyAdmin, statsLimiter, async (req, res) => {
     try {
-        const riders = await User.find({ role: 'Rider', isOnline: true }).select('name phone shiftStartTime currentActiveOrderId').lean();
+        const MAX_LIVE_RIDER_SHIFTS = 200;
+
+const riders = await User.find({
+    role: 'Rider',
+    isOnline: true
+})
+    .select('name phone shiftStartTime currentActiveOrderId')
+    .sort({ _id: -1 })
+    .limit(MAX_LIVE_RIDER_SHIFTS)
+    .lean();
         const riderData = riders.map(rider => {
             const shiftDuration = rider.shiftStartTime ? Math.floor((Date.now() - new Date(rider.shiftStartTime)) / (1000 * 60)) : 0;
             return { ...rider, shiftDurationMinutes: shiftDuration, isOvertime: shiftDuration >= 720, isInBuffer: shiftDuration >= 700 && shiftDuration < 720, isBusy: !!rider.currentActiveOrderId };
@@ -288,7 +317,15 @@ router.get('/all-orders', verifyAdmin, orderLimiter, async (req, res) => {
 
 router.get('/active-tracking-orders', verifyAdmin, orderLimiter, async (req, res) => {
     try {
-        const activeOrders = await Order.find({ status: { $in: ['Confirmed', 'Preparing', 'Out for Delivery'] } }).populate('restaurantId assignedRiderId').lean();
+        const MAX_ACTIVE_TRACKING_ORDERS = 100;
+
+const activeOrders = await Order.find({
+    status: { $in: ['Confirmed', 'Preparing', 'Out for Delivery'] }
+})
+    .sort({ _id: -1 })
+    .limit(MAX_ACTIVE_TRACKING_ORDERS)
+    .populate('restaurantId assignedRiderId')
+    .lean();
         res.json({ success: true, data: activeOrders });
     } catch (err) {
         if (req.log) {

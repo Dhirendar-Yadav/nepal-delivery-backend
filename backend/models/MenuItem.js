@@ -7,12 +7,11 @@ const mongoose = require('mongoose');
 const menuItemSchema = new mongoose.Schema({
 
     // 🔗 RELATION (Foreign Key)
-    restaurantId: { 
-        type: mongoose.Schema.Types.ObjectId, 
-        ref: 'Restaurant', 
-        required: true,
-        index: true
-    },
+    restaurantId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Restaurant',
+    required: true
+},
 
     // 🧾 CORE DETAILS
     name: {
@@ -68,6 +67,7 @@ const menuItemSchema = new mongoose.Schema({
 // ⚡ COMPOSITE INDEXING (For Aggregation Speed)
 // ==========================================
 
+menuItemSchema.index({ restaurantId: 1, createdAt: -1 });
 menuItemSchema.index({ restaurantId: 1, isAvailable: 1 });
 menuItemSchema.index({ restaurantId: 1, price: 1 });
 

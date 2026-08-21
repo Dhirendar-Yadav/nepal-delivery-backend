@@ -199,7 +199,12 @@ router.post('/menu', verifySeller, attachRestaurantContext, asyncHandler(async (
 
 // 2. GET SELLER'S MENU (GET /api/seller/menu)
 router.get('/menu', verifySeller, attachRestaurantContext, asyncHandler(async (req, res) => {
-    const items = await MenuItem.find({ restaurantId: req.restaurant._id }).sort({ createdAt: -1 }).lean();
+    const MAX_SELLER_MENU_ITEMS = 200;
+
+const items = await MenuItem.find({ restaurantId: req.restaurant._id })
+    .sort({ createdAt: -1 })
+    .limit(MAX_SELLER_MENU_ITEMS)
+    .lean();
     return res.status(200).json(items);
 }));
 
@@ -313,7 +318,15 @@ router.get('/:id', asyncHandler(async (req, res) => {
         return res.status(400).json({ success: false, error: "INVALID_RESTAURANT_ID", message: "Target search parameters are not valid mongoose ObjectIds." });
     }
 
-    const items = await MenuItem.find({ restaurantId: restaurantId, isAvailable: true }).sort({ createdAt: -1 }).lean();
+    const MAX_PUBLIC_MENU_ITEMS = 200;
+
+const items = await MenuItem.find({
+    restaurantId: restaurantId,
+    isAvailable: true
+})
+    .sort({ createdAt: -1 })
+    .limit(MAX_PUBLIC_MENU_ITEMS)
+    .lean();
     return res.status(200).json(items);
 }));
 

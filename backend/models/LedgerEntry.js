@@ -13,7 +13,7 @@ const ledgerEntrySchema = new mongoose.Schema({
         index: true
     },
     
-    entityType: { type: String, enum: ['ADMIN', 'RESTAURANT', 'RIDER', 'SYSTEM_CLEARING'], required: true, index: true },
+    entityType: { type: String, enum: ['ADMIN', 'RESTAURANT', 'RIDER', 'SYSTEM_CLEARING'], required: true },
     entityId: { type: mongoose.Schema.Types.ObjectId, default: null }, // Null for SYSTEM_CLEARING or Master Admin
     
     type: { type: String, enum: ['CREDIT', 'DEBIT'], required: true },

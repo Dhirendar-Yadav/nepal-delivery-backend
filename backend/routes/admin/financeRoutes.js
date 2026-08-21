@@ -39,8 +39,20 @@ const SystemLock = mongoose.models.SystemLock || mongoose.model('SystemLock', ne
 
 router.get('/financial-hub', verifyAdmin, criticalLimiter, async (req, res) => {
     try {
-        const riders = await RiderProfile.find({ "wallet.balance": { $gt: 0 } }).select('userId wallet.balance stats isActive cancelCount').populate('userId', 'name phone').lean();
-        const sellers = await Restaurant.find({ "walletBalance": { $gt: 0 } }).select('name walletBalance status totalEarnings').lean();
+        const MAX_FINANCIAL_HUB_ENTITIES = 200;
+
+const riders = await RiderProfile.find({ "wallet.balance": { $gt: 0 } })
+    .select('userId wallet.balance stats isActive cancelCount')
+    .populate('userId', 'name phone')
+    .sort({ _id: -1 })
+    .limit(MAX_FINANCIAL_HUB_ENTITIES)
+    .lean();
+
+const sellers = await Restaurant.find({ "walletBalance": { $gt: 0 } })
+    .select('name walletBalance status totalEarnings')
+    .sort({ _id: -1 })
+    .limit(MAX_FINANCIAL_HUB_ENTITIES)
+    .lean();
         const todayString = new Date().toISOString().split('T')[0];
         const wallet = await AdminWallet.findOne({ date: todayString }).lean();
 
