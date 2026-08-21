@@ -104,14 +104,27 @@ app.use((req, res, next) => {
     req.log = logger.child({ requestId: req.requestId });
 
     const start = Date.now();
-    res.on('finish', () => {
-        req.log.info({
-            event: 'REQUEST_COMPLETE',
-            path: req.originalUrl,
-            status: res.statusCode,
-            duration: `${Date.now() - start}ms`
+res.on('finish', () => {
+    const durationMs = Date.now() - start;
+
+    const logPayload = {
+        event: 'REQUEST_COMPLETE',
+        path: req.originalUrl,
+        status: res.statusCode,
+        durationMs
+    };
+
+    if (durationMs >= 2000 || res.statusCode >= 500) {
+        req.log.warn({
+            ...logPayload,
+            event: durationMs >= 2000
+                ? 'SLOW_REQUEST'
+                : 'REQUEST_SERVER_ERROR'
         });
-    });
+    } else {
+        req.log.info(logPayload);
+    }
+});
     next();
 });
 
