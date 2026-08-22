@@ -82,6 +82,13 @@ const orderSchema = new mongoose.Schema({
         enum: ['COD', 'ONLINE'],
         required: true
     },
+
+    cancellationReason: {
+        type: String,
+        trim: true,
+        maxlength: 300,
+        default: null
+    },
     
     // Rich History Audit Log Timeline Array
     statusHistory: [{
@@ -91,7 +98,13 @@ const orderSchema = new mongoose.Schema({
         // 🚀 SUBDOC CONTEXT FIX: Dropped function required rules to block atomic array update query context failures.
         // Contract schema structural validation is delegated strictly to the factory layer payload builders instead.
         actorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
-        changedAt: { type: Date, default: Date.now }
+reason: {
+    type: String,
+    trim: true,
+    maxlength: 300,
+    default: null
+},
+changedAt: { type: Date, default: Date.now }
     }],
     dispatchHistory: [{
     riderId: {
@@ -152,21 +165,29 @@ deliveryOTPExpiresAt: { type: Date, default: null },
     },
 
     riderLocation: {
-        type: { type: String, enum: ['Point'], default: 'Point' },
-        coordinates: { 
-            type: [Number], 
-            default: undefined,
+        type: {
+            type: String,
+            enum: ['Point']
+        },
+        coordinates: {
+            type: [Number],
             validate: {
                 validator: function(v) {
-                    if (!v) return true;
-                    return Array.isArray(v) && 
-                           v.length === 2 && 
-                           typeof v[0] === 'number' && Number.isFinite(v[0]) && v[0] >= -180 && v[0] <= 180 &&
-                           typeof v[1] === 'number' && Number.isFinite(v[1]) && v[1] >= -90 && v[1] <= 90;
+                    if (v == null) return true;
+                    return Array.isArray(v) &&
+                           v.length === 2 &&
+                           typeof v[0] === 'number' &&
+                           Number.isFinite(v[0]) &&
+                           v[0] >= -180 &&
+                           v[0] <= 180 &&
+                           typeof v[1] === 'number' &&
+                           Number.isFinite(v[1]) &&
+                           v[1] >= -90 &&
+                           v[1] <= 90;
                 },
                 message: 'Invalid GeoJSON coordinates spatial layout.'
             }
-        } 
+        }
     }
 
 }, { 

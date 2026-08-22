@@ -266,7 +266,24 @@ router.get('/orders', verifySeller, attachRestaurantContext, asyncHandler(async 
 // 4. UPDATE ORDER STATUS (PUT /api/seller/orders/:id/status)
 router.put('/orders/:id/status', verifySeller, attachRestaurantContext, asyncHandler(async (req, res) => {
     const orderId = req.params.id;
-    const { status } = req.body;
+    const { status, reason } = req.body;
+const normalizedReason = typeof reason === 'string' ? reason.trim() : '';
+
+if (status === 'Cancelled' && !normalizedReason) {
+    return res.status(400).json({
+        success: false,
+        error: 'CANCELLATION_REASON_REQUIRED',
+        message: 'A cancellation reason is required when rejecting an order.'
+    });
+}
+
+if (normalizedReason.length > 300) {
+    return res.status(400).json({
+        success: false,
+        error: 'CANCELLATION_REASON_TOO_LONG',
+        message: 'Cancellation reason must not exceed 300 characters.'
+    });
+}
 
     if (!mongoose.Types.ObjectId.isValid(orderId)) {
         return res.status(400).json({ success: false, error: "INVALID_OBJECT_ID", message: "Malformed context parameter reference format identifier dropped." });
@@ -300,6 +317,7 @@ router.put('/orders/:id/status', verifySeller, attachRestaurantContext, asyncHan
         to: status,
         actorType: 'SELLER', 
         actorId: new mongoose.Types.ObjectId(req.user.id),
+        reason: status === 'Cancelled' ? normalizedReason : null,
         changedAt: new Date()
     };
 
@@ -321,7 +339,8 @@ router.put('/orders/:id/status', verifySeller, attachRestaurantContext, asyncHan
         { 
             $set: {
                 status,
-                statusUpdatedAt: historicalAuditNode.changedAt
+                statusUpdatedAt: historicalAuditNode.changedAt,
+                cancellationReason: status === 'Cancelled' ? normalizedReason : null
             },
             $push: { statusHistory: historicalAuditNode } 
         },

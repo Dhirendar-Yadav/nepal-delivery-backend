@@ -16,6 +16,9 @@ function Dashboard() {
   const [itemDescription, setItemDescription] = useState('');
   const [restaurant, setRestaurant] = useState(null);
   const [updatingStoreStatus, setUpdatingStoreStatus] = useState(false);
+const [rejectingOrderId, setRejectingOrderId] = useState(null);
+const [rejectReason, setRejectReason] = useState('');
+const [rejectReasonType, setRejectReasonType] = useState('');
 
   // 🚀 Fix: Use useRef for Socket and Audio to prevent memory leaks and infinite loops
   const socketRef = useRef(null);
@@ -182,7 +185,7 @@ socketRef.current = io(API_BASE, {
     }
   }, [orders, myItems]);
 
-  const updateOrderStatus = async (orderId, newStatus) => {
+  const updateOrderStatus = async (orderId, newStatus, reason = '') => {
   try {
     const res = await fetch(`${API_BASE}/api/seller/orders/${orderId}/status`, {
       method: 'PUT',
@@ -190,13 +193,32 @@ socketRef.current = io(API_BASE, {
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ status: newStatus })
+      body: JSON.stringify({
+        status: newStatus,
+        ...(newStatus === 'Cancelled' ? { reason: reason.trim() } : {})
+      })
     });
+
     if (res.ok) {
-      // Functional State Update to prevent stale data
       setOrders(prevOrders => prevOrders.map(order =>
-        order._id === orderId ? { ...order, status: newStatus } : order
+        order._id === orderId
+          ? {
+              ...order,
+              status: newStatus,
+              ...(newStatus === 'Cancelled'
+                ? { cancellationReason: reason.trim() }
+                : {})
+            }
+          : order
       ));
+
+      if (newStatus === 'Cancelled') {
+        setRejectingOrderId(null);
+        setRejectReason('');
+        setRejectReasonType('');
+      }
+    } else {
+      console.error("Failed to update order status.");
     }
   } catch {
     console.error("Failed to update status.");
@@ -351,7 +373,7 @@ socketRef.current = io(API_BASE, {
                 <div key={order._id} className="bg-gray-800 p-6 rounded-[2rem] shadow-xl border border-gray-700 relative overflow-hidden transition-all hover:border-orange-500/50">
 
                   <div className={`absolute top-0 right-0 px-4 py-2 rounded-bl-2xl font-black text-xs uppercase tracking-wider text-white ${
-                    order.status === 'Pending' ? 'bg-red-500 animate-pulse' : order.status === 'Cooking' ? 'bg-orange-500' : 'bg-green-500'
+                    order.status === 'Pending' ? 'bg-red-500 animate-pulse' : order.status === 'Preparing' ? 'bg-orange-500' : 'bg-green-500'
                   }`}>
                     {order.status}
                   </div>
@@ -395,12 +417,30 @@ socketRef.current = io(API_BASE, {
 
                     <div className="flex flex-col items-end">
                         {order.status === 'Pending' && (
-                        <button onClick={() => updateOrderStatus(order._id, 'Confirmed')} className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-xl font-black shadow-lg active:scale-95 transition-all">
-                            Accept Order ✅
-                        </button>
-                        )}
+    <div className="flex items-center gap-3">
+        <button
+            type="button"
+            onClick={() => {
+                setRejectingOrderId(order._id);
+                setRejectReason("");
+                setRejectReasonType("");
+            }}
+            className="bg-red-600 hover:bg-red-700 text-white px-5 py-3 rounded-xl font-black shadow-lg active:scale-95 transition-all"
+        >
+            Reject Order
+        </button>
 
-                        {(order.status === 'Confirmed' || order.status === 'Accepted') && !order.assignedRiderId && (
+        <button
+            type="button"
+            onClick={() => updateOrderStatus(order._id, 'Accepted')}
+            className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-xl font-black shadow-lg active:scale-95 transition-all"
+        >
+            Accept Order
+        </button>
+    </div>
+)}
+
+                        {order.status === 'Accepted' && !order.assignedRiderId && (
                         <div className="text-right">
                             <p className="text-sm text-gray-400 font-bold animate-pulse mb-2">📡 Finding Nearest Rider...</p>
                             <button disabled className="bg-gray-600 text-gray-400 px-6 py-3 rounded-xl font-black shadow-lg cursor-not-allowed">
@@ -409,14 +449,14 @@ socketRef.current = io(API_BASE, {
                         </div>
                         )}
 
-                        {(order.status === 'Confirmed' || order.status === 'Accepted' || order.status === 'Out for Delivery') && order.assignedRiderId && order.status !== 'Cooking' && (
-                        <button onClick={() => updateOrderStatus(order._id, 'Cooking')} className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-xl font-black shadow-lg active:scale-95 transition-all animate-bounce">
+                        {order.status === 'Accepted' && order.assignedRiderId && (
+                        <button onClick={() => updateOrderStatus(order._id, 'Preparing')} className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-xl font-black shadow-lg active:scale-95 transition-all animate-bounce">
                             Start Cooking 👨‍🍳
                         </button>
                         )}
 
-                        {order.status === 'Cooking' && (
-                        <button onClick={() => updateOrderStatus(order._id, 'Out for Delivery')} className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-xl font-black shadow-lg active:scale-95 transition-all">
+                        {order.status === 'Preparing' && (
+                        <button onClick={() => updateOrderStatus(order._id, 'Ready for Pickup')} className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-xl font-black shadow-lg active:scale-95 transition-all">
                             Food Ready ✅
                         </button>
                         )}
@@ -428,6 +468,95 @@ socketRef.current = io(API_BASE, {
             </div>
           )}
         </section>
+
+        {rejectingOrderId && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 px-4">
+            <div className="w-full max-w-lg rounded-3xl border border-gray-700 bg-gray-800 p-6 shadow-2xl">
+              <div className="mb-6">
+                <h3 className="text-2xl font-black text-white">
+                  Reject Order
+                </h3>
+                <p className="mt-2 text-sm text-gray-400">
+                  Select the reason for rejecting this order.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                {[
+                  "Food unavailable",
+                  "Item out of stock",
+                  "Restaurant too busy",
+                  "Restaurant temporarily unavailable"
+                ].map((reason) => (
+                  <button
+                    key={reason}
+                    type="button"
+                    onClick={() => {
+                      setRejectReasonType(reason);
+                      setRejectReason(reason);
+                    }}
+                    className={`w-full rounded-xl border px-4 py-3 text-left font-bold transition ${
+                      rejectReasonType === reason
+                        ? "border-red-500 bg-red-500/10 text-red-400"
+                        : "border-gray-700 bg-gray-900 text-gray-300 hover:border-red-500/50"
+                    }`}
+                  >
+                    {reason}
+                  </button>
+                ))}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRejectReasonType("Other");
+                    setRejectReason("");
+                  }}
+                  className={`w-full rounded-xl border px-4 py-3 text-left font-bold transition ${
+                    rejectReasonType === "Other"
+                      ? "border-red-500 bg-red-500/10 text-red-400"
+                      : "border-gray-700 bg-gray-900 text-gray-300 hover:border-red-500/50"
+                  }`}
+                >
+                  Other
+                </button>
+              </div>
+
+              {rejectReasonType === "Other" && (
+                <textarea
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  rows={4}
+                  maxLength={300}
+                  className="mt-4 w-full rounded-xl border border-gray-700 bg-gray-900 px-4 py-3 text-white outline-none focus:border-red-500"
+                  placeholder="Enter the reason for rejecting this order..."
+                />
+              )}
+
+              <div className="mt-6 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRejectingOrderId(null);
+                    setRejectReason("");
+                    setRejectReasonType("");
+                  }}
+                  className="rounded-xl bg-gray-700 px-5 py-3 font-black text-white transition hover:bg-gray-600"
+                >
+                  Close
+                </button>
+
+                <button
+                  type="button"
+                  disabled={!rejectReason.trim()}
+                  onClick={() => updateOrderStatus(rejectingOrderId, 'Cancelled', rejectReason)}
+                  className="rounded-xl bg-red-600 px-5 py-3 font-black text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Confirm Reject
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <hr className="border-gray-800 border-2 rounded-full" />
 
