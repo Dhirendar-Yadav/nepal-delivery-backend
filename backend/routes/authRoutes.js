@@ -73,6 +73,31 @@ const upload = multer({
     }
 });
 
+const validateUploadedProfileImage = async (file) => {
+    if (!file?.path) {
+        throw new Error('PROFILE_IMAGE_REQUIRED');
+    }
+
+    const { fileTypeFromFile } = await import('file-type');
+    const detectedType = await fileTypeFromFile(file.path);
+
+    const allowedMimeTypes = new Set([
+        'image/jpeg',
+        'image/png',
+        'image/webp'
+    ]);
+
+    if (
+        !detectedType ||
+        !allowedMimeTypes.has(detectedType.mime) ||
+        detectedType.mime !== file.mimetype
+    ) {
+        throw new Error('INVALID_PROFILE_IMAGE_CONTENT');
+    }
+
+    return detectedType;
+};
+
 // 🛡️ Elite Brute-Force Protection
 const loginLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
@@ -585,6 +610,8 @@ router.post('/profile/photo', authMiddleware, upload.single('profileImage'), asy
         }
 
         const previousProfileImage = user.profileImage;
+
+        await validateUploadedProfileImage(uploadedFile);
 
         const newProfileImage = await moveUploadedFile(
             uploadedFile,
