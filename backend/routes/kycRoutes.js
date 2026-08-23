@@ -142,7 +142,9 @@ router.get('/documents/:filename', authMiddleware, async (req, res, next) => {
             filename
         });
 
-        return res.download(documentPath, filename, (err) => {
+        res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+
+        return res.sendFile(documentPath, (err) => {
             if (err && !res.headersSent) next(err);
         });
     } catch (err) {

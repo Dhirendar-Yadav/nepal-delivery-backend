@@ -111,9 +111,15 @@ const userSchema = new mongoose.Schema({
                 message: 'Invalid GeoJSON coordinates'
             }
         }
+    },
+
+    profileImage: {
+        type: String,
+        default: null,
+        trim: true
     }
 
-}, { 
+}, {
     timestamps: true 
 });
 

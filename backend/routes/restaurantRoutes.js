@@ -82,7 +82,7 @@ const verifySeller = asyncHandler(async (req, res, next) => {
  */
 const attachRestaurantContext = asyncHandler(async (req, res, next) => {
     const restaurant = await Restaurant.findOne({ ownerId: req.user.id })
-        .select('_id currentLocation name isOpen status')
+        .select('_id currentLocation name isOpen status image registrationDoc')
         .lean();
 
     // 🚀 PROBLEM 2 FIXED: Removed non-standard HTTP 444 code to comply with native gateway proxies contracts
@@ -201,7 +201,9 @@ router.get('/store', verifySeller, attachRestaurantContext, asyncHandler(async (
             name: req.restaurant.name,
             isOpen: req.restaurant.isOpen,
             status: req.restaurant.status,
-            isDiscoverable: req.restaurant.isDiscoverable
+            isDiscoverable: req.restaurant.isDiscoverable,
+            image: req.restaurant.image,
+            registrationDoc: req.restaurant.registrationDoc
         }
     });
 }));

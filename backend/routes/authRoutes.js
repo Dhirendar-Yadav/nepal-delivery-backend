@@ -512,7 +512,7 @@ router.post('/login', loginLimiter, async (req, res) => {
 router.get('/me', authMiddleware, async (req, res) => {
     try {
         const user = await User.findById(req.user.id)
-            .select('_id name email phone role isActive isBlocked isDeleted kycStatus');
+            .select('_id name email phone role isActive isBlocked isDeleted kycStatus profileImage');
 
         if (!user || user.isDeleted || user.isBlocked || !user.isActive) {
             return res.status(401).json({
@@ -531,7 +531,8 @@ router.get('/me', authMiddleware, async (req, res) => {
                 phone: user.phone,
                 role: user.role,
                 isActive: user.isActive,
-                kycStatus: user.kycStatus
+                kycStatus: user.kycStatus,
+                profileImage: user.profileImage
             }
         });
     } catch (err) {
@@ -546,6 +547,244 @@ router.get('/me', authMiddleware, async (req, res) => {
         });
     }
 });
+
+router.post('/profile/photo', authMiddleware, upload.single('profileImage'), async (req, res) => {
+    let uploadedFile = req.file;
+
+    try {
+        if (!req.user || req.user.role !== 'Seller') {
+            return res.status(403).json({
+                success: false,
+                error: 'SELLER_ACCESS_REQUIRED'
+            });
+        }
+
+        const user = await User.findOne({
+            _id: req.user.id,
+            role: 'Seller'
+        }).select('_id profileImage isActive isBlocked isDeleted kycStatus').lean();
+
+        if (
+            !user ||
+            !user.isActive ||
+            user.isBlocked ||
+            user.isDeleted ||
+            user.kycStatus !== 'VERIFIED'
+        ) {
+            return res.status(403).json({
+                success: false,
+                error: 'SELLER_ACCOUNT_NOT_ELIGIBLE'
+            });
+        }
+
+        if (!uploadedFile) {
+            return res.status(400).json({
+                success: false,
+                error: 'PROFILE_IMAGE_REQUIRED'
+            });
+        }
+
+        const previousProfileImage = user.profileImage;
+
+        const newProfileImage = await moveUploadedFile(
+            uploadedFile,
+            'users',
+            user._id,
+            'profile'
+        );
+
+        const updatedUser = await User.findOneAndUpdate(
+            {
+                _id: user._id,
+                profileImage: previousProfileImage || null
+            },
+            {
+                $set: {
+                    profileImage: newProfileImage
+                }
+            },
+            {
+                new: true,
+                projection: {
+                    _id: 1,
+                    name: 1,
+                    email: 1,
+                    phone: 1,
+                    role: 1,
+                    isActive: 1,
+                    kycStatus: 1,
+                    profileImage: 1
+                }
+            }
+        ).lean();
+
+        if (!updatedUser) {
+            await cleanupUploadedFiles([uploadedFile]);
+
+            return res.status(409).json({
+                success: false,
+                error: 'PROFILE_IMAGE_UPDATE_CONFLICT',
+                message: 'Profile photo was updated by another request. Please try again.'
+            });
+        }
+
+        if (previousProfileImage) {
+            const previousFilename = path.basename(
+                String(previousProfileImage).replace(/\\/g, '/')
+            );
+
+            if (/^[A-Za-z0-9._-]+$/.test(previousFilename)) {
+                const previousPath = path.resolve(
+                    uploadRoot,
+                    'users',
+                    user._id.toString(),
+                    'profile',
+                    previousFilename
+                );
+
+                if (previousPath.startsWith(`${uploadRoot}${path.sep}`)) {
+                    try {
+                        await fs.promises.unlink(previousPath);
+                    } catch (err) {
+                        if (err.code !== 'ENOENT' && req.log) {
+                            req.log.warn({
+                                event: 'PROFILE_IMAGE_OLD_FILE_DELETE_FAILED',
+                                userId: user._id,
+                                filename: previousFilename,
+                                error: err.message
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        if (req.log) {
+            req.log.info({
+                event: 'SELLER_PROFILE_IMAGE_UPDATED',
+                userId: user._id,
+                filename: newProfileImage
+            });
+        }
+
+        uploadedFile = null;
+
+        return res.status(200).json({
+            success: true,
+            user: updatedUser
+        });
+    } catch (err) {
+        if (uploadedFile) {
+            await cleanupUploadedFiles([uploadedFile]);
+        }
+
+        if (req.log) {
+            req.log.error({
+                event: 'SELLER_PROFILE_IMAGE_UPDATE_FAILED',
+                userId: req.user?.id,
+                error: err.message
+            });
+        }
+
+        return res.status(500).json({
+            success: false,
+            error: 'PROFILE_IMAGE_UPDATE_FAILED'
+        });
+    }
+});
+
+router.get('/profile/photo', authMiddleware, async (req, res) => {
+    try {
+        if (!req.user || req.user.role !== 'Seller') {
+            return res.status(403).json({
+                success: false,
+                error: 'SELLER_ACCESS_REQUIRED'
+            });
+        }
+
+        const user = await User.findOne({
+            _id: req.user.id,
+            role: 'Seller',
+            isActive: true,
+            isBlocked: false,
+            isDeleted: false
+        }).select('_id profileImage').lean();
+
+        if (!user || !user.profileImage) {
+            return res.status(404).json({
+                success: false,
+                error: 'PROFILE_IMAGE_NOT_FOUND'
+            });
+        }
+
+        const filename = path.basename(
+            String(user.profileImage).replace(/\\/g, '/')
+        );
+
+        if (
+            !filename ||
+            !/^[A-Za-z0-9._-]+$/.test(filename)
+        ) {
+            return res.status(404).json({
+                success: false,
+                error: 'PROFILE_IMAGE_NOT_FOUND'
+            });
+        }
+
+        const profileDirectory = path.resolve(
+            uploadRoot,
+            'users',
+            user._id.toString(),
+            'profile'
+        );
+
+        const profilePath = path.resolve(
+            profileDirectory,
+            filename
+        );
+
+        if (!profilePath.startsWith(`${profileDirectory}${path.sep}`)) {
+            return res.status(404).json({
+                success: false,
+                error: 'PROFILE_IMAGE_NOT_FOUND'
+            });
+        }
+
+        try {
+            await fs.promises.access(profilePath, fs.constants.R_OK);
+        } catch {
+            return res.status(404).json({
+                success: false,
+                error: 'PROFILE_IMAGE_NOT_FOUND'
+            });
+        }
+
+        res.setHeader(
+            'Content-Disposition',
+            `inline; filename="${filename}"`
+        );
+
+        return res.sendFile(profilePath, (err) => {
+            if (err && !res.headersSent) {
+                res.status(500).end();
+            }
+        });
+    } catch (err) {
+        if (req.log) {
+            req.log.error({
+                event: 'SELLER_PROFILE_IMAGE_ACCESS_FAILED',
+                userId: req.user?.id,
+                error: err.message
+            });
+        }
+
+        return res.status(500).json({
+            success: false,
+            error: 'PROFILE_IMAGE_ACCESS_FAILED'
+        });
+    }
+});
+
 router.post('/logout', (req, res) => {
     res.clearCookie('access_token', {
         httpOnly: true,

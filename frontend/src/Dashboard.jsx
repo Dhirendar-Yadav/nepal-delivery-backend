@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from './hooks/useAuth';
 import { io } from 'socket.io-client';
+import Cropper from 'react-easy-crop';
 
 function Dashboard() {
   const navigate = useNavigate();
@@ -16,15 +17,38 @@ function Dashboard() {
   const [itemDescription, setItemDescription] = useState('');
   const [restaurant, setRestaurant] = useState(null);
   const [updatingStoreStatus, setUpdatingStoreStatus] = useState(false);
+  const [userProfile, setUserProfile] = useState(null);
+  const [profileImageRefreshKey, setProfileImageRefreshKey] = useState(() => Date.now());
+  const [isProfilePhotoMenuOpen, setIsProfilePhotoMenuOpen] = useState(false);
+  const [isProfilePhotoEditorOpen, setIsProfilePhotoEditorOpen] = useState(
+    () => sessionStorage.getItem('profilePhotoEditorOpen') === 'true'
+  );
+  const [isProfileCameraOpen, setIsProfileCameraOpen] = useState(
+    () => sessionStorage.getItem('profileCameraOpen') === 'true'
+  );
+  const [profileCameraFacingMode, setProfileCameraFacingMode] = useState('user');
+  const [profileCameraError, setProfileCameraError] = useState('');
+  const [profileCapturedImage, setProfileCapturedImage] = useState(null);
+  const [profileCrop, setProfileCrop] = useState({ x: 0, y: 0 });
+  const [profileZoom, setProfileZoom] = useState(1);
+  const [profileCroppedAreaPixels, setProfileCroppedAreaPixels] = useState(null);
 const [rejectingOrderId, setRejectingOrderId] = useState(null);
 const [rejectReason, setRejectReason] = useState('');
 const [rejectReasonType, setRejectReasonType] = useState('');
+const [activeTab, setActiveTab] = useState(
+  () => sessionStorage.getItem('sellerDashboardActiveTab') || 'orders'
+);
+const [navigationHistory, setNavigationHistory] = useState([]);
+const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // 🚀 Fix: Use useRef for Socket and Audio to prevent memory leaks and infinite loops
   const socketRef = useRef(null);
   const newOrderSoundRef = useRef(null);
   const riderAssignedSoundRef = useRef(null);
   const hasJoinedRoom = useRef(false); // To prevent multiple room joins
+  const profileVideoRef = useRef(null);
+  const profileCameraStreamRef = useRef(null);
+  const profileCropLastTapRef = useRef(0);
 
   const fetchOrders = useCallback(async () => {
     try {
@@ -80,6 +104,24 @@ const [rejectReasonType, setRejectReasonType] = useState('');
     }
   }, [API_BASE]);
 
+  const fetchUserProfile = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/auth/me`, {
+        credentials: 'include'
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.user) {
+        setUserProfile(data.user);
+      } else {
+        console.error(data);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  }, [API_BASE]);
+
   useEffect(() => {
     const role = localStorage.getItem('userRole');
 
@@ -114,6 +156,10 @@ socketRef.current = io(API_BASE, {
 
     setTimeout(() => {
       fetchRestaurant();
+    }, 0);
+
+    setTimeout(() => {
+      fetchUserProfile();
     }, 0);
 
     socketRef.current.on('newLiveOrder', (newOrder) => {
@@ -168,8 +214,101 @@ socketRef.current = io(API_BASE, {
             socketRef.current.disconnect();
         }
     };
-  }, [navigate, authLoading, isAuthenticated, fetchOrders, fetchMyMenu, fetchRestaurant, API_BASE]);
+  }, [navigate, authLoading, isAuthenticated, fetchOrders, fetchMyMenu, fetchRestaurant, fetchUserProfile, API_BASE]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const restoreProfileCamera = async () => {
+      if (!isProfileCameraOpen) {
+        return;
+      }
+
+      try {
+        if (!profileCameraStreamRef.current) {
+          if (!navigator.mediaDevices?.getUserMedia) {
+            setProfileCameraError(
+              'Camera access is not supported by this browser.'
+            );
+            return;
+          }
+
+          const stream =
+            await navigator.mediaDevices.getUserMedia({
+              video: {
+                facingMode: 'user'
+              },
+              audio: false
+            });
+
+          if (cancelled) {
+            stream.getTracks().forEach((track) => track.stop());
+            return;
+          }
+
+          profileCameraStreamRef.current = stream;
+        }
+
+        if (profileVideoRef.current && profileCameraStreamRef.current) {
+          profileVideoRef.current.srcObject =
+            profileCameraStreamRef.current;
+
+          profileVideoRef.current
+            .play()
+            .catch((error) => {
+              console.error('Profile camera preview failed:', error);
+            });
+        }
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        console.error(
+          'Profile camera restore failed:',
+          error
+        );
+
+        profileCameraStreamRef.current = null;
+
+        setProfileCameraError(
+          error?.name === 'NotAllowedError'
+            ? 'Camera access was denied. Allow camera permission for this site in your browser settings, then try again.'
+            : 'Camera is unavailable. Check that your camera is connected and not being used by another application.'
+        );
+      }
+    };
+
+    restoreProfileCamera();
+
+    return () => {
+      cancelled = true;
+
+      if (profileVideoRef.current) {
+        profileVideoRef.current.srcObject = null;
+      }
+    };
+  }, [isProfileCameraOpen]);
+  useEffect(() => {
+    sessionStorage.setItem(
+      'sellerDashboardActiveTab',
+      activeTab
+    );
+
+    sessionStorage.setItem(
+      'profilePhotoEditorOpen',
+      String(isProfilePhotoEditorOpen)
+    );
+
+    sessionStorage.setItem(
+      'profileCameraOpen',
+      String(isProfileCameraOpen)
+    );
+  }, [
+    activeTab,
+    isProfilePhotoEditorOpen,
+    isProfileCameraOpen
+  ]);
   // 🚀 Fix: Stable Room Joiner Logic
   useEffect(() => {
     if (socketRef.current && !hasJoinedRoom.current) {
@@ -224,6 +363,54 @@ socketRef.current = io(API_BASE, {
     console.error("Failed to update status.");
   }
 };
+
+  const createProfileCroppedImage = async (imageSrc, cropAreaPixels) => {
+    const image = new Image();
+
+    image.src = imageSrc;
+
+    await new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = reject;
+    });
+
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+
+    if (!context) {
+      throw new Error('Unable to create profile photo canvas.');
+    }
+
+    canvas.width = cropAreaPixels.width;
+    canvas.height = cropAreaPixels.height;
+
+    context.drawImage(
+      image,
+      cropAreaPixels.x,
+      cropAreaPixels.y,
+      cropAreaPixels.width,
+      cropAreaPixels.height,
+      0,
+      0,
+      cropAreaPixels.width,
+      cropAreaPixels.height
+    );
+
+    return new Promise((resolve, reject) => {
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            reject(new Error('Unable to generate cropped profile photo.'));
+            return;
+          }
+
+          resolve(blob);
+        },
+        'image/jpeg',
+        0.92
+      );
+    });
+  };
 
   const handleAddItem = async (e) => {
     e.preventDefault();
@@ -296,64 +483,777 @@ socketRef.current = io(API_BASE, {
   localStorage.clear();
   navigate('/login');
 };
+  const switchProfileCamera = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setProfileCameraError(
+        'Camera access is not supported by this browser.'
+      );
+      return;
+    }
+
+    const nextFacingMode =
+      profileCameraFacingMode === 'user' ? 'environment' : 'user';
+
+    try {
+      const stream =
+        await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: nextFacingMode
+          },
+          audio: false
+        });
+
+      if (profileCameraStreamRef.current) {
+        profileCameraStreamRef.current
+          .getTracks()
+          .forEach((track) => track.stop());
+      }
+
+      profileCameraStreamRef.current = stream;
+      setProfileCameraFacingMode(nextFacingMode);
+      setProfileCameraError('');
+
+      if (profileVideoRef.current) {
+        profileVideoRef.current.srcObject = stream;
+
+        profileVideoRef.current
+          .play()
+          .catch((error) => {
+            console.error(
+              'Profile camera switch preview failed:',
+              error
+            );
+          });
+      }
+    } catch (error) {
+      console.error(
+        'Profile camera switch failed:',
+        error
+      );
+
+      setProfileCameraError(
+        error?.name === 'NotAllowedError'
+          ? 'Camera access was denied. Allow camera permission for this site in your browser settings, then try again.'
+          : 'Unable to switch camera. Please try again.'
+      );
+    }
+  };
+
+  const navigateToTab = (nextTab) => {
+    if (nextTab === activeTab) {
+      setIsMobileMenuOpen(false);
+      return;
+    }
+
+    setNavigationHistory((prevHistory) => [
+      ...prevHistory,
+      activeTab
+    ]);
+
+    setActiveTab(nextTab);
+    setIsMobileMenuOpen(false);
+  };
+
+  const goBack = () => {
+    setNavigationHistory((prevHistory) => {
+      if (prevHistory.length === 0) {
+        return prevHistory;
+      }
+
+      const previousTab = prevHistory[prevHistory.length - 1];
+      const remainingHistory = prevHistory.slice(0, -1);
+
+      setActiveTab(previousTab);
+      return remainingHistory;
+    });
+
+    setIsMobileMenuOpen(false);
+  };
 
   return (
     <div className="min-h-screen bg-gray-900 text-white font-sans pb-20">
 
       {/* 🧭 Top Navbar */}
-      <nav className="bg-gray-800 border-b border-gray-700 py-4 px-8 flex justify-between items-center sticky top-0 z-50">
+      <nav className="bg-gray-800 border-b border-gray-700 py-2.5 px-3 sm:py-4 sm:px-6 lg:px-8 flex justify-between items-center sticky top-0 z-50">
         <div className="flex items-center gap-6">
-          <Link to="/" className="text-gray-400 hover:text-orange-500 flex items-center gap-2 font-bold transition-colors bg-gray-900 px-4 py-2 rounded-xl">
-            ⬅ <span className="hidden sm:inline">Back to App</span>
-          </Link>
 
-          <div className="border-l border-gray-700 pl-6">
-            <h1 className="text-2xl font-black text-orange-500 tracking-tight">{restaurantName} 🏪</h1>
+          <div className="border-l border-gray-700 pl-3 sm:pl-6">
+            <h1 className="text-base sm:text-2xl font-black text-orange-500 tracking-tight truncate max-w-[140px] sm:max-w-none">{restaurantName} 🏪</h1>
             <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mt-1">Partner Dashboard</p>
           </div>
         </div>
 
-        <button onClick={handleLogout} className="bg-red-500 hover:bg-red-600 px-6 py-2 rounded-xl font-bold transition-all shadow-lg active:scale-95 text-sm">
-          LOGOUT
-        </button>
+        <div className="flex items-center gap-2">
+                    <div
+            className={`md:hidden h-3 w-3 rounded-full ${
+              restaurant?.isOpen ? "bg-green-500" : "bg-red-500"
+            }`}
+            aria-label={restaurant?.isOpen ? "Restaurant is open" : "Restaurant is closed"}
+          />
+
+          <button
+            type="button"
+            onClick={() => setIsMobileMenuOpen(true)}
+            className="md:hidden flex items-center justify-center p-1 text-gray-200 transition active:scale-95"
+            aria-label="Open seller menu"
+          >
+            <span className="flex flex-col gap-1">
+              <span className="block h-0.5 w-5 rounded-full bg-gray-200" />
+              <span className="block h-0.5 w-5 rounded-full bg-gray-200" />
+              <span className="block h-0.5 w-5 rounded-full bg-gray-200" />
+            </span>
+          </button>
+
+          <button onClick={handleLogout} className="hidden md:block bg-red-500 hover:bg-red-600 px-6 py-2 rounded-xl font-bold transition-all shadow-lg active:scale-95 text-sm">
+            LOGOUT
+          </button>
+        </div>
       </nav>
 
+      {isMobileMenuOpen && (
+        <div className="md:hidden fixed inset-0 z-[100]">
+          <button
+            type="button"
+            aria-label="Close seller menu"
+            onClick={() => setIsMobileMenuOpen(false)}
+            className="absolute inset-0 bg-black/60"
+          />
+
+          <aside className="absolute right-0 top-0 h-full w-[82%] max-w-sm bg-gray-900 border-l border-gray-700 shadow-2xl flex flex-col">
+            <div className="flex items-center justify-between px-5 py-5 border-b border-gray-700">
+              <div>
+                <h2 className="text-lg font-black text-orange-500">
+                  Seller Menu
+                </h2>
+                <p className="text-xs text-gray-500 mt-1">
+                  {restaurantName}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="h-10 w-10 rounded-xl bg-gray-800 text-gray-300 border border-gray-700 text-xl font-black active:scale-95"
+                aria-label="Close seller menu"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-3 py-4">
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => navigateToTab('orders')}
+                  className={`w-full rounded-xl px-4 py-3 text-left font-black transition ${
+                    activeTab === 'orders'
+                      ? 'bg-orange-500 text-white'
+                      : 'text-gray-300 hover:bg-gray-800'
+                  }`}
+                >
+                  Live Orders
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => navigateToTab('menu')}
+                  className={`w-full rounded-xl px-4 py-3 text-left font-black transition ${
+                    activeTab === 'menu'
+                      ? 'bg-orange-500 text-white'
+                      : 'text-gray-300 hover:bg-gray-800'
+                  }`}
+                >
+                  Menu Management
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => navigateToTab('profile')}
+                  className={`w-full rounded-xl px-4 py-3 text-left font-black transition ${
+                    activeTab === 'profile'
+                      ? 'bg-orange-500 text-white'
+                      : 'text-gray-300 hover:bg-gray-800'
+                  }`}
+                >
+                  Restaurant
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => navigateToTab('account')}
+                  className="w-full rounded-xl px-4 py-3 text-left font-black text-gray-300 hover:bg-gray-800 transition"
+                >
+                  Profile
+                </button>
+              </div>
+            </div>
+
+            <div className="border-t border-gray-700 px-3 py-4 space-y-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('settings');
+                  setIsMobileMenuOpen(false);
+                }}
+                className="w-full rounded-xl px-4 py-3 text-left font-black text-gray-300 hover:bg-gray-800 transition"
+              >
+                Settings
+              </button>
+
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="w-full rounded-xl bg-red-600 px-4 py-3 text-left font-black text-white hover:bg-red-700 transition"
+              >
+                Logout
+              </button>
+            </div>
+          </aside>
+        </div>
+      )}
+
+
       <div className="max-w-7xl mx-auto p-6 md:p-10 space-y-12">
-        {/* ================= STORE STATUS ================= */}
+        {activeTab === 'profile' && (
+          <>
+            {/* ================= RESTAURANT / STORE STATUS ================= */}
 
-<div className="bg-gray-800 border border-gray-700 rounded-3xl p-6 flex justify-between items-center">
+            <div className="bg-gray-800 border border-gray-700 rounded-3xl p-6 flex justify-between items-center">
 
-  <div>
-    <h2 className="text-2xl font-black">
-      Store Status
-    </h2>
+              <div>
+                <h2 className="text-2xl font-black">
+                  Store Status
+                </h2>
 
-    <p className="text-gray-400 mt-1">
-      {restaurant?.isOpen
-        ? "Customers can place new orders."
-        : "Store is currently closed."}
-    </p>
-  </div>
+                <p className="text-gray-400 mt-1">
+                  {restaurant?.isOpen
+                    ? "Customers can place new orders."
+                    : "Store is currently closed."}
+                </p>
+              </div>
 
-  <button
-    disabled={updatingStoreStatus}
-    onClick={toggleStoreStatus}
-    className={`px-6 py-3 rounded-xl font-black transition ${
-      restaurant?.isOpen
-        ? "bg-green-600 hover:bg-green-700"
-        : "bg-red-600 hover:bg-red-700"
-    }`}
-  >
-    {updatingStoreStatus
-      ? "Updating..."
-      : restaurant?.isOpen
-      ? "OPEN"
-      : "CLOSED"}
-  </button>
+              <button
+                disabled={updatingStoreStatus}
+                onClick={toggleStoreStatus}
+                className={`px-6 py-3 rounded-xl font-black transition ${
+                  restaurant?.isOpen
+                    ? "bg-green-600 hover:bg-green-700"
+                    : "bg-red-600 hover:bg-red-700"
+                }`}
+              >
+                {updatingStoreStatus
+                  ? "Updating..."
+                  : restaurant?.isOpen
+                  ? "OPEN"
+                  : "CLOSED"}
+              </button>
 
-</div>
-        {/* ================= SECTION 1: LIVE ORDERS ================= */}
-        <section>
+            </div>
+          </>
+        )}
+
+        {activeTab === 'account' && (
+          <>
+            {/* ================= SELLER PROFILE ================= */}
+
+            <section className="space-y-6">
+              <div className="relative flex items-start justify-between">
+                <div className="pr-20">
+                  <h2 className="text-3xl font-black text-white">
+                    Profile
+                  </h2>
+                  <p className="text-gray-400 mt-2">
+                    Account and restaurant information
+                  </p>
+                </div>
+
+                <div className="absolute top-0 right-0">
+                  <button
+                    type="button"
+                    onClick={() => setIsProfilePhotoMenuOpen(true)}
+                    className="h-16 w-16 rounded-full border-2 border-gray-600 bg-gray-800 flex items-center justify-center overflow-hidden shadow-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    aria-label="Change profile photo"
+                  >
+                    {userProfile?.profileImage ? (
+                      <img
+                        src={`${API_BASE}/api/auth/profile/photo?v=${profileImageRefreshKey}`}
+                        alt={userProfile?.name || "Seller"}
+                        className="h-full w-full object-cover"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <span className="text-xl font-black text-gray-400">
+                        {userProfile?.name?.charAt(0)?.toUpperCase() || "S"}
+                      </span>
+                    )}
+                  </button>
+
+                  {isProfilePhotoMenuOpen && (
+                    <div className="fixed inset-0 z-[110] flex min-h-screen items-center justify-center bg-gray-950 px-5 py-8">
+                      <div className="w-full max-w-xs text-center">
+                        <h2 className="text-2xl font-black text-white">
+                          Profile Photo
+                        </h2>
+
+                        <div className="mt-8">
+                          <div className="mx-auto h-24 w-24 overflow-hidden rounded-full border-2 border-gray-700 bg-gray-900 shadow-xl">
+                            {userProfile?.profileImage ? (
+                              <img
+                                src={`${API_BASE}/api/auth/profile/photo?v=${profileImageRefreshKey}`}
+                                alt={userProfile?.name || "Seller"}
+                                className="h-full w-full object-cover"
+                              />
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center text-2xl font-black text-gray-500">
+                                {userProfile?.name?.charAt(0)?.toUpperCase() || "S"}
+                              </div>
+                            )}
+                          </div>
+
+                          <p className="mt-4 text-lg font-black text-white">
+                            {userProfile?.name || "Seller"}
+                          </p>
+                        </div>
+
+                        <div className="mt-8 space-y-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsProfilePhotoMenuOpen(false);
+                              setProfileCameraError('');
+                              setProfileCapturedImage(null);
+                              setIsProfilePhotoEditorOpen(true);
+                              setIsProfileCameraOpen(true);
+                            }}
+                            className="w-full rounded-xl px-4 py-3 text-base font-black text-white transition hover:bg-gray-900"
+                          >
+                            Take Photo
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsProfilePhotoMenuOpen(false);
+                              setIsProfilePhotoEditorOpen(true);
+                            }}
+                            className="w-full rounded-xl px-4 py-3 text-base font-black text-white transition hover:bg-gray-900"
+                          >
+                            Upload Image
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+                <div className="bg-gray-800 border border-gray-700 rounded-3xl p-6">
+                  <h3 className="text-lg font-black text-orange-400 mb-5">
+                    Registration Document
+                  </h3>
+
+                  {restaurant?.registrationDoc ? (
+                    <div className="overflow-hidden rounded-2xl border border-gray-700 bg-gray-900">
+                      <img
+                        src={`${API_BASE}/api/kyc/documents/${encodeURIComponent(
+                          restaurant.registrationDoc.split("/").pop().split("\\").pop()
+                        )}`}
+                        alt="Restaurant registration document"
+                        className="w-full max-h-[500px] object-contain"
+                        loading="lazy"
+                      />
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-gray-700 bg-gray-900 px-5 py-4 text-gray-500 font-bold">
+                      No registration document available
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-gray-800 border border-gray-700 rounded-3xl p-6">
+                  <h3 className="text-lg font-black text-orange-400 mb-5">
+                    Personal Information
+                  </h3>
+
+                  <div className="space-y-4">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-gray-500">
+                        Name
+                      </p>
+                      <p className="mt-1 text-white font-bold">
+                        {userProfile?.name || "—"}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-gray-500">
+                        Email
+                      </p>
+                      <p className="mt-1 text-white font-bold break-all">
+                        {userProfile?.email || "—"}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-gray-500">
+                        Phone
+                      </p>
+                      <p className="mt-1 text-white font-bold">
+                        {userProfile?.phone || "—"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-gray-800 border border-gray-700 rounded-3xl p-6">
+                  <h3 className="text-lg font-black text-orange-400 mb-5">
+                    Account Status
+                  </h3>
+
+                  <div className="space-y-4">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-gray-500">
+                        Role
+                      </p>
+                      <p className="mt-1 text-white font-bold">
+                        {userProfile?.role || "—"}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-gray-500">
+                        KYC Status
+                      </p>
+                      <p className="mt-1 text-white font-bold">
+                        {userProfile?.kycStatus || "—"}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-gray-500">
+                        Restaurant
+                      </p>
+                      <p className="mt-1 text-white font-bold">
+                        {restaurant?.name || restaurantName}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </section>
+
+            {isProfilePhotoEditorOpen && (
+              <div
+                className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4"
+                onMouseDown={(event) => {
+                  if (event.target === event.currentTarget) {
+                    if (profileCameraStreamRef.current) {
+                      profileCameraStreamRef.current
+                        .getTracks()
+                        .forEach((track) => track.stop());
+
+                      profileCameraStreamRef.current = null;
+                    }
+
+                    setIsProfileCameraOpen(false);
+                    setProfileCameraError('');
+                    setProfileCapturedImage(null);
+                    setProfileCroppedAreaPixels(null);
+                    setProfileCrop({ x: 0, y: 0 });
+                    setProfileZoom(1);
+                    setIsProfilePhotoEditorOpen(false);
+                    setIsProfilePhotoMenuOpen(true);
+                  }
+                }}
+              >
+                <div className="w-full max-w-md rounded-3xl border border-gray-700 bg-gray-900 p-6 shadow-2xl">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="text-xl font-black text-white">
+                        Capture Photo
+                      </h2>
+                    </div>
+
+                                        <button
+                      type="button"
+                      onClick={() => {
+                        if (profileCameraStreamRef.current) {
+                          profileCameraStreamRef.current
+                            .getTracks()
+                            .forEach((track) => track.stop());
+
+                          profileCameraStreamRef.current = null;
+                        }
+
+                        setIsProfileCameraOpen(false);
+                        setProfileCameraError('');
+                        setProfileCapturedImage(null);
+                        setProfileCroppedAreaPixels(null);
+                        setProfileCrop({ x: 0, y: 0 });
+                        setProfileZoom(1);
+                        setIsProfilePhotoEditorOpen(false);
+                        setIsProfilePhotoMenuOpen(true);
+                      }}
+                      className="rounded-full px-3 py-2 text-gray-400 hover:bg-gray-800 hover:text-white transition"
+                      aria-label="Close profile photo camera"
+                    >
+                     ×
+                    </button>
+                  </div>
+
+                  <div className="mt-6 space-y-4">
+                    {isProfileCameraOpen ? (
+                      <>
+                        {profileCameraError ? (
+                          <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-6 text-center">
+                            <p className="text-sm font-bold text-red-300">
+                              {profileCameraError}
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="overflow-hidden rounded-2xl bg-black">
+                            <video
+                              ref={profileVideoRef}
+                              autoPlay
+                              playsInline
+                              muted
+                              className="aspect-square w-full object-cover"
+                            />
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <button
+                            type="button"
+                            disabled={Boolean(profileCameraError)}
+                            onClick={() => {
+                              if (
+                                !profileVideoRef.current ||
+                                !profileCameraStreamRef.current
+                              ) {
+                                return;
+                              }
+
+                              const video = profileVideoRef.current;
+                              const canvas = document.createElement('canvas');
+
+                              const size = Math.min(
+                                video.videoWidth,
+                                video.videoHeight
+                              );
+
+                              canvas.width = size;
+                              canvas.height = size;
+
+                              const context = canvas.getContext('2d');
+
+                              if (!context) {
+                                setProfileCameraError(
+                                  'Unable to capture the camera image. Please try again.'
+                                );
+                                return;
+                              }
+
+                              const sourceX =
+                                (video.videoWidth - size) / 2;
+                              const sourceY =
+                                (video.videoHeight - size) / 2;
+
+                              context.drawImage(
+                                video,
+                                sourceX,
+                                sourceY,
+                                size,
+                                size,
+                                0,
+                                0,
+                                size,
+                                size
+                              );
+
+                              setProfileCapturedImage(
+                                canvas.toDataURL('image/jpeg', 0.92)
+                              );
+                              setProfileCrop({ x: 0, y: 0 });
+                              setProfileZoom(1);
+
+                              profileCameraStreamRef.current
+                                .getTracks()
+                                .forEach((track) => track.stop());
+
+                              profileCameraStreamRef.current = null;
+                              setIsProfileCameraOpen(false);
+                            }}
+                            className="w-full rounded-xl bg-orange-500 px-4 py-3 text-base font-black text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Capture Photo
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={switchProfileCamera}
+                            disabled={Boolean(profileCameraError)}
+                            className="w-full rounded-xl border border-gray-700 bg-gray-800 px-4 py-3 text-base font-black text-white transition hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+                            aria-label="Switch camera"
+                          >
+                            Switch Camera
+                          </button>
+                        </div>
+                      </>
+                    ) : profileCapturedImage ? (
+                      <div className="space-y-4">
+                        <div
+                          className="relative h-[360px] w-full overflow-hidden rounded-2xl bg-black"
+                          onTouchEnd={(event) => {
+                            if (event.changedTouches.length !== 1) {
+                              return;
+                            }
+
+                            const now = Date.now();
+
+                            if (
+                              now - profileCropLastTapRef.current < 300
+                            ) {
+                              setProfileZoom((currentZoom) =>
+                                currentZoom >= 2 ? 1 : 2
+                              );
+                              profileCropLastTapRef.current = 0;
+                              return;
+                            }
+
+                            profileCropLastTapRef.current = now;
+                          }}
+                        >
+                          <Cropper
+                            image={profileCapturedImage}
+                            crop={profileCrop}
+                            zoom={profileZoom}
+                            aspect={1}
+                            cropShape="rect"
+                            showGrid
+                            objectFit="contain"
+                            zoomWithScroll={false}
+                            onCropChange={setProfileCrop}
+                            onCropComplete={(_, croppedAreaPixels) =>
+                              setProfileCroppedAreaPixels(croppedAreaPixels)
+                            }
+                            onZoomChange={setProfileZoom}
+                            onDoubleClick={() => {
+                              setProfileZoom((currentZoom) =>
+                                currentZoom >= 2 ? 1 : 2
+                              );
+                            }}
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setProfileCapturedImage(null);
+                              setProfileCrop({ x: 0, y: 0 });
+                              setProfileZoom(1);
+                              setProfileCameraError('');
+                              setIsProfileCameraOpen(true);
+                            }}
+                            className="w-full rounded-xl bg-gray-800 px-4 py-3 text-base font-black text-white transition hover:bg-gray-700"
+                          >
+                            Retake
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (
+                                !profileCapturedImage ||
+                                !profileCroppedAreaPixels
+                              ) {
+                                return;
+                              }
+
+                              try {
+                                const croppedBlob =
+                                  await createProfileCroppedImage(
+                                    profileCapturedImage,
+                                    profileCroppedAreaPixels
+                                  );
+
+                                const formData = new FormData();
+
+                                formData.append(
+                                  'profileImage',
+                                  croppedBlob,
+                                  'profile-photo.jpg'
+                                );
+
+                                const response = await fetch(
+                                  `${API_BASE}/api/auth/profile/photo`,
+                                  {
+                                    method: 'POST',
+                                    credentials: 'include',
+                                    body: formData
+                                  }
+                                );
+
+                                const responseData = await response.json();
+
+                                if (!response.ok || !responseData.success) {
+                                  throw new Error(
+                                    responseData.message ||
+                                      responseData.error ||
+                                      'Failed to save profile photo.'
+                                  );
+                                }
+
+                                if (responseData.user) {
+                                  setUserProfile(responseData.user);
+                                  setProfileImageRefreshKey(Date.now());
+                                }
+
+                                setProfileCapturedImage(null);
+                                setProfileCroppedAreaPixels(null);
+                                setProfileCrop({ x: 0, y: 0 });
+                                setProfileZoom(1);
+                                setIsProfileCameraOpen(false);
+                                setIsProfilePhotoEditorOpen(false);
+                                setIsProfilePhotoMenuOpen(false);
+                              } catch (error) {
+                                console.error(
+                                  'Profile photo save failed:',
+                                  error
+                                );
+
+                                setProfileCameraError(
+                                  error.message ||
+                                    'Failed to save profile photo. Please try again.'
+                                );
+                              }
+                            }}
+                            className="w-full rounded-xl bg-orange-500 px-4 py-3 text-base font-black text-white transition hover:bg-orange-600"
+                          >
+                            Save
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-center text-sm font-bold text-gray-500">
+                        Photo editor will appear here
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {activeTab === 'orders' && (
+          <>
+            {/* ================= SECTION 1: LIVE ORDERS ================= */}
+            <section>
           <div className="flex justify-between items-end mb-6">
             <h2 className="text-3xl font-black text-white">Live Orders 🛎️</h2>
             <span className="bg-orange-500/20 text-orange-400 px-4 py-2 rounded-lg font-bold text-sm border border-orange-500/30">
@@ -467,7 +1367,9 @@ socketRef.current = io(API_BASE, {
               ))}
             </div>
           )}
-        </section>
+            </section>
+          </>
+        )}
 
         {rejectingOrderId && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 px-4">
@@ -558,10 +1460,12 @@ socketRef.current = io(API_BASE, {
           </div>
         )}
 
-        <hr className="border-gray-800 border-2 rounded-full" />
+        {activeTab === 'menu' && (
+          <>
+            <hr className="border-gray-800 border-2 rounded-full" />
 
-        {/* ================= SECTION 2: MENU MANAGEMENT ================= */}
-        <section>
+            {/* ================= SECTION 2: MENU MANAGEMENT ================= */}
+            <section>
           <div className="flex justify-between items-end mb-6">
             <h2 className="text-3xl font-black text-white">Menu Management 🍽️</h2>
           </div>
@@ -610,6 +1514,8 @@ socketRef.current = io(API_BASE, {
             </div>
           </div>
         </section>
+          </>
+        )}
       </div>
     </div>
   );
