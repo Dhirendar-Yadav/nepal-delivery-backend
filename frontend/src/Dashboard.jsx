@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from './hooks/useAuth';
+import useBrowserBackNavigation from './hooks/useBrowserBackNavigation';
 import { io } from 'socket.io-client';
 import Cropper from 'react-easy-crop';
 
@@ -38,7 +39,6 @@ const [rejectReasonType, setRejectReasonType] = useState('');
 const [activeTab, setActiveTab] = useState(
   () => sessionStorage.getItem('sellerDashboardActiveTab') || 'orders'
 );
-const [navigationHistory, setNavigationHistory] = useState([]);
 const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // 🚀 Fix: Use useRef for Socket and Audio to prevent memory leaks and infinite loops
@@ -412,6 +412,73 @@ socketRef.current = io(API_BASE, {
     });
   };
 
+  const selectProfileImage = () => {
+    const input = document.createElement('input');
+
+    input.type = 'file';
+    input.accept = 'image/jpeg,image/png,image/webp';
+    input.setAttribute('capture', 'environment');
+
+    input.onchange = async () => {
+      const file = input.files?.[0];
+
+      if (!file) {
+        return;
+      }
+
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+        setProfileCameraError(
+          'Please select a JPEG, PNG or WEBP image.'
+        );
+        return;
+      }
+
+      if (file.size > 5 * 1024 * 1024) {
+        setProfileCameraError(
+          'Image must be 5 MB or smaller.'
+        );
+        return;
+      }
+
+      try {
+        const reader = new FileReader();
+
+        const imageData = await new Promise((resolve, reject) => {
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () =>
+            reject(new Error('Unable to read the selected image.'));
+          reader.readAsDataURL(file);
+        });
+
+        if (typeof imageData !== 'string') {
+          throw new Error('Unable to read the selected image.');
+        }
+
+        setProfileCameraError('');
+        setProfileCapturedImage(imageData);
+        setProfileCrop({ x: 0, y: 0 });
+        setProfileZoom(1);
+        setProfileCroppedAreaPixels(null);
+        setIsProfileCameraOpen(false);
+        setIsProfilePhotoEditorOpen(true);
+        setIsProfilePhotoMenuOpen(false);
+
+        pushBrowserHistory({
+          tab: activeTab,
+          profilePhoto: 'upload-editor'
+        });
+      } catch (error) {
+        console.error('Profile image selection failed:', error);
+        setProfileCameraError(
+          error.message ||
+            'Unable to open the selected image. Please try again.'
+        );
+      }
+    };
+
+    input.click();
+  };
+
   const handleAddItem = async (e) => {
     e.preventDefault();
     try {
@@ -483,6 +550,37 @@ socketRef.current = io(API_BASE, {
   localStorage.clear();
   navigate('/login');
 };
+
+  const resetProfilePhotoState = useCallback((openPhotoMenu = false) => {
+    if (profileCameraStreamRef.current) {
+      profileCameraStreamRef.current
+        .getTracks()
+        .forEach((track) => track.stop());
+
+      profileCameraStreamRef.current = null;
+    }
+
+    setIsProfileCameraOpen(false);
+    setProfileCameraError('');
+    setProfileCapturedImage(null);
+    setProfileCroppedAreaPixels(null);
+    setProfileCrop({ x: 0, y: 0 });
+    setProfileZoom(1);
+    setIsProfilePhotoEditorOpen(false);
+    setIsProfilePhotoMenuOpen(openPhotoMenu);
+  }, []);
+
+  const openProfilePhotoCamera = useCallback(() => {
+    setProfileCameraError('');
+    setProfileCapturedImage(null);
+    setProfileCroppedAreaPixels(null);
+    setProfileCrop({ x: 0, y: 0 });
+    setProfileZoom(1);
+    setIsProfilePhotoMenuOpen(false);
+    setIsProfilePhotoEditorOpen(true);
+    setIsProfileCameraOpen(true);
+  }, []);
+
   const switchProfileCamera = async () => {
     if (!navigator.mediaDevices?.getUserMedia) {
       setProfileCameraError(
@@ -539,34 +637,82 @@ socketRef.current = io(API_BASE, {
     }
   };
 
+  const getSellerNavigationState = useCallback(() => ({
+    tab: activeTab,
+    profilePhoto: null
+  }), [activeTab]);
+
+  const handleSellerNavigationBack = useCallback((previousState) => {
+    if (!previousState) {
+      return;
+    }
+
+    if (
+      typeof previousState === 'object' &&
+      previousState.tab
+    ) {
+      setActiveTab(previousState.tab);
+    } else if (typeof previousState === 'string') {
+      setActiveTab(previousState);
+    }
+
+    if (
+      typeof previousState === 'object' &&
+      previousState.profilePhoto
+    ) {
+      if (
+        previousState.profilePhoto === 'menu' ||
+        previousState.profilePhoto === 'upload-editor'
+      ) {
+        resetProfilePhotoState(true);
+        return;
+      }
+
+      if (
+        previousState.profilePhoto === 'camera' ||
+        previousState.profilePhoto === 'camera-editor'
+      ) {
+        openProfilePhotoCamera();
+        setIsMobileMenuOpen(false);
+        return;
+      }
+    }
+
+    resetProfilePhotoState(false);
+    setIsMobileMenuOpen(false);
+  }, [
+    openProfilePhotoCamera,
+    resetProfilePhotoState
+  ]);
+
+  const {
+    push: pushBrowserHistory,
+    replace: replaceBrowserHistory,
+    reset: resetBrowserHistory,
+    goBack: goBackBrowserHistory
+  } = useBrowserBackNavigation({
+    namespace: 'seller-dashboard',
+    currentState: getSellerNavigationState(),
+    onBack: handleSellerNavigationBack
+  });
+
   const navigateToTab = (nextTab) => {
     if (nextTab === activeTab) {
       setIsMobileMenuOpen(false);
       return;
     }
 
-    setNavigationHistory((prevHistory) => [
-      ...prevHistory,
-      activeTab
-    ]);
+    pushBrowserHistory({
+      tab: nextTab,
+      profilePhoto: null
+    });
 
     setActiveTab(nextTab);
     setIsMobileMenuOpen(false);
   };
 
   const goBack = () => {
-    setNavigationHistory((prevHistory) => {
-      if (prevHistory.length === 0) {
-        return prevHistory;
-      }
-
-      const previousTab = prevHistory[prevHistory.length - 1];
-      const remainingHistory = prevHistory.slice(0, -1);
-
-      setActiveTab(previousTab);
-      return remainingHistory;
-    });
-
+    goBackBrowserHistory();
     setIsMobileMenuOpen(false);
   };
 
@@ -691,10 +837,7 @@ socketRef.current = io(API_BASE, {
             <div className="border-t border-gray-700 px-3 py-4 space-y-2">
               <button
                 type="button"
-                onClick={() => {
-                  setActiveTab('settings');
-                  setIsMobileMenuOpen(false);
-                }}
+                onClick={() => navigateToTab('settings')}
                 className="w-full rounded-xl px-4 py-3 text-left font-black text-gray-300 hover:bg-gray-800 transition"
               >
                 Settings
@@ -770,7 +913,16 @@ socketRef.current = io(API_BASE, {
                 <div className="absolute top-0 right-0">
                   <button
                     type="button"
-                    onClick={() => setIsProfilePhotoMenuOpen(true)}
+                    onClick={() => {
+                      setIsProfilePhotoMenuOpen(true);
+                      setIsProfileCameraOpen(false);
+                      setIsProfilePhotoEditorOpen(false);
+
+                      pushBrowserHistory({
+                        tab: activeTab,
+                        profilePhoto: 'menu'
+                      });
+                    }}
                     className="h-16 w-16 rounded-full border-2 border-gray-600 bg-gray-800 flex items-center justify-center overflow-hidden shadow-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
                     aria-label="Change profile photo"
                   >
@@ -819,11 +971,12 @@ socketRef.current = io(API_BASE, {
                           <button
                             type="button"
                             onClick={() => {
-                              setIsProfilePhotoMenuOpen(false);
-                              setProfileCameraError('');
-                              setProfileCapturedImage(null);
-                              setIsProfilePhotoEditorOpen(true);
-                              setIsProfileCameraOpen(true);
+                              openProfilePhotoCamera();
+
+                              pushBrowserHistory({
+                                tab: activeTab,
+                                profilePhoto: 'camera'
+                              });
                             }}
                             className="w-full rounded-xl px-4 py-3 text-base font-black text-white transition hover:bg-gray-900"
                           >
@@ -832,10 +985,7 @@ socketRef.current = io(API_BASE, {
 
                           <button
                             type="button"
-                            onClick={() => {
-                              setIsProfilePhotoMenuOpen(false);
-                              setIsProfilePhotoEditorOpen(true);
-                            }}
+                            onClick={selectProfileImage}
                             className="w-full rounded-xl px-4 py-3 text-base font-black text-white transition hover:bg-gray-900"
                           >
                             Upload Image
@@ -1086,6 +1236,11 @@ socketRef.current = io(API_BASE, {
 
                               profileCameraStreamRef.current = null;
                               setIsProfileCameraOpen(false);
+
+                              pushBrowserHistory({
+                                tab: activeTab,
+                                profilePhoto: 'camera-editor'
+                              });
                             }}
                             className="w-full rounded-xl bg-orange-500 px-4 py-3 text-base font-black text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50"
                           >
@@ -1153,11 +1308,12 @@ socketRef.current = io(API_BASE, {
                           <button
                             type="button"
                             onClick={() => {
-                              setProfileCapturedImage(null);
-                              setProfileCrop({ x: 0, y: 0 });
-                              setProfileZoom(1);
-                              setProfileCameraError('');
-                              setIsProfileCameraOpen(true);
+                              openProfilePhotoCamera();
+
+                              replaceBrowserHistory({
+                                tab: activeTab,
+                                profilePhoto: 'camera'
+                              });
                             }}
                             className="w-full rounded-xl bg-gray-800 px-4 py-3 text-base font-black text-white transition hover:bg-gray-700"
                           >
@@ -1220,6 +1376,11 @@ socketRef.current = io(API_BASE, {
                                 setIsProfileCameraOpen(false);
                                 setIsProfilePhotoEditorOpen(false);
                                 setIsProfilePhotoMenuOpen(false);
+
+                                resetBrowserHistory({
+                                  tab: activeTab,
+                                  profilePhoto: null
+                                });
                               } catch (error) {
                                 console.error(
                                   'Profile photo save failed:',
