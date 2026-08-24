@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from './hooks/useAuth';
 import useBrowserBackNavigation from './hooks/useBrowserBackNavigation';
+import useImageCapture from './hooks/useImageCapture';
 import { io } from 'socket.io-client';
 import Cropper from 'react-easy-crop';
 
@@ -21,18 +22,7 @@ function Dashboard() {
   const [userProfile, setUserProfile] = useState(null);
   const [profileImageRefreshKey, setProfileImageRefreshKey] = useState(() => Date.now());
   const [isProfilePhotoMenuOpen, setIsProfilePhotoMenuOpen] = useState(false);
-  const [isProfilePhotoEditorOpen, setIsProfilePhotoEditorOpen] = useState(
-    () => sessionStorage.getItem('profilePhotoEditorOpen') === 'true'
-  );
-  const [isProfileCameraOpen, setIsProfileCameraOpen] = useState(
-    () => sessionStorage.getItem('profileCameraOpen') === 'true'
-  );
-  const [profileCameraFacingMode, setProfileCameraFacingMode] = useState('user');
-  const [profileCameraError, setProfileCameraError] = useState('');
-  const [profileCapturedImage, setProfileCapturedImage] = useState(null);
-  const [profileCrop, setProfileCrop] = useState({ x: 0, y: 0 });
-  const [profileZoom, setProfileZoom] = useState(1);
-  const [profileCroppedAreaPixels, setProfileCroppedAreaPixels] = useState(null);
+  const [isProfilePhotoEditorOpen, setIsProfilePhotoEditorOpen] = useState(false);
 const [rejectingOrderId, setRejectingOrderId] = useState(null);
 const [rejectReason, setRejectReason] = useState('');
 const [rejectReasonType, setRejectReasonType] = useState('');
@@ -46,9 +36,43 @@ const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const newOrderSoundRef = useRef(null);
   const riderAssignedSoundRef = useRef(null);
   const hasJoinedRoom = useRef(false); // To prevent multiple room joins
-  const profileVideoRef = useRef(null);
-  const profileCameraStreamRef = useRef(null);
   const profileCropLastTapRef = useRef(0);
+
+  const {
+    videoRef: imageCaptureVideoRef,
+    streamRef: imageCaptureStreamRef,
+    facingMode: imageCaptureFacingMode,
+    cameraOpen: imageCaptureCameraOpen,
+    cameraError: imageCaptureCameraError,
+    capturedImage: imageCaptureCapturedImage,
+    crop: imageCaptureCrop,
+    zoom: imageCaptureZoom,
+    croppedAreaPixels: imageCaptureCroppedAreaPixels,
+    setCapturedImage: setImageCaptureCapturedImage,
+    setCrop: setImageCaptureCrop,
+    setZoom: setImageCaptureZoom,
+    setCroppedAreaPixels: setImageCaptureCroppedAreaPixels,
+    openCamera: openImageCaptureCamera,
+    switchCamera: switchImageCaptureCamera,
+    capturePhoto: captureImageCapturePhoto,
+    selectImage: selectImageCaptureImage,
+    createCroppedBlob: createImageCaptureCroppedBlob,
+    stopCamera: stopImageCaptureCamera,
+    resetImageState: resetImageCaptureImageState,
+    reset: resetImageCapture
+  } = useImageCapture();
+    const isProfileCameraOpen = imageCaptureCameraOpen;
+  const [profileCameraError, setProfileCameraError] = useState('');
+  const effectiveProfileCameraError =
+    profileCameraError || imageCaptureCameraError;
+  const profileCapturedImage = imageCaptureCapturedImage;
+  const setProfileCapturedImage = setImageCaptureCapturedImage;
+  const profileCrop = imageCaptureCrop;
+  const setProfileCrop = setImageCaptureCrop;
+  const profileZoom = imageCaptureZoom;
+  const setProfileZoom = setImageCaptureZoom;
+  const profileCroppedAreaPixels = imageCaptureCroppedAreaPixels;
+  const setProfileCroppedAreaPixels = setImageCaptureCroppedAreaPixels;
 
   const fetchOrders = useCallback(async () => {
     try {
@@ -215,100 +239,12 @@ socketRef.current = io(API_BASE, {
         }
     };
   }, [navigate, authLoading, isAuthenticated, fetchOrders, fetchMyMenu, fetchRestaurant, fetchUserProfile, API_BASE]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const restoreProfileCamera = async () => {
-      if (!isProfileCameraOpen) {
-        return;
-      }
-
-      try {
-        if (!profileCameraStreamRef.current) {
-          if (!navigator.mediaDevices?.getUserMedia) {
-            setProfileCameraError(
-              'Camera access is not supported by this browser.'
-            );
-            return;
-          }
-
-          const stream =
-            await navigator.mediaDevices.getUserMedia({
-              video: {
-                facingMode: 'user'
-              },
-              audio: false
-            });
-
-          if (cancelled) {
-            stream.getTracks().forEach((track) => track.stop());
-            return;
-          }
-
-          profileCameraStreamRef.current = stream;
-        }
-
-        if (profileVideoRef.current && profileCameraStreamRef.current) {
-          profileVideoRef.current.srcObject =
-            profileCameraStreamRef.current;
-
-          profileVideoRef.current
-            .play()
-            .catch((error) => {
-              console.error('Profile camera preview failed:', error);
-            });
-        }
-      } catch (error) {
-        if (cancelled) {
-          return;
-        }
-
-        console.error(
-          'Profile camera restore failed:',
-          error
-        );
-
-        profileCameraStreamRef.current = null;
-
-        setProfileCameraError(
-          error?.name === 'NotAllowedError'
-            ? 'Camera access was denied. Allow camera permission for this site in your browser settings, then try again.'
-            : 'Camera is unavailable. Check that your camera is connected and not being used by another application.'
-        );
-      }
-    };
-
-    restoreProfileCamera();
-
-    return () => {
-      cancelled = true;
-
-      if (profileVideoRef.current) {
-        profileVideoRef.current.srcObject = null;
-      }
-    };
-  }, [isProfileCameraOpen]);
   useEffect(() => {
     sessionStorage.setItem(
       'sellerDashboardActiveTab',
       activeTab
     );
-
-    sessionStorage.setItem(
-      'profilePhotoEditorOpen',
-      String(isProfilePhotoEditorOpen)
-    );
-
-    sessionStorage.setItem(
-      'profileCameraOpen',
-      String(isProfileCameraOpen)
-    );
-  }, [
-    activeTab,
-    isProfilePhotoEditorOpen,
-    isProfileCameraOpen
-  ]);
+  }, [activeTab]);
   // 🚀 Fix: Stable Room Joiner Logic
   useEffect(() => {
     if (socketRef.current && !hasJoinedRoom.current) {
@@ -364,119 +300,41 @@ socketRef.current = io(API_BASE, {
   }
 };
 
-  const createProfileCroppedImage = async (imageSrc, cropAreaPixels) => {
-    const image = new Image();
-
-    image.src = imageSrc;
-
-    await new Promise((resolve, reject) => {
-      image.onload = resolve;
-      image.onerror = reject;
-    });
-
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
-
-    if (!context) {
-      throw new Error('Unable to create profile photo canvas.');
-    }
-
-    canvas.width = cropAreaPixels.width;
-    canvas.height = cropAreaPixels.height;
-
-    context.drawImage(
-      image,
-      cropAreaPixels.x,
-      cropAreaPixels.y,
-      cropAreaPixels.width,
-      cropAreaPixels.height,
-      0,
-      0,
-      cropAreaPixels.width,
-      cropAreaPixels.height
-    );
-
-    return new Promise((resolve, reject) => {
-      canvas.toBlob(
-        (blob) => {
-          if (!blob) {
-            reject(new Error('Unable to generate cropped profile photo.'));
-            return;
-          }
-
-          resolve(blob);
-        },
+  const createProfileCroppedImage = useCallback(
+    (imageSrc, cropAreaPixels) =>
+      createImageCaptureCroppedBlob(
+        imageSrc,
+        cropAreaPixels,
         'image/jpeg',
         0.92
+      ),
+    [createImageCaptureCroppedBlob]
+  );
+
+  const selectProfileImage = async () => {
+    const result = await selectImageCaptureImage();
+
+    if (!result) {
+      setProfileCameraError(
+        imageCaptureCameraError ||
+          'Unable to open the selected image. Please try again.'
       );
+      return;
+    }
+
+    setProfileCameraError('');
+    setProfileCapturedImage(result.imageData);
+    setProfileCrop({ x: 0, y: 0 });
+    setProfileZoom(1);
+    setProfileCroppedAreaPixels(null);
+    stopImageCaptureCamera();
+    setIsProfilePhotoEditorOpen(true);
+    setIsProfilePhotoMenuOpen(false);
+
+    pushBrowserHistory({
+      tab: activeTab,
+      profilePhoto: 'upload-editor'
     });
-  };
-
-  const selectProfileImage = () => {
-    const input = document.createElement('input');
-
-    input.type = 'file';
-    input.accept = 'image/jpeg,image/png,image/webp';
-    input.setAttribute('capture', 'environment');
-
-    input.onchange = async () => {
-      const file = input.files?.[0];
-
-      if (!file) {
-        return;
-      }
-
-      if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
-        setProfileCameraError(
-          'Please select a JPEG, PNG or WEBP image.'
-        );
-        return;
-      }
-
-      if (file.size > 5 * 1024 * 1024) {
-        setProfileCameraError(
-          'Image must be 5 MB or smaller.'
-        );
-        return;
-      }
-
-      try {
-        const reader = new FileReader();
-
-        const imageData = await new Promise((resolve, reject) => {
-          reader.onload = () => resolve(reader.result);
-          reader.onerror = () =>
-            reject(new Error('Unable to read the selected image.'));
-          reader.readAsDataURL(file);
-        });
-
-        if (typeof imageData !== 'string') {
-          throw new Error('Unable to read the selected image.');
-        }
-
-        setProfileCameraError('');
-        setProfileCapturedImage(imageData);
-        setProfileCrop({ x: 0, y: 0 });
-        setProfileZoom(1);
-        setProfileCroppedAreaPixels(null);
-        setIsProfileCameraOpen(false);
-        setIsProfilePhotoEditorOpen(true);
-        setIsProfilePhotoMenuOpen(false);
-
-        pushBrowserHistory({
-          tab: activeTab,
-          profilePhoto: 'upload-editor'
-        });
-      } catch (error) {
-        console.error('Profile image selection failed:', error);
-        setProfileCameraError(
-          error.message ||
-            'Unable to open the selected image. Please try again.'
-        );
-      }
-    };
-
-    input.click();
   };
 
   const handleAddItem = async (e) => {
@@ -552,15 +410,7 @@ socketRef.current = io(API_BASE, {
 };
 
   const resetProfilePhotoState = useCallback((openPhotoMenu = false) => {
-    if (profileCameraStreamRef.current) {
-      profileCameraStreamRef.current
-        .getTracks()
-        .forEach((track) => track.stop());
-
-      profileCameraStreamRef.current = null;
-    }
-
-    setIsProfileCameraOpen(false);
+    stopImageCaptureCamera();
     setProfileCameraError('');
     setProfileCapturedImage(null);
     setProfileCroppedAreaPixels(null);
@@ -570,7 +420,7 @@ socketRef.current = io(API_BASE, {
     setIsProfilePhotoMenuOpen(openPhotoMenu);
   }, []);
 
-  const openProfilePhotoCamera = useCallback(() => {
+  const openProfilePhotoCamera = useCallback(async () => {
     setProfileCameraError('');
     setProfileCapturedImage(null);
     setProfileCroppedAreaPixels(null);
@@ -578,61 +428,23 @@ socketRef.current = io(API_BASE, {
     setProfileZoom(1);
     setIsProfilePhotoMenuOpen(false);
     setIsProfilePhotoEditorOpen(true);
-    setIsProfileCameraOpen(true);
-  }, []);
+
+    const opened = await openImageCaptureCamera();
+
+    if (!opened) {
+      setProfileCameraError(
+        'Unable to open the camera. Please try again.'
+      );
+    }
+  }, [openImageCaptureCamera]);
 
   const switchProfileCamera = async () => {
-    if (!navigator.mediaDevices?.getUserMedia) {
+    const switched = await switchImageCaptureCamera();
+
+    if (!switched) {
       setProfileCameraError(
-        'Camera access is not supported by this browser.'
-      );
-      return;
-    }
-
-    const nextFacingMode =
-      profileCameraFacingMode === 'user' ? 'environment' : 'user';
-
-    try {
-      const stream =
-        await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: nextFacingMode
-          },
-          audio: false
-        });
-
-      if (profileCameraStreamRef.current) {
-        profileCameraStreamRef.current
-          .getTracks()
-          .forEach((track) => track.stop());
-      }
-
-      profileCameraStreamRef.current = stream;
-      setProfileCameraFacingMode(nextFacingMode);
-      setProfileCameraError('');
-
-      if (profileVideoRef.current) {
-        profileVideoRef.current.srcObject = stream;
-
-        profileVideoRef.current
-          .play()
-          .catch((error) => {
-            console.error(
-              'Profile camera switch preview failed:',
-              error
-            );
-          });
-      }
-    } catch (error) {
-      console.error(
-        'Profile camera switch failed:',
-        error
-      );
-
-      setProfileCameraError(
-        error?.name === 'NotAllowedError'
-          ? 'Camera access was denied. Allow camera permission for this site in your browser settings, then try again.'
-          : 'Unable to switch camera. Please try again.'
+        imageCaptureCameraError ||
+          'Unable to switch camera. Please try again.'
       );
     }
   };
@@ -915,7 +727,7 @@ socketRef.current = io(API_BASE, {
                     type="button"
                     onClick={() => {
                       setIsProfilePhotoMenuOpen(true);
-                      setIsProfileCameraOpen(false);
+                      stopImageCaptureCamera();
                       setIsProfilePhotoEditorOpen(false);
 
                       pushBrowserHistory({
@@ -1100,15 +912,7 @@ socketRef.current = io(API_BASE, {
                 className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4"
                 onMouseDown={(event) => {
                   if (event.target === event.currentTarget) {
-                    if (profileCameraStreamRef.current) {
-                      profileCameraStreamRef.current
-                        .getTracks()
-                        .forEach((track) => track.stop());
-
-                      profileCameraStreamRef.current = null;
-                    }
-
-                    setIsProfileCameraOpen(false);
+                    stopImageCaptureCamera();
                     setProfileCameraError('');
                     setProfileCapturedImage(null);
                     setProfileCroppedAreaPixels(null);
@@ -1119,54 +923,51 @@ socketRef.current = io(API_BASE, {
                   }
                 }}
               >
-                <div className="w-full max-w-md rounded-3xl border border-gray-700 bg-gray-900 p-6 shadow-2xl">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h2 className="text-xl font-black text-white">
-                        Capture Photo
-                      </h2>
-                    </div>
+                <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-gray-800 bg-gray-950 shadow-2xl">
+                  <div className="flex items-center justify-between border-b border-gray-800 px-3 py-3 sm:px-4">
+                    <h2 className="text-sm font-black text-white sm:text-base">
+                      {profileCapturedImage ? 'Edit Photo' : 'Take Photo'}
+                    </h2>
 
-                                        <button
+                    <button
                       type="button"
                       onClick={() => {
-                        if (profileCameraStreamRef.current) {
-                          profileCameraStreamRef.current
-                            .getTracks()
-                            .forEach((track) => track.stop());
-
-                          profileCameraStreamRef.current = null;
-                        }
-
-                        setIsProfileCameraOpen(false);
-                        setProfileCameraError('');
-                        setProfileCapturedImage(null);
-                        setProfileCroppedAreaPixels(null);
-                        setProfileCrop({ x: 0, y: 0 });
-                        setProfileZoom(1);
-                        setIsProfilePhotoEditorOpen(false);
-                        setIsProfilePhotoMenuOpen(true);
+                        stopImageCaptureCamera();
+                        goBackBrowserHistory();
                       }}
-                      className="rounded-full px-3 py-2 text-gray-400 hover:bg-gray-800 hover:text-white transition"
+                      className="flex h-9 w-9 items-center justify-center rounded-full text-xl font-bold text-gray-400 transition hover:bg-gray-800 hover:text-white"
                       aria-label="Close profile photo camera"
                     >
-                     ×
+                      ×
                     </button>
                   </div>
 
                   <div className="mt-6 space-y-4">
-                    {isProfileCameraOpen ? (
+                    {!profileCapturedImage ? (
                       <>
-                        {profileCameraError ? (
+                        {effectiveProfileCameraError ? (
                           <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-6 text-center">
                             <p className="text-sm font-bold text-red-300">
-                              {profileCameraError}
+                              {effectiveProfileCameraError}
                             </p>
+
+                            <p className="mt-3 text-xs leading-5 text-gray-300">
+                              Allow camera permission for this site in your browser settings, then try again.
+                              If permission was already denied, open the browser site settings and enable Camera.
+                            </p>
+
+                            <button
+                              type="button"
+                              onClick={openProfilePhotoCamera}
+                              className="mt-4 rounded-xl bg-orange-500 px-4 py-2 text-sm font-black text-white transition hover:bg-orange-600"
+                            >
+                              Retry Camera
+                            </button>
                           </div>
                         ) : (
-                          <div className="overflow-hidden rounded-2xl bg-black">
+                          <div className="mx-2 overflow-hidden rounded-xl bg-black sm:mx-3">
                             <video
-                              ref={profileVideoRef}
+                              ref={imageCaptureVideoRef}
                               autoPlay
                               playsInline
                               muted
@@ -1175,93 +976,53 @@ socketRef.current = io(API_BASE, {
                           </div>
                         )}
 
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-2 gap-2 border-t border-gray-800 px-2 pb-2 pt-3 sm:gap-3 sm:px-3 sm:pb-3">
                           <button
                             type="button"
-                            disabled={Boolean(profileCameraError)}
+                            onClick={switchProfileCamera}
+                            disabled={Boolean(effectiveProfileCameraError)}
+                            className="rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-xs font-black text-white transition hover:bg-gray-800 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 sm:px-3 sm:py-2.5 sm:text-sm"
+                            aria-label="Switch camera"
+                          >
+                            Switch
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={
+                              Boolean(effectiveProfileCameraError) ||
+                              !isProfileCameraOpen
+                            }
                             onClick={() => {
-                              if (
-                                !profileVideoRef.current ||
-                                !profileCameraStreamRef.current
-                              ) {
+                              const capturedImage =
+                                captureImageCapturePhoto();
+
+                              if (!capturedImage) {
                                 return;
                               }
-
-                              const video = profileVideoRef.current;
-                              const canvas = document.createElement('canvas');
-
-                              const size = Math.min(
-                                video.videoWidth,
-                                video.videoHeight
-                              );
-
-                              canvas.width = size;
-                              canvas.height = size;
-
-                              const context = canvas.getContext('2d');
-
-                              if (!context) {
-                                setProfileCameraError(
-                                  'Unable to capture the camera image. Please try again.'
-                                );
-                                return;
-                              }
-
-                              const sourceX =
-                                (video.videoWidth - size) / 2;
-                              const sourceY =
-                                (video.videoHeight - size) / 2;
-
-                              context.drawImage(
-                                video,
-                                sourceX,
-                                sourceY,
-                                size,
-                                size,
-                                0,
-                                0,
-                                size,
-                                size
-                              );
 
                               setProfileCapturedImage(
-                                canvas.toDataURL('image/jpeg', 0.92)
+                                capturedImage
                               );
                               setProfileCrop({ x: 0, y: 0 });
                               setProfileZoom(1);
-
-                              profileCameraStreamRef.current
-                                .getTracks()
-                                .forEach((track) => track.stop());
-
-                              profileCameraStreamRef.current = null;
-                              setIsProfileCameraOpen(false);
+                              setProfileCroppedAreaPixels(null);
 
                               pushBrowserHistory({
                                 tab: activeTab,
                                 profilePhoto: 'camera-editor'
                               });
                             }}
-                            className="w-full rounded-xl bg-orange-500 px-4 py-3 text-base font-black text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50"
+                            className="rounded-xl bg-orange-500 px-3 py-2 text-xs font-black text-white transition hover:bg-orange-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 sm:px-3 sm:py-2.5 sm:text-sm"
                           >
-                            Capture Photo
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={switchProfileCamera}
-                            disabled={Boolean(profileCameraError)}
-                            className="w-full rounded-xl border border-gray-700 bg-gray-800 px-4 py-3 text-base font-black text-white transition hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
-                            aria-label="Switch camera"
-                          >
-                            Switch Camera
+                            Capture
                           </button>
                         </div>
                       </>
-                    ) : profileCapturedImage ? (
+                    ) : (
                       <div className="space-y-4">
                         <div
-                          className="relative h-[360px] w-full overflow-hidden rounded-2xl bg-black"
+                          className="relative h-[68vw] max-h-[420px] min-h-[260px] w-full overflow-hidden rounded-2xl bg-black sm:h-[360px]"
                           onTouchEnd={(event) => {
                             if (event.changedTouches.length !== 1) {
                               return;
@@ -1304,7 +1065,7 @@ socketRef.current = io(API_BASE, {
                           />
                         </div>
 
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-2 gap-2 border-t border-gray-800 px-2 pb-2 pt-3 sm:gap-3 sm:px-3 sm:pb-3">
                           <button
                             type="button"
                             onClick={() => {
@@ -1315,7 +1076,7 @@ socketRef.current = io(API_BASE, {
                                 profilePhoto: 'camera'
                               });
                             }}
-                            className="w-full rounded-xl bg-gray-800 px-4 py-3 text-base font-black text-white transition hover:bg-gray-700"
+                            className="w-full rounded-xl bg-gray-800 px-3 py-2 text-xs font-black text-white transition hover:bg-gray-700 active:scale-[0.98] sm:px-3 sm:py-2.5 sm:text-sm"
                           >
                             Retake
                           </button>
@@ -1373,7 +1134,7 @@ socketRef.current = io(API_BASE, {
                                 setProfileCroppedAreaPixels(null);
                                 setProfileCrop({ x: 0, y: 0 });
                                 setProfileZoom(1);
-                                setIsProfileCameraOpen(false);
+                                stopImageCaptureCamera();
                                 setIsProfilePhotoEditorOpen(false);
                                 setIsProfilePhotoMenuOpen(false);
 
@@ -1393,16 +1154,12 @@ socketRef.current = io(API_BASE, {
                                 );
                               }
                             }}
-                            className="w-full rounded-xl bg-orange-500 px-4 py-3 text-base font-black text-white transition hover:bg-orange-600"
+                            className="w-full rounded-xl bg-orange-500 px-3 py-2 text-xs font-black text-white transition hover:bg-orange-600 active:scale-[0.98] sm:px-3 sm:py-2.5 sm:text-sm"
                           >
                             Save
                           </button>
                         </div>
                       </div>
-                    ) : (
-                      <p className="text-center text-sm font-bold text-gray-500">
-                        Photo editor will appear here
-                      </p>
                     )}
                   </div>
                 </div>

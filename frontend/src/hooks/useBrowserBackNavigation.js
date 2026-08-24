@@ -235,7 +235,7 @@ export default function useBrowserBackNavigation({
             }
 
             if (state.boundary) {
-                window.history.forward();
+                onBackRef.current?.(state.state);
                 return;
             }
 
