@@ -753,58 +753,49 @@ socketRef.current = io(API_BASE, {
                   </button>
 
                   {isProfilePhotoMenuOpen && (
-                    <div className="fixed inset-0 z-[110] flex min-h-screen items-center justify-center bg-gray-950 px-5 py-8">
-                      <div className="w-full max-w-xs text-center">
-                        <h2 className="text-2xl font-black text-white">
-                          Profile Photo
-                        </h2>
+                    <>
+                      <button
+                        type="button"
+                        aria-label="Close profile photo menu"
+                        onClick={() => setIsProfilePhotoMenuOpen(false)}
+                        className="fixed inset-0 z-[109] cursor-default bg-transparent"
+                      />
 
-                        <div className="mt-8">
-                          <div className="mx-auto h-24 w-24 overflow-hidden rounded-full border-2 border-gray-700 bg-gray-900 shadow-xl">
-                            {userProfile?.profileImage ? (
-                              <img
-                                src={`${API_BASE}/api/auth/profile/photo?v=${profileImageRefreshKey}`}
-                                alt={userProfile?.name || "Seller"}
-                                className="h-full w-full object-cover"
-                              />
-                            ) : (
-                              <div className="flex h-full w-full items-center justify-center text-2xl font-black text-gray-500">
-                                {userProfile?.name?.charAt(0)?.toUpperCase() || "S"}
-                              </div>
-                            )}
-                          </div>
+                      <div
+  className="fixed inset-0 z-[110] flex items-center justify-center bg-black/45 px-4 backdrop-blur-sm"
+  onClick={() => setIsProfilePhotoMenuOpen(false)}
+>
+  <div
+    className="w-full max-w-sm overflow-hidden rounded-2xl border border-white/10 bg-gray-900/90 p-3 shadow-2xl backdrop-blur-xl"
+    onClick={(event) => event.stopPropagation()}
+  >
+    <button
+      type="button"
+      onClick={() => {
+        openProfilePhotoCamera();
 
-                          <p className="mt-4 text-lg font-black text-white">
-                            {userProfile?.name || "Seller"}
-                          </p>
-                        </div>
+        pushBrowserHistory({
+          tab: activeTab,
+          profilePhoto: 'camera'
+        });
+      }}
+      className="flex w-full items-center justify-between rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-4 text-left text-sm font-black text-white shadow-lg shadow-orange-500/20 transition hover:brightness-110 active:scale-[0.98]"
+    >
+      <span>Take Photo</span>
+      <span className="text-white/80">›</span>
+    </button>
 
-                        <div className="mt-8 space-y-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              openProfilePhotoCamera();
-
-                              pushBrowserHistory({
-                                tab: activeTab,
-                                profilePhoto: 'camera'
-                              });
-                            }}
-                            className="w-full rounded-xl px-4 py-3 text-base font-black text-white transition hover:bg-gray-900"
-                          >
-                            Take Photo
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={selectProfileImage}
-                            className="w-full rounded-xl px-4 py-3 text-base font-black text-white transition hover:bg-gray-900"
-                          >
-                            Upload Image
-                          </button>
-                        </div>
-                      </div>
-                    </div>
+    <button
+      type="button"
+      onClick={selectProfileImage}
+      className="mt-2 flex w-full items-center justify-between rounded-xl bg-gradient-to-r from-indigo-500 to-blue-500 px-4 py-4 text-left text-sm font-black text-white shadow-lg shadow-blue-500/20 transition hover:brightness-110 active:scale-[0.98]"
+    >
+      <span>Upload from Device</span>
+      <span className="text-white/80">›</span>
+    </button>
+  </div>
+</div>
+                    </>
                   )}
                 </div>
               </div>
