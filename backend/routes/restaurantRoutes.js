@@ -82,10 +82,10 @@ const verifySeller = asyncHandler(async (req, res, next) => {
  */
 const attachRestaurantContext = asyncHandler(async (req, res, next) => {
     const restaurant = await Restaurant.findOne({ ownerId: req.user.id })
-        .select('_id currentLocation name isOpen status image registrationDoc')
+        .select('_id currentLocation name isOpen status image registrationDoc panVatNumber')
         .lean();
 
-    // 🚀 PROBLEM 2 FIXED: Removed non-standard HTTP 444 code to comply with native gateway proxies contracts
+    //PROBLEM 2 FIXED: Removed non-standard HTTP 444 code to comply with native gateway proxies contracts
     if (!restaurant) {
         return res.status(404).json({ success: false, error: "RESTAURANT_PROFILE_NOT_FOUND", message: "Operational block: Seller account possesses no active restaurant profile setup mapping entries." });
     }
@@ -194,11 +194,15 @@ router.get('/:id/image', asyncHandler(async (req, res) => {
 // 🏪 SELLER DASHBOARD ROUTES (Protected Sandbox)
 // ==========================================
 router.get('/store', verifySeller, attachRestaurantContext, asyncHandler(async (req, res) => {
+    res.set('Cache-Control', 'no-store, private, max-age=0');
+    res.set('ETag', `"seller-store-${req.restaurant._id}-${Date.now()}"`);
+
     return res.json({
         success: true,
         restaurant: {
             _id: req.restaurant._id,
             name: req.restaurant.name,
+            panVatNumber: req.restaurant.panVatNumber,
             isOpen: req.restaurant.isOpen,
             status: req.restaurant.status,
             isDiscoverable: req.restaurant.isDiscoverable,

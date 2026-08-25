@@ -174,9 +174,12 @@ exports.updateStoreStatus = async (req, res) => {
     restaurant: {
         _id: restaurant._id,
         name: restaurant.name,
+        panVatNumber: restaurant.panVatNumber,
         isOpen: restaurant.isOpen,
         status: restaurant.status,
-        isDiscoverable: restaurant.isDiscoverable
+        isDiscoverable: restaurant.isDiscoverable,
+        image: restaurant.image,
+        registrationDoc: restaurant.registrationDoc
     }
 });
 

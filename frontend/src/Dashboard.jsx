@@ -18,11 +18,13 @@ function Dashboard() {
   const [itemPrice, setItemPrice] = useState('');
   const [itemDescription, setItemDescription] = useState('');
   const [restaurant, setRestaurant] = useState(null);
-  const [updatingStoreStatus, setUpdatingStoreStatus] = useState(false);
-  const [userProfile, setUserProfile] = useState(null);
-  const [profileImageRefreshKey, setProfileImageRefreshKey] = useState(() => Date.now());
-  const [isProfilePhotoMenuOpen, setIsProfilePhotoMenuOpen] = useState(false);
-  const [isProfilePhotoEditorOpen, setIsProfilePhotoEditorOpen] = useState(false);
+const [updatingStoreStatus, setUpdatingStoreStatus] = useState(false);
+const [userProfile, setUserProfile] = useState(null);
+const [profileImageRefreshKey, setProfileImageRefreshKey] = useState(() => Date.now());
+const [isProfilePhotoMenuOpen, setIsProfilePhotoMenuOpen] = useState(false);
+const [isProfilePhotoEditorOpen, setIsProfilePhotoEditorOpen] = useState(false);
+const [isDocumentsModalOpen, setIsDocumentsModalOpen] = useState(false);
+const [activeDocumentPreview, setActiveDocumentPreview] = useState(null);
 const [rejectingOrderId, setRejectingOrderId] = useState(null);
 const [rejectReason, setRejectReason] = useState('');
 const [rejectReasonType, setRejectReasonType] = useState('');
@@ -532,17 +534,22 @@ socketRef.current = io(API_BASE, {
     <div className="min-h-screen bg-gray-900 text-white font-sans pb-20">
 
       {/* 🧭 Top Navbar */}
-      <nav className="bg-gray-800 border-b border-gray-700 py-2.5 px-3 sm:py-4 sm:px-6 lg:px-8 flex justify-between items-center sticky top-0 z-50">
+            <nav className="bg-gray-800 border-b border-gray-700 py-2.5 px-3 sm:py-4 sm:px-6 lg:px-8 flex justify-between items-center sticky top-0 z-50">
         <div className="flex items-center gap-6">
 
           <div className="border-l border-gray-700 pl-3 sm:pl-6">
-            <h1 className="text-base sm:text-2xl font-black text-orange-500 tracking-tight truncate max-w-[140px] sm:max-w-none">{restaurantName} 🏪</h1>
-            <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mt-1">Partner Dashboard</p>
+            <h1 className="text-base sm:text-2xl font-black text-orange-500 tracking-tight truncate max-w-[140px] sm:max-w-none">
+              {restaurant?.name || restaurantName || "My Restaurant"}
+            </h1>
+
+            <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mt-1">
+              PAN: {restaurant?.panVatNumber || "Not Provided"}
+            </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-                    <div
+          <div
             className={`md:hidden h-3 w-3 rounded-full ${
               restaurant?.isOpen ? "bg-green-500" : "bg-red-500"
             }`}
@@ -711,192 +718,254 @@ socketRef.current = io(API_BASE, {
           <>
             {/* ================= SELLER PROFILE ================= */}
 
-            <section className="space-y-6">
-              <div className="relative flex items-start justify-between">
-                <div className="pr-20">
-                  <h2 className="text-3xl font-black text-white">
-                    Profile
-                  </h2>
-                  <p className="text-gray-400 mt-2">
-                    Account and restaurant information
-                  </p>
-                </div>
+<section className="space-y-6">
+  <div className="relative flex items-start justify-between gap-6">
+    <div className="min-w-0">
+      <h2 className="text-2xl font-black text-white sm:text-3xl">
+        Profile
+      </h2>
 
-                <div className="absolute top-0 right-0">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsProfilePhotoMenuOpen(true);
-                      stopImageCaptureCamera();
-                      setIsProfilePhotoEditorOpen(false);
+      <p className="mt-1 text-sm font-medium text-gray-400">
+        Seller account information
+      </p>
+    </div>
 
-                      pushBrowserHistory({
-                        tab: activeTab,
-                        profilePhoto: 'menu'
-                      });
-                    }}
-                    className="h-16 w-16 rounded-full border-2 border-gray-600 bg-gray-800 flex items-center justify-center overflow-hidden shadow-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
-                    aria-label="Change profile photo"
-                  >
-                    {userProfile?.profileImage ? (
-                      <img
-                        src={`${API_BASE}/api/auth/profile/photo?v=${profileImageRefreshKey}`}
-                        alt={userProfile?.name || "Seller"}
-                        className="h-full w-full object-cover"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <span className="text-xl font-black text-gray-400">
-                        {userProfile?.name?.charAt(0)?.toUpperCase() || "S"}
-                      </span>
-                    )}
-                  </button>
+    <div className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => {
+          setIsProfilePhotoMenuOpen(true);
+          stopImageCaptureCamera();
+          setIsProfilePhotoEditorOpen(false);
 
-                  {isProfilePhotoMenuOpen && (
-                    <>
-                      <button
-                        type="button"
-                        aria-label="Close profile photo menu"
-                        onClick={() => setIsProfilePhotoMenuOpen(false)}
-                        className="fixed inset-0 z-[109] cursor-default bg-transparent"
-                      />
+          pushBrowserHistory({
+            tab: activeTab,
+            profilePhoto: 'menu'
+          });
+        }}
+        className="h-16 w-16 overflow-hidden rounded-full border-2 border-gray-600 bg-gray-900 shadow-lg focus:outline-none focus:ring-2 focus:ring-orange-500 sm:h-20 sm:w-20"
+        aria-label="Change profile photo"
+      >
+        {userProfile?.profileImage ? (
+          <img
+            src={`${API_BASE}/api/auth/profile/photo?v=${profileImageRefreshKey}`}
+            alt={userProfile?.name || "Seller"}
+            className="h-full w-full object-cover"
+            loading="lazy"
+          />
+        ) : (
+          <span className="text-2xl font-black text-gray-400">
+            {userProfile?.name?.charAt(0)?.toUpperCase() || "S"}
+          </span>
+        )}
+      </button>
 
-                      <div
-  className="fixed inset-0 z-[110] flex items-center justify-center bg-black/45 px-4 backdrop-blur-sm"
-  onClick={() => setIsProfilePhotoMenuOpen(false)}
->
-  <div
-    className="w-full max-w-sm overflow-hidden rounded-2xl border border-white/10 bg-gray-900/90 p-3 shadow-2xl backdrop-blur-xl"
-    onClick={(event) => event.stopPropagation()}
-  >
-    <button
-      type="button"
-      onClick={() => {
-        openProfilePhotoCamera();
+      {isProfilePhotoMenuOpen && (
+        <>
+          <button
+            type="button"
+            aria-label="Close profile photo menu"
+            onClick={() => setIsProfilePhotoMenuOpen(false)}
+            className="fixed inset-0 z-[109] cursor-default bg-transparent"
+          />
 
-        pushBrowserHistory({
-          tab: activeTab,
-          profilePhoto: 'camera'
-        });
-      }}
-      className="flex w-full items-center justify-between rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-4 text-left text-sm font-black text-white shadow-lg shadow-orange-500/20 transition hover:brightness-110 active:scale-[0.98]"
-    >
-      <span>Take Photo</span>
-      <span className="text-white/80">›</span>
-    </button>
+          <div
+            className="fixed inset-0 z-[110] flex items-center justify-center bg-black/45 px-4 backdrop-blur-sm"
+            onClick={() => setIsProfilePhotoMenuOpen(false)}
+          >
+            <div
+              className="w-full max-w-sm overflow-hidden rounded-2xl border border-white/10 bg-gray-900/90 p-3 shadow-2xl backdrop-blur-xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  openProfilePhotoCamera();
 
-    <button
-      type="button"
-      onClick={selectProfileImage}
-      className="mt-2 flex w-full items-center justify-between rounded-xl bg-gradient-to-r from-indigo-500 to-blue-500 px-4 py-4 text-left text-sm font-black text-white shadow-lg shadow-blue-500/20 transition hover:brightness-110 active:scale-[0.98]"
-    >
-      <span>Upload from Device</span>
-      <span className="text-white/80">›</span>
-    </button>
+                  pushBrowserHistory({
+                    tab: activeTab,
+                    profilePhoto: 'camera'
+                  });
+                }}
+                className="flex w-full items-center justify-between rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-4 text-left text-sm font-black text-white shadow-lg shadow-orange-500/20 transition hover:brightness-110 active:scale-[0.98]"
+              >
+                <span>Take Photo</span>
+                <span className="text-white/80">›</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={selectProfileImage}
+                className="mt-2 flex w-full items-center justify-between rounded-xl bg-gradient-to-r from-indigo-500 to-blue-500 px-4 py-4 text-left text-sm font-black text-white shadow-lg shadow-blue-500/20 transition hover:brightness-110 active:scale-[0.98]"
+              >
+                <span>Upload from Device</span>
+                <span className="text-white/80">›</span>
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
   </div>
-</div>
-                    </>
-                  )}
-                </div>
-              </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+  <div className="space-y-3">
+    <div className="flex items-start gap-3">
+      <span className="w-24 shrink-0 text-sm font-black text-gray-500">
+        Name :
+      </span>
+      <span className="min-w-0 break-words text-sm font-bold text-white">
+        {userProfile?.name || "—"}
+      </span>
+    </div>
 
-                <div className="bg-gray-800 border border-gray-700 rounded-3xl p-6">
-                  <h3 className="text-lg font-black text-orange-400 mb-5">
-                    Registration Document
-                  </h3>
+    <div className="flex items-start gap-3">
+      <span className="w-24 shrink-0 text-sm font-black text-gray-500">
+        Email :
+      </span>
+      <span className="min-w-0 break-all text-sm font-bold text-white">
+        {userProfile?.email || "—"}
+      </span>
+    </div>
 
-                  {restaurant?.registrationDoc ? (
-                    <div className="overflow-hidden rounded-2xl border border-gray-700 bg-gray-900">
-                      <img
-                        src={`${API_BASE}/api/kyc/documents/${encodeURIComponent(
-                          restaurant.registrationDoc.split("/").pop().split("\\").pop()
-                        )}`}
-                        alt="Restaurant registration document"
-                        className="w-full max-h-[500px] object-contain"
-                        loading="lazy"
-                      />
-                    </div>
-                  ) : (
-                    <div className="rounded-xl border border-gray-700 bg-gray-900 px-5 py-4 text-gray-500 font-bold">
-                      No registration document available
-                    </div>
-                  )}
-                </div>
+    <div className="flex items-start gap-3">
+      <span className="w-24 shrink-0 text-sm font-black text-gray-500">
+        Seller ID :
+      </span>
+      <span className="min-w-0 break-all font-mono text-xs font-bold text-white">
+        {userProfile?.id || "—"}
+      </span>
+    </div>
 
-                <div className="bg-gray-800 border border-gray-700 rounded-3xl p-6">
-                  <h3 className="text-lg font-black text-orange-400 mb-5">
-                    Personal Information
-                  </h3>
+    <div className="flex items-start gap-3">
+      <span className="w-24 shrink-0 text-sm font-black text-gray-500">
+        Phone :
+      </span>
+      <span className="min-w-0 break-words text-sm font-bold text-white">
+        {userProfile?.phone
+          ? String(userProfile.phone).replace(
+              /^(\d{4})\d+(\d{4})$/,
+              "$1••$2"
+            )
+          : "—"}
+      </span>
+    </div>
 
-                  <div className="space-y-4">
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                        Name
-                      </p>
-                      <p className="mt-1 text-white font-bold">
-                        {userProfile?.name || "—"}
-                      </p>
-                    </div>
+    <div className="flex items-center gap-3 pt-1">
+      <span className="w-24 shrink-0 text-sm font-black text-gray-500">
+        KYC :
+      </span>
 
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                        Email
-                      </p>
-                      <p className="mt-1 text-white font-bold break-all">
-                        {userProfile?.email || "—"}
-                      </p>
-                    </div>
+      <span
+        className={`rounded-full px-3 py-1 text-[11px] font-black uppercase tracking-wide ${
+          userProfile?.kycStatus === "VERIFIED"
+            ? "bg-emerald-500/10 text-emerald-400"
+            : userProfile?.kycStatus === "REJECTED"
+            ? "bg-red-500/10 text-red-400"
+            : "bg-amber-500/10 text-amber-400"
+        }`}
+      >
+        {userProfile?.kycStatus || "PENDING"}
+      </span>
+    </div>
+  </div>
 
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                        Phone
-                      </p>
-                      <p className="mt-1 text-white font-bold">
-                        {userProfile?.phone || "—"}
-                      </p>
-                    </div>
-                  </div>
-                </div>
+  <button
+    type="button"
+    onClick={() => {
+      setActiveDocumentPreview(null);
+      setIsDocumentsModalOpen(true);
+    }}
+    className="inline-flex items-center text-sm font-black text-white transition hover:text-orange-400 active:scale-[0.98]"
+  >
+    Documents
+  </button>
 
-                <div className="bg-gray-800 border border-gray-700 rounded-3xl p-6">
-                  <h3 className="text-lg font-black text-orange-400 mb-5">
-                    Account Status
-                  </h3>
+  {isDocumentsModalOpen && (
+    <div
+      className="fixed inset-0 z-[120] flex items-center justify-center bg-black/55 px-4 py-6 backdrop-blur-md"
+      onClick={() => {
+        if (activeDocumentPreview) {
+          setActiveDocumentPreview(null);
+        } else {
+          setIsDocumentsModalOpen(false);
+        }
+      }}
+    >
+      {!activeDocumentPreview ? (
+        <div
+          className="w-full max-w-sm rounded-3xl border border-white/10 bg-gray-900/75 p-5 shadow-2xl backdrop-blur-xl"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="mb-5 flex items-center justify-between gap-4">
+            <h3 className="text-lg font-black text-white">
+              Documents
+            </h3>
 
-                  <div className="space-y-4">
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                        Role
-                      </p>
-                      <p className="mt-1 text-white font-bold">
-                        {userProfile?.role || "—"}
-                      </p>
-                    </div>
+            <button
+              type="button"
+              onClick={() => setIsDocumentsModalOpen(false)}
+              className="text-xl font-black text-gray-400 transition hover:text-white"
+              aria-label="Close documents"
+            >
+              ×
+            </button>
+          </div>
 
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                        KYC Status
-                      </p>
-                      <p className="mt-1 text-white font-bold">
-                        {userProfile?.kycStatus || "—"}
-                      </p>
-                    </div>
+          <div className="space-y-2">
+            <button
+              type="button"
+              disabled={!restaurant?.image}
+              onClick={() => {
+                if (!restaurant?.image) return;
 
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                        Restaurant
-                      </p>
-                      <p className="mt-1 text-white font-bold">
-                        {restaurant?.name || restaurantName}
-                      </p>
-                    </div>
-                  </div>
-                </div>
+                setActiveDocumentPreview({
+                  type: "restaurant",
+                  title: "Restaurant Image",
+                  src: `${API_BASE}/api/seller/${restaurant._id}/image`
+                });
+              }}
+              className="flex w-full items-center justify-between border-b border-white/10 py-3 text-left text-sm font-black text-white transition hover:text-orange-400 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <span>Restaurant Image</span>
+              <span className="text-gray-500">›</span>
+            </button>
 
-              </div>
-            </section>
+            <button
+              type="button"
+              disabled={!restaurant?.registrationDoc}
+              onClick={() => {
+                if (!restaurant?.registrationDoc) return;
+
+                setActiveDocumentPreview({
+                  type: "registration",
+                  title: "Registration Document",
+                  src: `${API_BASE}/api/kyc/documents/${encodeURIComponent(
+                    restaurant.registrationDoc.split("/").pop().split("\\").pop()
+                  )}`
+                });
+              }}
+              className="flex w-full items-center justify-between py-3 text-left text-sm font-black text-white transition hover:text-orange-400 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <span>Registration Document</span>
+              <span className="text-gray-500">›</span>
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div
+          className="relative flex max-h-[92vh] w-full max-w-5xl items-center justify-center overflow-hidden rounded-3xl border border-white/10 bg-gray-950/85 p-4 shadow-2xl backdrop-blur-xl sm:p-6"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <img
+            src={activeDocumentPreview.src}
+            alt={activeDocumentPreview.title}
+            className="max-h-[84vh] max-w-full rounded-2xl object-contain"
+          />
+        </div>
+      )}
+    </div>
+  )}
+</section>
 
             {isProfilePhotoEditorOpen && (
               <div
