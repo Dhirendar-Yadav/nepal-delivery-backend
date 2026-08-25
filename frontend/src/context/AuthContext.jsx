@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { AuthContext } from "./AuthContext";
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5005';
 
+let logoutInFlight = null;
+
 export function AuthProvider({ children }) {
     const [user, setUser] = useState(null);
 
@@ -56,22 +58,34 @@ setIsAuthenticated(true);
     };
 
     const logout = async () => {
-    try {
-        await fetch(`${API_BASE}/api/auth/logout`, {
-            method: 'POST',
-            credentials: 'include'
-        });
-    } catch (err) {
-        console.error('Logout request failed:', err);
+    if (logoutInFlight) {
+        await logoutInFlight;
+        return;
     }
 
-    localStorage.removeItem("userRole");
-    localStorage.removeItem("userName");
-    localStorage.removeItem("userPhone");
+    logoutInFlight = (async () => {
+        try {
+            await fetch(`${API_BASE}/api/auth/logout`, {
+                method: 'POST',
+                credentials: 'include'
+            });
+        } catch (err) {
+            console.error('Logout request failed:', err);
+        }
 
+        localStorage.removeItem("userRole");
+        localStorage.removeItem("userName");
+        localStorage.removeItem("userPhone");
 
-    setUser(null);
-    setIsAuthenticated(false);
+        setUser(null);
+        setIsAuthenticated(false);
+    })();
+
+    try {
+        await logoutInFlight;
+    } finally {
+        logoutInFlight = null;
+    }
 };
 
     const value = useMemo(

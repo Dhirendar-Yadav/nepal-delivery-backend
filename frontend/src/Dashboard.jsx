@@ -3,12 +3,13 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from './hooks/useAuth';
 import useBrowserBackNavigation from './hooks/useBrowserBackNavigation';
 import useImageCapture from './hooks/useImageCapture';
+import LogoutConfirmModal from './components/LogoutConfirmModal';
 import { io } from 'socket.io-client';
 import Cropper from 'react-easy-crop';
 
 function Dashboard() {
   const navigate = useNavigate();
-  const { isAuthenticated, loading: authLoading } = useAuth();
+  const { isAuthenticated, loading: authLoading, logout } = useAuth();
   const restaurantName = localStorage.getItem('userName') || "My Restaurant";
   const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5005";
 
@@ -32,6 +33,7 @@ const [activeTab, setActiveTab] = useState(
   () => sessionStorage.getItem('sellerDashboardActiveTab') || 'orders'
 );
 const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
 
   // 🚀 Fix: Use useRef for Socket and Audio to prevent memory leaks and infinite loops
   const socketRef = useRef(null);
@@ -405,11 +407,11 @@ socketRef.current = io(API_BASE, {
 
   setUpdatingStoreStatus(false);
 };
-
-  const handleLogout = () => {
-  localStorage.clear();
-  navigate('/login');
-};
+  const handleMobileLogoutConfirm = async () => {
+    await logout();
+    setIsLogoutConfirmOpen(false);
+    navigate('/login', { replace: true });
+  };
 
   const resetProfilePhotoState = useCallback((openPhotoMenu = false) => {
     stopImageCaptureCamera();
@@ -512,14 +514,24 @@ socketRef.current = io(API_BASE, {
 
   const navigateToTab = (nextTab) => {
     if (nextTab === activeTab) {
-      setIsMobileMenuOpen(false);
+      if (isMobileMenuOpen) {
+        goBackBrowserHistory();
+      } else {
+        setIsMobileMenuOpen(false);
+      }
       return;
     }
 
-    pushBrowserHistory({
+    const nextNavigationState = {
       tab: nextTab,
       profilePhoto: null
-    });
+    };
+
+    if (isMobileMenuOpen) {
+      replaceBrowserHistory(nextNavigationState);
+    } else {
+      pushBrowserHistory(nextNavigationState);
+    }
 
     setActiveTab(nextTab);
     setIsMobileMenuOpen(false);
@@ -558,7 +570,13 @@ socketRef.current = io(API_BASE, {
 
           <button
             type="button"
-            onClick={() => setIsMobileMenuOpen(true)}
+            onClick={() => {
+              pushBrowserHistory({
+                tab: activeTab,
+                profilePhoto: null
+              });
+              setIsMobileMenuOpen(true);
+            }}
             className="md:hidden flex items-center justify-center p-1 text-gray-200 transition active:scale-95"
             aria-label="Open seller menu"
           >
@@ -569,51 +587,45 @@ socketRef.current = io(API_BASE, {
             </span>
           </button>
 
-          <button onClick={handleLogout} className="hidden md:block bg-red-500 hover:bg-red-600 px-6 py-2 rounded-xl font-bold transition-all shadow-lg active:scale-95 text-sm">
+          <button
+            type="button"
+            onClick={() => setIsLogoutConfirmOpen(true)}
+            className="hidden md:block bg-red-500 hover:bg-red-600 px-6 py-2 rounded-xl font-bold transition-all shadow-lg active:scale-95 text-sm"
+          >
             LOGOUT
           </button>
         </div>
       </nav>
 
-      {isMobileMenuOpen && (
+            {isMobileMenuOpen && (
         <div className="md:hidden fixed inset-0 z-[100]">
           <button
             type="button"
             aria-label="Close seller menu"
-            onClick={() => setIsMobileMenuOpen(false)}
-            className="absolute inset-0 bg-black/60"
+            onClick={() => goBackBrowserHistory()}
+            className="absolute inset-0 bg-black/45 backdrop-blur-[2px]"
           />
 
-          <aside className="absolute right-0 top-0 h-full w-[82%] max-w-sm bg-gray-900 border-l border-gray-700 shadow-2xl flex flex-col">
-            <div className="flex items-center justify-between px-5 py-5 border-b border-gray-700">
-              <div>
-                <h2 className="text-lg font-black text-orange-500">
-                  Seller Menu
-                </h2>
-                <p className="text-xs text-gray-500 mt-1">
-                  {restaurantName}
-                </p>
-              </div>
+          <aside className="absolute left-1/2 top-1/2 w-[82%] max-w-sm -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-3xl border border-gray-700/80 bg-gray-900/95 shadow-2xl backdrop-blur-xl">
+            <div className="border-b border-gray-700/80 px-5 py-5">
+              <h2 className="truncate text-base font-black tracking-tight text-orange-500">
+                {restaurant?.name || restaurantName || "My Restaurant"}
+              </h2>
 
-              <button
-                type="button"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="h-10 w-10 rounded-xl bg-gray-800 text-gray-300 border border-gray-700 text-xl font-black active:scale-95"
-                aria-label="Close seller menu"
-              >
-                ×
-              </button>
+              <p className="mt-1 text-[11px] font-bold uppercase tracking-widest text-gray-500">
+                PAN: {restaurant?.panVatNumber || "Not Provided"}
+              </p>
             </div>
 
-            <div className="flex-1 overflow-y-auto px-3 py-4">
-              <div className="space-y-2">
+            <div className="px-3 py-4">
+              <div className="space-y-1">
                 <button
                   type="button"
                   onClick={() => navigateToTab('orders')}
-                  className={`w-full rounded-xl px-4 py-3 text-left font-black transition ${
+                  className={`w-full rounded-2xl px-4 py-3.5 text-left text-sm font-black transition active:scale-[0.99] ${
                     activeTab === 'orders'
-                      ? 'bg-orange-500 text-white'
-                      : 'text-gray-300 hover:bg-gray-800'
+                      ? 'border-l-4 border-orange-500 bg-gray-800 text-white'
+                      : 'text-gray-300 hover:bg-gray-800/80'
                   }`}
                 >
                   Live Orders
@@ -622,10 +634,10 @@ socketRef.current = io(API_BASE, {
                 <button
                   type="button"
                   onClick={() => navigateToTab('menu')}
-                  className={`w-full rounded-xl px-4 py-3 text-left font-black transition ${
+                  className={`w-full rounded-2xl px-4 py-3.5 text-left text-sm font-black transition active:scale-[0.99] ${
                     activeTab === 'menu'
-                      ? 'bg-orange-500 text-white'
-                      : 'text-gray-300 hover:bg-gray-800'
+                      ? 'border-l-4 border-orange-500 bg-gray-800 text-white'
+                      : 'text-gray-300 hover:bg-gray-800/80'
                   }`}
                 >
                   Menu Management
@@ -633,42 +645,38 @@ socketRef.current = io(API_BASE, {
 
                 <button
                   type="button"
-                  onClick={() => navigateToTab('profile')}
-                  className={`w-full rounded-xl px-4 py-3 text-left font-black transition ${
-                    activeTab === 'profile'
-                      ? 'bg-orange-500 text-white'
-                      : 'text-gray-300 hover:bg-gray-800'
+                  onClick={() => navigateToTab('account')}
+                  className={`w-full rounded-2xl px-4 py-3.5 text-left text-sm font-black transition active:scale-[0.99] ${
+                    activeTab === 'account'
+                      ? 'border-l-4 border-orange-500 bg-gray-800 text-white'
+                      : 'text-gray-300 hover:bg-gray-800/80'
                   }`}
                 >
-                  Restaurant
+                  Profile
                 </button>
 
                 <button
                   type="button"
-                  onClick={() => navigateToTab('account')}
-                  className="w-full rounded-xl px-4 py-3 text-left font-black text-gray-300 hover:bg-gray-800 transition"
+                  onClick={() => navigateToTab('settings')}
+                  className={`w-full rounded-2xl px-4 py-3.5 text-left text-sm font-black transition active:scale-[0.99] ${
+                    activeTab === 'settings'
+                      ? 'border-l-4 border-orange-500 bg-gray-800 text-white'
+                      : 'text-gray-300 hover:bg-gray-800/80'
+                  }`}
                 >
-                  Profile
+                  Settings
                 </button>
               </div>
-            </div>
 
-            <div className="border-t border-gray-700 px-3 py-4 space-y-2">
-              <button
-                type="button"
-                onClick={() => navigateToTab('settings')}
-                className="w-full rounded-xl px-4 py-3 text-left font-black text-gray-300 hover:bg-gray-800 transition"
-              >
-                Settings
-              </button>
+              <div className="my-3 border-t border-gray-700/80" />
 
               <button
-                type="button"
-                onClick={handleLogout}
-                className="w-full rounded-xl bg-red-600 px-4 py-3 text-left font-black text-white hover:bg-red-700 transition"
-              >
-                Logout
-              </button>
+  type="button"
+  onClick={() => setIsLogoutConfirmOpen(true)}
+  className="w-full rounded-2xl px-4 py-3.5 text-left text-sm font-black text-red-400 transition hover:bg-red-500/10 active:scale-[0.99]"
+>
+  Logout
+</button>
             </div>
           </aside>
         </div>
@@ -676,41 +684,8 @@ socketRef.current = io(API_BASE, {
 
 
       <div className="max-w-7xl mx-auto p-6 md:p-10 space-y-12">
-        {activeTab === 'profile' && (
+                {activeTab === 'profile' && (
           <>
-            {/* ================= RESTAURANT / STORE STATUS ================= */}
-
-            <div className="bg-gray-800 border border-gray-700 rounded-3xl p-6 flex justify-between items-center">
-
-              <div>
-                <h2 className="text-2xl font-black">
-                  Store Status
-                </h2>
-
-                <p className="text-gray-400 mt-1">
-                  {restaurant?.isOpen
-                    ? "Customers can place new orders."
-                    : "Store is currently closed."}
-                </p>
-              </div>
-
-              <button
-                disabled={updatingStoreStatus}
-                onClick={toggleStoreStatus}
-                className={`px-6 py-3 rounded-xl font-black transition ${
-                  restaurant?.isOpen
-                    ? "bg-green-600 hover:bg-green-700"
-                    : "bg-red-600 hover:bg-red-700"
-                }`}
-              >
-                {updatingStoreStatus
-                  ? "Updating..."
-                  : restaurant?.isOpen
-                  ? "OPEN"
-                  : "CLOSED"}
-              </button>
-
-            </div>
           </>
         )}
 
@@ -1228,6 +1203,56 @@ socketRef.current = io(API_BASE, {
           </>
         )}
 
+        {activeTab === 'settings' && (
+          <>
+            <section className="space-y-8">
+              <div>
+                <h2 className="text-2xl font-black text-white sm:text-3xl">
+                  Settings
+                </h2>
+
+                <div className="mt-6">
+                  <h3 className="text-xs font-black uppercase tracking-widest text-gray-500">
+                    Restaurant
+                  </h3>
+
+                  <div className="mt-4 flex items-center justify-between gap-4">
+                    <p className="min-w-0 flex-1 text-sm font-semibold text-gray-300 sm:text-base">
+                      Restaurant is currently {restaurant?.isOpen ? 'open' : 'closed'}
+                    </p>
+
+                    <button
+                      type="button"
+                      aria-label={
+                        restaurant?.isOpen
+                          ? "Tap to close restaurant"
+                          : "Tap to open restaurant"
+                      }
+                      disabled={updatingStoreStatus}
+                      onClick={toggleStoreStatus}
+                      className={`shrink-0 rounded-full px-5 py-2.5 text-sm font-black tracking-wide transition-all duration-200 active:scale-95 ${
+                        restaurant?.isOpen
+                          ? "bg-green-500 text-white hover:bg-green-600"
+                          : "bg-red-500 text-white hover:bg-red-600"
+                      } ${
+                        updatingStoreStatus
+                          ? "cursor-not-allowed opacity-60"
+                          : "cursor-pointer"
+                      }`}
+                    >
+                      {updatingStoreStatus
+                        ? "Updating"
+                        : restaurant?.isOpen
+                        ? "Tap to close"
+                        : "Tap to open"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </>
+        )}
+
         {activeTab === 'orders' && (
           <>
             {/* ================= SECTION 1: LIVE ORDERS ================= */}
@@ -1495,6 +1520,12 @@ socketRef.current = io(API_BASE, {
           </>
         )}
       </div>
+
+      <LogoutConfirmModal
+        open={isLogoutConfirmOpen}
+        onCancel={() => setIsLogoutConfirmOpen(false)}
+        onConfirm={handleMobileLogoutConfirm}
+      />
     </div>
   );
 }
