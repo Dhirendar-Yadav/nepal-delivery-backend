@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from './hooks/useAuth';
 import useBrowserBackNavigation from './hooks/useBrowserBackNavigation';
-import useImageCapture from './hooks/useImageCapture';
 import LogoutConfirmModal from './components/LogoutConfirmModal';
+import UniversalImageEditor from './components/UniversalImageEditor';
 import { io } from 'socket.io-client';
 import Cropper from 'react-easy-crop';
 
@@ -13,17 +14,24 @@ function Dashboard() {
   const restaurantName = localStorage.getItem('userName') || "My Restaurant";
   const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5005";
 
-  const [orders, setOrders] = useState([]);
-  const [myItems, setMyItems] = useState([]);
-  const [itemName, setItemName] = useState('');
-  const [itemPrice, setItemPrice] = useState('');
-  const [itemDescription, setItemDescription] = useState('');
-  const [restaurant, setRestaurant] = useState(null);
+const [orders, setOrders] = useState([]);
+const [myItems, setMyItems] = useState([]);
+
+const [itemName, setItemName] = useState('');
+const [itemPrice, setItemPrice] = useState('');
+const [itemDescription, setItemDescription] = useState('');
+const [itemFoodCategory, setItemFoodCategory] = useState('Veg');
+const [itemTags, setItemTags] = useState('');
+const [editingMenuItem, setEditingMenuItem] = useState(null);
+const [isMenuSheetOpen, setIsMenuSheetOpen] = useState(false);
+const [isMenuImageOverlayOpen, setIsMenuImageOverlayOpen] = useState(false);
+const [menuImageBlob, setMenuImageBlob] = useState(null);
+
+const [restaurant, setRestaurant] = useState(null);
 const [updatingStoreStatus, setUpdatingStoreStatus] = useState(false);
 const [userProfile, setUserProfile] = useState(null);
 const [profileImageRefreshKey, setProfileImageRefreshKey] = useState(() => Date.now());
 const [isProfilePhotoMenuOpen, setIsProfilePhotoMenuOpen] = useState(false);
-const [isProfilePhotoEditorOpen, setIsProfilePhotoEditorOpen] = useState(false);
 const [isDocumentsModalOpen, setIsDocumentsModalOpen] = useState(false);
 const [activeDocumentPreview, setActiveDocumentPreview] = useState(null);
 const [rejectingOrderId, setRejectingOrderId] = useState(null);
@@ -39,44 +47,7 @@ const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const socketRef = useRef(null);
   const newOrderSoundRef = useRef(null);
   const riderAssignedSoundRef = useRef(null);
-  const hasJoinedRoom = useRef(false); // To prevent multiple room joins
-  const profileCropLastTapRef = useRef(0);
-
-  const {
-    videoRef: imageCaptureVideoRef,
-    streamRef: imageCaptureStreamRef,
-    facingMode: imageCaptureFacingMode,
-    cameraOpen: imageCaptureCameraOpen,
-    cameraError: imageCaptureCameraError,
-    capturedImage: imageCaptureCapturedImage,
-    crop: imageCaptureCrop,
-    zoom: imageCaptureZoom,
-    croppedAreaPixels: imageCaptureCroppedAreaPixels,
-    setCapturedImage: setImageCaptureCapturedImage,
-    setCrop: setImageCaptureCrop,
-    setZoom: setImageCaptureZoom,
-    setCroppedAreaPixels: setImageCaptureCroppedAreaPixels,
-    openCamera: openImageCaptureCamera,
-    switchCamera: switchImageCaptureCamera,
-    capturePhoto: captureImageCapturePhoto,
-    selectImage: selectImageCaptureImage,
-    createCroppedBlob: createImageCaptureCroppedBlob,
-    stopCamera: stopImageCaptureCamera,
-    resetImageState: resetImageCaptureImageState,
-    reset: resetImageCapture
-  } = useImageCapture();
-    const isProfileCameraOpen = imageCaptureCameraOpen;
-  const [profileCameraError, setProfileCameraError] = useState('');
-  const effectiveProfileCameraError =
-    profileCameraError || imageCaptureCameraError;
-  const profileCapturedImage = imageCaptureCapturedImage;
-  const setProfileCapturedImage = setImageCaptureCapturedImage;
-  const profileCrop = imageCaptureCrop;
-  const setProfileCrop = setImageCaptureCrop;
-  const profileZoom = imageCaptureZoom;
-  const setProfileZoom = setImageCaptureZoom;
-  const profileCroppedAreaPixels = imageCaptureCroppedAreaPixels;
-  const setProfileCroppedAreaPixels = setImageCaptureCroppedAreaPixels;
+  const hasJoinedRoom = useRef(false);
 
   const fetchOrders = useCallback(async () => {
     try {
@@ -304,74 +275,298 @@ socketRef.current = io(API_BASE, {
   }
 };
 
-  const createProfileCroppedImage = useCallback(
-    (imageSrc, cropAreaPixels) =>
-      createImageCaptureCroppedBlob(
-        imageSrc,
-        cropAreaPixels,
-        'image/jpeg',
-        0.92
-      ),
-    [createImageCaptureCroppedBlob]
-  );
+  const handleAddItem = async (e) => {
+    e.preventDefault();
 
-  const selectProfileImage = async () => {
-    const result = await selectImageCaptureImage();
+    const normalizedName = itemName.trim();
+    const normalizedDescription = itemDescription.trim();
+    const numericPrice = Number(itemPrice);
+    const normalizedTags = [
+      ...new Set(
+        itemTags
+          .split(',')
+          .map((tag) => tag.trim())
+          .filter(Boolean)
+      )
+    ];
 
-    if (!result) {
-      setProfileCameraError(
-        imageCaptureCameraError ||
-          'Unable to open the selected image. Please try again.'
+    const isEditing = Boolean(editingMenuItem?._id);
+    const hasMenuImage = Boolean(menuImageBlob);
+
+    if (!normalizedName) {
+      console.error('Menu item name is required.');
+      return false;
+    }
+
+    if (
+      !Number.isInteger(numericPrice) ||
+      numericPrice < 100
+    ) {
+      console.error(
+        'Menu item price must be a whole number of at least NPR 100.'
       );
+      return false;
+    }
+
+    if (
+      itemFoodCategory !== 'Veg' &&
+      itemFoodCategory !== 'Non-Veg'
+    ) {
+      console.error('Menu item food category must be Veg or Non-Veg.');
+      return false;
+    }
+
+    if (normalizedTags.length > 10) {
+      console.error('A menu item can have a maximum of 10 tags.');
+      return false;
+    }
+
+    if (normalizedTags.some((tag) => tag.length > 50)) {
+      console.error('Each menu tag must be 50 characters or fewer.');
+      return false;
+    }
+    if (
+      isEditing &&
+      (!Number.isInteger(editingMenuItem.__v) ||
+        editingMenuItem.__v < 0)
+    ) {
+      console.error('Menu item version is missing or invalid.');
+      return false;
+    }
+
+    const endpoint = isEditing
+      ? `${API_BASE}/api/seller/menu/${encodeURIComponent(
+          editingMenuItem._id
+        )}`
+      : `${API_BASE}/api/seller/menu`;
+
+    const method = isEditing ? 'PATCH' : 'POST';
+
+    const payload = {
+      name: normalizedName,
+      price: numericPrice,
+      description: normalizedDescription,
+      foodCategory: itemFoodCategory,
+      tags: normalizedTags
+    };
+
+    if (isEditing) {
+      payload.__v = editingMenuItem.__v;
+    }
+
+    try {
+      const response = await fetch(endpoint, {
+        method,
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        if (response.status === 409) {
+          console.error(
+            'Menu item was changed by another request. Refreshing menu.'
+          );
+          await fetchMyMenu();
+          return false;
+        }
+
+        console.error(
+          `Failed: ${data.error || data.message || 'Invalid Data'}`
+        );
+        return false;
+      }
+
+      let savedItem = data.item;
+
+      if (
+        hasMenuImage &&
+        savedItem?._id &&
+        Number.isInteger(savedItem.__v)
+      ) {
+        const imageFormData = new FormData();
+
+        imageFormData.append(
+          'menuImage',
+          menuImageBlob,
+          'menu-image.jpg'
+        );
+
+        imageFormData.append(
+          '__v',
+          String(savedItem.__v)
+        );
+
+        const imageResponse = await fetch(
+          `${API_BASE}/api/seller/menu/${encodeURIComponent(
+            savedItem._id
+          )}/image`,
+          {
+            method: 'POST',
+            credentials: 'include',
+            body: imageFormData
+          }
+        );
+
+        const imageData = await imageResponse.json();
+
+        if (!imageResponse.ok) {
+          if (imageResponse.status === 409) {
+            console.error(
+              'Menu item changed before image upload. Refreshing menu.'
+            );
+          } else {
+            console.error(
+              `Menu image upload failed: ${
+                imageData.error ||
+                imageData.message ||
+                'Unable to upload image.'
+              }`
+            );
+          }
+
+          await fetchMyMenu();
+          return false;
+        }
+
+        savedItem = imageData.item || savedItem;
+      }
+
+      setItemName('');
+      setItemPrice('');
+      setItemDescription('');
+      setItemFoodCategory('Veg');
+      setItemTags('');
+      setEditingMenuItem(null);
+      setMenuImageBlob(null);
+      setIsMenuImageOverlayOpen(false);
+
+      await fetchMyMenu();
+
+      if (
+        typeof Notification !== 'undefined' &&
+        Notification.permission === 'granted'
+      ) {
+        new Notification(
+          isEditing ? 'Item Updated!' : 'Item Added!',
+          {
+            body: `${normalizedName} ${
+              isEditing ? 'was updated.' : 'is now live.'
+            }`
+          }
+        );
+      }
+
+      return true;
+    } catch (error) {
+      console.error(
+        `Network Error while ${
+          isEditing ? 'updating' : 'adding'
+        } menu item:`,
+        error
+      );
+
+      return false;
+    }
+  };
+  const handleDeleteMenuItem = async (item) => {
+    if (!item?._id) {
+      console.error('Menu item ID is missing.');
       return;
     }
 
-    setProfileCameraError('');
-    setProfileCapturedImage(result.imageData);
-    setProfileCrop({ x: 0, y: 0 });
-    setProfileZoom(1);
-    setProfileCroppedAreaPixels(null);
-    stopImageCaptureCamera();
-    setIsProfilePhotoEditorOpen(true);
-    setIsProfilePhotoMenuOpen(false);
+    if (!Number.isInteger(item.__v) || item.__v < 0) {
+      console.error('Menu item version is missing or invalid.');
+      return;
+    }
 
-    pushBrowserHistory({
-      tab: activeTab,
-      profilePhoto: 'upload-editor'
+    const confirmed = window.confirm(
+      `Delete "${item.name}" from your menu?`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `${API_BASE}/api/seller/menu/${encodeURIComponent(item._id)}`,
+        {
+          method: 'DELETE',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            __v: item.__v
+          })
+        }
+      );
+
+      const data = await response.json();
+
+      if (response.ok) {
+        await fetchMyMenu();
+        return;
+      }
+
+      if (response.status === 409) {
+        console.error(
+          'Menu item was changed by another request. Refreshing menu.'
+        );
+        await fetchMyMenu();
+        return;
+      }
+
+      console.error(
+        `Menu delete failed: ${data.error || data.message || 'Invalid request'}`
+      );
+    } catch (error) {
+      console.error('Network Error while deleting menu item:', error);
+    }
+  };
+
+  const handleEditMenuItem = (item) => {
+    if (!item?._id) {
+      console.error('Menu item ID is missing.');
+      return;
+    }
+
+    if (!Number.isInteger(item.__v) || item.__v < 0) {
+      console.error('Menu item version is missing or invalid.');
+      return;
+    }
+
+    setEditingMenuItem(item);
+    setItemName(item.name || '');
+    setItemPrice(
+      item.price !== undefined && item.price !== null
+        ? String(item.price)
+        : ''
+    );
+    setItemDescription(item.description || '');
+    setItemFoodCategory(
+      item.foodCategory === 'Non-Veg'
+        ? 'Non-Veg'
+        : 'Veg'
+    );
+    setItemTags(
+      Array.isArray(item.tags)
+        ? item.tags.join(', ')
+        : ''
+    );
+    setIsMenuSheetOpen(true);
+
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
     });
   };
 
-  const handleAddItem = async (e) => {
-    e.preventDefault();
-    try {
-      const response = await fetch(`${API_BASE}/api/seller/menu`, {
-  method: 'POST',
-  credentials: 'include',
-  headers: {
-      'Content-Type': 'application/json'
-  },
-  body: JSON.stringify({
-      name: itemName,
-      price: Number(itemPrice),
-      description: itemDescription
-  })
-});
-
-      if (response.ok) {
-        setItemName(''); setItemPrice(''); setItemDescription('');
-        fetchMyMenu();
-        // Replaced alert with Notification for better UX
-        if (Notification.permission === "granted") {
-            new Notification(`✅ Item Added!`, { body: `${itemName} is now live.` });
-        }
-      } else {
-        const errorData = await response.json();
-        console.error(`Failed: ${errorData.error || errorData.message || "Invalid Data"}`);
-      }
-    } catch {
-        console.error("Network Error: Make sure backend is running.");
-    }
-  };
   const toggleStoreStatus = async () => {
   if (!restaurant) return;
 
@@ -413,45 +608,7 @@ socketRef.current = io(API_BASE, {
     navigate('/login', { replace: true });
   };
 
-  const resetProfilePhotoState = useCallback((openPhotoMenu = false) => {
-    stopImageCaptureCamera();
-    setProfileCameraError('');
-    setProfileCapturedImage(null);
-    setProfileCroppedAreaPixels(null);
-    setProfileCrop({ x: 0, y: 0 });
-    setProfileZoom(1);
-    setIsProfilePhotoEditorOpen(false);
-    setIsProfilePhotoMenuOpen(openPhotoMenu);
-  }, []);
-
-  const openProfilePhotoCamera = useCallback(async () => {
-    setProfileCameraError('');
-    setProfileCapturedImage(null);
-    setProfileCroppedAreaPixels(null);
-    setProfileCrop({ x: 0, y: 0 });
-    setProfileZoom(1);
-    setIsProfilePhotoMenuOpen(false);
-    setIsProfilePhotoEditorOpen(true);
-
-    const opened = await openImageCaptureCamera();
-
-    if (!opened) {
-      setProfileCameraError(
-        'Unable to open the camera. Please try again.'
-      );
-    }
-  }, [openImageCaptureCamera]);
-
-  const switchProfileCamera = async () => {
-    const switched = await switchImageCaptureCamera();
-
-    if (!switched) {
-      setProfileCameraError(
-        imageCaptureCameraError ||
-          'Unable to switch camera. Please try again.'
-      );
-    }
-  };
+//Nothing
 
   const getSellerNavigationState = useCallback(() => ({
     tab: activeTab,
@@ -476,30 +633,14 @@ socketRef.current = io(API_BASE, {
       typeof previousState === 'object' &&
       previousState.profilePhoto
     ) {
-      if (
-        previousState.profilePhoto === 'menu' ||
-        previousState.profilePhoto === 'upload-editor'
-      ) {
-        resetProfilePhotoState(true);
-        return;
-      }
-
-      if (
-        previousState.profilePhoto === 'camera' ||
-        previousState.profilePhoto === 'camera-editor'
-      ) {
-        openProfilePhotoCamera();
-        setIsMobileMenuOpen(false);
-        return;
-      }
+      setIsProfilePhotoMenuOpen(false);
+      setIsMobileMenuOpen(false);
+      return;
     }
 
-    resetProfilePhotoState(false);
+    setIsProfilePhotoMenuOpen(false);
     setIsMobileMenuOpen(false);
-  }, [
-    openProfilePhotoCamera,
-    resetProfilePhotoState
-  ]);
+  }, []);
 
   const {
     push: pushBrowserHistory,
@@ -536,12 +677,6 @@ socketRef.current = io(API_BASE, {
     setActiveTab(nextTab);
     setIsMobileMenuOpen(false);
   };
-
-  const goBack = () => {
-    goBackBrowserHistory();
-    setIsMobileMenuOpen(false);
-  };
-
   return (
     <div className="min-h-screen bg-gray-900 text-white font-sans pb-20">
 
@@ -710,8 +845,6 @@ socketRef.current = io(API_BASE, {
         type="button"
         onClick={() => {
           setIsProfilePhotoMenuOpen(true);
-          stopImageCaptureCamera();
-          setIsProfilePhotoEditorOpen(false);
 
           pushBrowserHistory({
             tab: activeTab,
@@ -735,51 +868,51 @@ socketRef.current = io(API_BASE, {
         )}
       </button>
 
-      {isProfilePhotoMenuOpen && (
-        <>
-          <button
-            type="button"
-            aria-label="Close profile photo menu"
-            onClick={() => setIsProfilePhotoMenuOpen(false)}
-            className="fixed inset-0 z-[109] cursor-default bg-transparent"
-          />
+      <UniversalImageEditor
+        open={isProfilePhotoMenuOpen}
+        ariaLabel="Profile photo"
+        onClose={() => {
+          setIsProfilePhotoMenuOpen(false);
 
-          <div
-            className="fixed inset-0 z-[110] flex items-center justify-center bg-black/45 px-4 backdrop-blur-sm"
-            onClick={() => setIsProfilePhotoMenuOpen(false)}
-          >
-            <div
-              className="w-full max-w-sm overflow-hidden rounded-2xl border border-white/10 bg-gray-900/90 p-3 shadow-2xl backdrop-blur-xl"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <button
-                type="button"
-                onClick={() => {
-                  openProfilePhotoCamera();
+          resetBrowserHistory({
+            tab: activeTab,
+            profilePhoto: null
+          });
+        }}
+        onSave={async ({ blob }) => {
+          const formData = new FormData();
 
-                  pushBrowserHistory({
-                    tab: activeTab,
-                    profilePhoto: 'camera'
-                  });
-                }}
-                className="flex w-full items-center justify-between rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-4 text-left text-sm font-black text-white shadow-lg shadow-orange-500/20 transition hover:brightness-110 active:scale-[0.98]"
-              >
-                <span>Take Photo</span>
-                <span className="text-white/80">›</span>
-              </button>
+          formData.append(
+            'profileImage',
+            blob,
+            'profile-photo.jpg'
+          );
 
-              <button
-                type="button"
-                onClick={selectProfileImage}
-                className="mt-2 flex w-full items-center justify-between rounded-xl bg-gradient-to-r from-indigo-500 to-blue-500 px-4 py-4 text-left text-sm font-black text-white shadow-lg shadow-blue-500/20 transition hover:brightness-110 active:scale-[0.98]"
-              >
-                <span>Upload from Device</span>
-                <span className="text-white/80">›</span>
-              </button>
-            </div>
-          </div>
-        </>
-      )}
+          const response = await fetch(
+            `${API_BASE}/api/auth/profile/photo`,
+            {
+              method: 'POST',
+              credentials: 'include',
+              body: formData
+            }
+          );
+
+          const responseData = await response.json();
+
+          if (!response.ok || !responseData.success) {
+            throw new Error(
+              responseData.message ||
+                responseData.error ||
+                'Failed to save profile photo.'
+            );
+          }
+
+          if (responseData.user) {
+            setUserProfile(responseData.user);
+            setProfileImageRefreshKey(Date.now());
+          }
+        }}
+      />
     </div>
   </div>
 
@@ -941,265 +1074,7 @@ socketRef.current = io(API_BASE, {
     </div>
   )}
 </section>
-
-            {isProfilePhotoEditorOpen && (
-              <div
-                className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4"
-                onMouseDown={(event) => {
-                  if (event.target === event.currentTarget) {
-                    stopImageCaptureCamera();
-                    setProfileCameraError('');
-                    setProfileCapturedImage(null);
-                    setProfileCroppedAreaPixels(null);
-                    setProfileCrop({ x: 0, y: 0 });
-                    setProfileZoom(1);
-                    setIsProfilePhotoEditorOpen(false);
-                    setIsProfilePhotoMenuOpen(true);
-                  }
-                }}
-              >
-                <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-gray-800 bg-gray-950 shadow-2xl">
-                  <div className="flex items-center justify-between border-b border-gray-800 px-3 py-3 sm:px-4">
-                    <h2 className="text-sm font-black text-white sm:text-base">
-                      {profileCapturedImage ? 'Edit Photo' : 'Take Photo'}
-                    </h2>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        stopImageCaptureCamera();
-                        goBackBrowserHistory();
-                      }}
-                      className="flex h-9 w-9 items-center justify-center rounded-full text-xl font-bold text-gray-400 transition hover:bg-gray-800 hover:text-white"
-                      aria-label="Close profile photo camera"
-                    >
-                      ×
-                    </button>
-                  </div>
-
-                  <div className="mt-6 space-y-4">
-                    {!profileCapturedImage ? (
-                      <>
-                        {effectiveProfileCameraError ? (
-                          <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-6 text-center">
-                            <p className="text-sm font-bold text-red-300">
-                              {effectiveProfileCameraError}
-                            </p>
-
-                            <p className="mt-3 text-xs leading-5 text-gray-300">
-                              Allow camera permission for this site in your browser settings, then try again.
-                              If permission was already denied, open the browser site settings and enable Camera.
-                            </p>
-
-                            <button
-                              type="button"
-                              onClick={openProfilePhotoCamera}
-                              className="mt-4 rounded-xl bg-orange-500 px-4 py-2 text-sm font-black text-white transition hover:bg-orange-600"
-                            >
-                              Retry Camera
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="mx-2 overflow-hidden rounded-xl bg-black sm:mx-3">
-                            <video
-                              ref={imageCaptureVideoRef}
-                              autoPlay
-                              playsInline
-                              muted
-                              className="aspect-square w-full object-cover"
-                            />
-                          </div>
-                        )}
-
-                        <div className="grid grid-cols-2 gap-2 border-t border-gray-800 px-2 pb-2 pt-3 sm:gap-3 sm:px-3 sm:pb-3">
-                          <button
-                            type="button"
-                            onClick={switchProfileCamera}
-                            disabled={Boolean(effectiveProfileCameraError)}
-                            className="rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-xs font-black text-white transition hover:bg-gray-800 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 sm:px-3 sm:py-2.5 sm:text-sm"
-                            aria-label="Switch camera"
-                          >
-                            Switch
-                          </button>
-
-                          <button
-                            type="button"
-                            disabled={
-                              Boolean(effectiveProfileCameraError) ||
-                              !isProfileCameraOpen
-                            }
-                            onClick={() => {
-                              const capturedImage =
-                                captureImageCapturePhoto();
-
-                              if (!capturedImage) {
-                                return;
-                              }
-
-                              setProfileCapturedImage(
-                                capturedImage
-                              );
-                              setProfileCrop({ x: 0, y: 0 });
-                              setProfileZoom(1);
-                              setProfileCroppedAreaPixels(null);
-
-                              pushBrowserHistory({
-                                tab: activeTab,
-                                profilePhoto: 'camera-editor'
-                              });
-                            }}
-                            className="rounded-xl bg-orange-500 px-3 py-2 text-xs font-black text-white transition hover:bg-orange-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 sm:px-3 sm:py-2.5 sm:text-sm"
-                          >
-                            Capture
-                          </button>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="space-y-4">
-                        <div
-                          className="relative h-[68vw] max-h-[420px] min-h-[260px] w-full overflow-hidden rounded-2xl bg-black sm:h-[360px]"
-                          onTouchEnd={(event) => {
-                            if (event.changedTouches.length !== 1) {
-                              return;
-                            }
-
-                            const now = Date.now();
-
-                            if (
-                              now - profileCropLastTapRef.current < 300
-                            ) {
-                              setProfileZoom((currentZoom) =>
-                                currentZoom >= 2 ? 1 : 2
-                              );
-                              profileCropLastTapRef.current = 0;
-                              return;
-                            }
-
-                            profileCropLastTapRef.current = now;
-                          }}
-                        >
-                          <Cropper
-                            image={profileCapturedImage}
-                            crop={profileCrop}
-                            zoom={profileZoom}
-                            aspect={1}
-                            cropShape="rect"
-                            showGrid
-                            objectFit="contain"
-                            zoomWithScroll={false}
-                            onCropChange={setProfileCrop}
-                            onCropComplete={(_, croppedAreaPixels) =>
-                              setProfileCroppedAreaPixels(croppedAreaPixels)
-                            }
-                            onZoomChange={setProfileZoom}
-                            onDoubleClick={() => {
-                              setProfileZoom((currentZoom) =>
-                                currentZoom >= 2 ? 1 : 2
-                              );
-                            }}
-                          />
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2 border-t border-gray-800 px-2 pb-2 pt-3 sm:gap-3 sm:px-3 sm:pb-3">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              openProfilePhotoCamera();
-
-                              replaceBrowserHistory({
-                                tab: activeTab,
-                                profilePhoto: 'camera'
-                              });
-                            }}
-                            className="w-full rounded-xl bg-gray-800 px-3 py-2 text-xs font-black text-white transition hover:bg-gray-700 active:scale-[0.98] sm:px-3 sm:py-2.5 sm:text-sm"
-                          >
-                            Retake
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              if (
-                                !profileCapturedImage ||
-                                !profileCroppedAreaPixels
-                              ) {
-                                return;
-                              }
-
-                              try {
-                                const croppedBlob =
-                                  await createProfileCroppedImage(
-                                    profileCapturedImage,
-                                    profileCroppedAreaPixels
-                                  );
-
-                                const formData = new FormData();
-
-                                formData.append(
-                                  'profileImage',
-                                  croppedBlob,
-                                  'profile-photo.jpg'
-                                );
-
-                                const response = await fetch(
-                                  `${API_BASE}/api/auth/profile/photo`,
-                                  {
-                                    method: 'POST',
-                                    credentials: 'include',
-                                    body: formData
-                                  }
-                                );
-
-                                const responseData = await response.json();
-
-                                if (!response.ok || !responseData.success) {
-                                  throw new Error(
-                                    responseData.message ||
-                                      responseData.error ||
-                                      'Failed to save profile photo.'
-                                  );
-                                }
-
-                                if (responseData.user) {
-                                  setUserProfile(responseData.user);
-                                  setProfileImageRefreshKey(Date.now());
-                                }
-
-                                setProfileCapturedImage(null);
-                                setProfileCroppedAreaPixels(null);
-                                setProfileCrop({ x: 0, y: 0 });
-                                setProfileZoom(1);
-                                stopImageCaptureCamera();
-                                setIsProfilePhotoEditorOpen(false);
-                                setIsProfilePhotoMenuOpen(false);
-
-                                resetBrowserHistory({
-                                  tab: activeTab,
-                                  profilePhoto: null
-                                });
-                              } catch (error) {
-                                console.error(
-                                  'Profile photo save failed:',
-                                  error
-                                );
-
-                                setProfileCameraError(
-                                  error.message ||
-                                    'Failed to save profile photo. Please try again.'
-                                );
-                              }
-                            }}
-                            className="w-full rounded-xl bg-orange-500 px-3 py-2 text-xs font-black text-white transition hover:bg-orange-600 active:scale-[0.98] sm:px-3 sm:py-2.5 sm:text-sm"
-                          >
-                            Save
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
+            {/* Profile Photo UI is now handled by UniversalImageEditor. */}
           </>
         )}
 
@@ -1465,58 +1340,269 @@ socketRef.current = io(API_BASE, {
 
         {activeTab === 'menu' && (
           <>
-            <hr className="border-gray-800 border-2 rounded-full" />
-
             {/* ================= SECTION 2: MENU MANAGEMENT ================= */}
             <section>
-          <div className="flex justify-between items-end mb-6">
-            <h2 className="text-3xl font-black text-white">Menu Management 🍽️</h2>
-          </div>
+              <div className="mb-5 flex items-center justify-between gap-3">
+                <h2 className="min-w-0 text-xl font-black text-white sm:text-2xl">
+                  Menu Management
+                </h2>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <div className="bg-gray-800 p-8 rounded-[2rem] border border-gray-700 shadow-xl h-fit">
-              <h3 className="text-xl font-bold mb-6 text-orange-400 border-b border-gray-700 pb-4">Add New Menu Item</h3>
-              <form onSubmit={handleAddItem} className="space-y-5">
-                <div>
-                  <label className="block text-gray-400 mb-2 font-medium text-sm">Item Name</label>
-                  <input type="text" value={itemName} onChange={(e) => setItemName(e.target.value)} className="w-full bg-gray-900 text-white px-4 py-3 rounded-xl border border-gray-700 focus:border-orange-500 outline-none" placeholder="e.g. Chicken Steam Momo" required />
-                </div>
-                <div>
-                  <label className="block text-gray-400 mb-2 font-medium text-sm">Price (NPR)</label>
-                  <input type="number" value={itemPrice} onChange={(e) => setItemPrice(e.target.value)} className="w-full bg-gray-900 text-white px-4 py-3 rounded-xl border border-gray-700 focus:border-orange-500 outline-none" placeholder="150" required min="0" />
-                </div>
-                <div>
-                  <label className="block text-gray-400 mb-2 font-medium text-sm">Description</label>
-                  <textarea value={itemDescription} onChange={(e) => setItemDescription(e.target.value)} className="w-full bg-gray-900 text-white px-4 py-3 rounded-xl border border-gray-700 focus:border-orange-500 outline-none" rows="3" placeholder="Delicious hot momos..." required ></textarea>
-                </div>
-                <button type="submit" className="w-full mt-6 bg-green-600 hover:bg-green-700 text-white font-black py-4 rounded-xl shadow-lg transition-all active:scale-95 uppercase tracking-wide">
-                  Publish to Network ➔
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingMenuItem(null);
+                    setItemName('');
+                    setItemPrice('');
+                    setItemDescription('');
+                    setItemFoodCategory('Veg');
+                    setItemTags('');
+                    setIsMenuSheetOpen(true);
+                  }}
+                  className="shrink-0 px-1 py-1 text-sm font-bold text-orange-400 transition-all duration-200 hover:scale-105 hover:text-orange-300 active:scale-95 sm:text-base"
+                >
+                  Add Items
                 </button>
-              </form>
-            </div>
+              </div>
 
-            <div className="bg-gray-800 p-8 rounded-[2rem] border border-gray-700 shadow-xl h-fit max-h-[600px] overflow-y-auto custom-scrollbar">
-              <h3 className="text-xl font-bold mb-6 text-orange-400 border-b border-gray-700 pb-4">Active Menu ({myItems.length})</h3>
-              {myItems.length === 0 ? (
-                <p className="text-gray-500 text-center py-10 font-medium">Your menu is currently empty.</p>
-              ) : (
-                <div className="space-y-4">
-                  {myItems.map(item => (
-                    <div key={item._id} className="bg-gray-900 p-4 rounded-xl border border-gray-700 flex justify-between items-center hover:border-orange-500 transition-all">
-                      <div>
-                        <h4 className="text-lg font-bold text-white">{item.name}</h4>
-                        <p className="text-orange-400 font-bold text-sm">NPR {item.price}</p>
-                      </div>
-                      <span className="bg-green-500/20 text-green-400 px-3 py-1 rounded-md text-xs font-bold border border-green-500/30">
-                        Live
-                      </span>
-                    </div>
-                  ))}
+              <div className="w-full">
+                <div className="grid grid-cols-[minmax(0,1fr)_80px_118px] items-center gap-x-5 pb-2 text-xs font-bold uppercase tracking-wide text-gray-500 sm:grid-cols-[minmax(0,1fr)_110px_145px] sm:gap-x-8">
+                  <span>Items</span>
+                  <span>Price</span>
+                  <span className="text-right">Actions</span>
                 </div>
+
+                {myItems.length === 0 ? (
+                  <div className="py-8 text-sm font-medium text-gray-500">
+                    No active menu items.
+                  </div>
+                ) : (
+                  <div className="w-full">
+                    {myItems.map((item) => (
+                      <div
+                        key={item._id}
+                        className="grid grid-cols-[minmax(0,1fr)_80px_118px] items-center gap-x-5 py-3 sm:grid-cols-[minmax(0,1fr)_110px_145px] sm:gap-x-8"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-white sm:text-base">
+                            {item.name}
+                          </p>
+                        </div>
+
+                        <div className="whitespace-nowrap text-sm font-semibold text-gray-200 sm:text-base">
+                          NPR {item.price}
+                        </div>
+
+                        <div className="flex shrink-0 items-center justify-end gap-3 sm:gap-5">
+                          <button
+                            type="button"
+                            onClick={() => handleEditMenuItem(item)}
+                            className="px-1 py-1 text-xs font-semibold text-gray-300 transition hover:text-white sm:px-2 sm:text-sm"
+                          >
+                            Edit
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteMenuItem(item)}
+                            className="px-1 py-1 text-xs font-semibold text-red-400 transition hover:text-red-300 sm:px-2 sm:text-sm"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {isMenuSheetOpen &&
+              createPortal(
+                <div
+                  className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/40 px-4 py-4 backdrop-blur-xl backdrop-saturate-125"
+                  onMouseDown={(e) => {
+                    if (e.target === e.currentTarget) {
+                      setIsMenuImageOverlayOpen(false);
+                      setMenuImageBlob(null);
+                      setEditingMenuItem(null);
+                      setIsMenuSheetOpen(false);
+                    }
+                  }}
+                >
+                  <div
+                    className="w-full max-h-[90vh] max-w-sm overflow-y-auto rounded-3xl bg-white/[0.07] px-4 pb-4 pt-3 shadow-2xl ring-1 ring-white/10 backdrop-blur-2xl sm:max-w-md sm:px-5"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="Add a new item to your restaurant menu"
+                  >
+                    <div className="mx-auto mb-2 h-1 w-8 rounded-full bg-white/20" />
+
+                    <h3 className="mb-3 text-center text-base font-black text-white sm:text-lg">
+  {editingMenuItem ? 'Edit menu item' : 'Add a new item to your restaurant menu'}
+</h3>
+
+                    <form
+                      onSubmit={async (e) => {
+                        const saved = await handleAddItem(e);
+
+                        if (saved) {
+                          setIsMenuSheetOpen(false);
+                        }
+                      }}
+                      className="space-y-3"
+                    >
+                      <div className="grid grid-cols-[minmax(0,1fr)_82px] gap-2.5">
+                        <div>
+                          <label className="mb-1.5 block text-[11px] font-semibold text-gray-300">
+                            Item Name
+                          </label>
+
+                          <input
+                            type="text"
+                            value={itemName}
+                            onChange={(e) => setItemName(e.target.value)}
+                            className="w-full rounded-lg bg-black/15 px-3 py-2.5 text-sm text-white outline-none ring-1 ring-white/10 placeholder:text-gray-500 focus:ring-orange-400/50"
+                            placeholder="Momo"
+                            required
+                            maxLength="150"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="mb-1.5 block text-[11px] font-semibold text-gray-300">
+                            Price (NPR)
+                          </label>
+
+                          <input
+                            type="number"
+                            value={itemPrice}
+                            onChange={(e) => setItemPrice(e.target.value)}
+                            className="w-full rounded-lg bg-black/15 px-3 py-2.5 text-sm text-white outline-none ring-1 ring-white/10 placeholder:text-gray-500 focus:ring-orange-400/50"
+                            placeholder="150"
+                            required
+                            min="100"
+                            step="1"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="mb-1.5 block text-[11px] font-semibold text-gray-300">
+                          Description
+                        </label>
+
+                        <textarea
+                          value={itemDescription}
+                          onChange={(e) =>
+                            setItemDescription(e.target.value)
+                          }
+                          className="w-full resize-none rounded-lg bg-black/15 px-3 py-2.5 text-sm text-white outline-none ring-1 ring-white/10 placeholder:text-gray-500 focus:ring-orange-400/50"
+                          rows="2"
+                          placeholder="Delicious hot momos..."
+                          required
+                          maxLength="500"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-[minmax(0,1fr)_96px] gap-2.5">
+                        <div>
+                          <label className="mb-1.5 block text-[11px] font-semibold text-gray-300">
+                            Tags
+                          </label>
+
+                          <input
+                            type="text"
+                            value={itemTags}
+                            onChange={(e) =>
+                              setItemTags(e.target.value)
+                            }
+                            className="w-full rounded-lg bg-black/15 px-3 py-2.5 text-sm text-white outline-none ring-1 ring-white/10 placeholder:text-gray-500 focus:ring-orange-400/50"
+                            placeholder="spicy, popular"
+                            maxLength="500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="mb-1.5 block text-[11px] font-semibold text-gray-300">
+                            Food Category
+                          </label>
+
+                          <select
+                            value={itemFoodCategory}
+                            onChange={(e) =>
+                              setItemFoodCategory(e.target.value)
+                            }
+                            className="w-full rounded-lg bg-gray-900 px-3 py-2.5 text-sm text-white outline-none ring-1 ring-white/10 focus:ring-orange-400/50"
+                          >
+                            <option
+                              value="Veg"
+                              className="bg-gray-900 text-white"
+                            >
+                              Veg
+                            </option>
+                            <option
+                              value="Non-Veg"
+                              className="bg-gray-900 text-white"
+                            >
+                              Non-Veg
+                            </option>
+                          </select>
+                        </div>
+                      </div>
+
+                                            <div className="flex items-center justify-start">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsMenuImageOverlayOpen(true);
+                          }}
+                          className="rounded-lg px-3 py-2 text-xs font-semibold text-gray-200 ring-1 ring-white/10 transition hover:bg-white/[0.07] hover:text-white active:scale-[0.99]"
+                        >
+                          {menuImageBlob
+  ? 'Change Image'
+  : editingMenuItem
+    ? 'Change Image'
+    : 'Add Image'}
+                        </button>
+
+                        <UniversalImageEditor
+                          open={isMenuImageOverlayOpen}
+                          ariaLabel="Menu image"
+                          onClose={() => {
+                            setIsMenuImageOverlayOpen(false);
+                          }}
+                          onSave={async ({ blob }) => {
+                            setMenuImageBlob(blob);
+                          }}
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 pt-0.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsMenuImageOverlayOpen(false);
+                            setMenuImageBlob(null);
+                            setEditingMenuItem(null);
+                            setIsMenuSheetOpen(false);
+                          }}
+                          className="rounded-lg px-3 py-2 text-xs font-semibold text-gray-300 transition hover:bg-white/[0.07] hover:text-white active:scale-[0.99]"
+                        >
+                          Cancel
+                        </button>
+
+                        <button
+  type="submit"
+  className="rounded-lg px-3 py-2 text-xs font-semibold text-orange-300 transition hover:bg-white/[0.07] hover:text-orange-200 active:scale-[0.99]"
+>
+  {editingMenuItem ? 'Update Item' : 'Add Item'}
+</button>
+                      </div>
+                    </form>
+                  </div>
+                </div>,
+                document.body
               )}
-            </div>
-          </div>
-        </section>
           </>
         )}
       </div>
