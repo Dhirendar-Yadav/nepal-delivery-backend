@@ -9,6 +9,17 @@ const path = require('path');
 const Restaurant = require('../models/Restaurant');
 const MenuItem = require('../models/MenuItem');
 const Order = require('../models/Order');
+
+const {
+    createImageUpload
+} = require('../middlewares/imageUpload');
+
+const {
+    storeMenuImage,
+    deleteMenuImage,
+    cleanupUploadedMenuFiles,
+    resolveMenuImagePath
+} = require('../services/menuImageService');
 const User = require('../models/User'); 
 
 const restaurantController = require('../controllers/restaurantController');
@@ -94,16 +105,21 @@ const attachRestaurantContext = asyncHandler(async (req, res, next) => {
         return res.status(403).json({ success: false, error: "RESTAURANT_INACTIVE", message: "Access Forbidden: Restaurant profiling has been suspended or is currently unapproved." });
     }
 
-    req.restaurant = restaurant;
+       req.restaurant = restaurant;
     return next();
 });
 
-// ==========================================
-// 🏢 DECOUPLED DISPATCH SERVICE LAYER LOGIC
-// ==========================================
-// ==========================================
-// ?? CUSTOMER ROUTES (Public Operations)
-// ==========================================
+const buildActiveSellerMenuFilter = (restaurantId) => ({
+    restaurantId,
+    isDeleted: false
+});
+
+const buildMenuItemMutationFilter = (restaurantId, itemId, version) => ({
+    _id: itemId,
+    ...buildActiveSellerMenuFilter(restaurantId),
+    __v: version
+});
+//CUSTOMER ROUTES (Public Operations)
 router.get('/', restaurantController.getAllRestaurants);
 
 router.get('/:id/image', asyncHandler(async (req, res) => {
@@ -218,32 +234,584 @@ router.patch(
 );
 // 1. ADD NEW MENU ITEM (POST /api/seller/menu)
 router.post('/menu', verifySeller, attachRestaurantContext, asyncHandler(async (req, res) => {
-    const { name, price, description } = req.body;
+const { name, price, description, foodCategory, tags } = req.body;
 
-    if (!name || typeof name !== 'string' || name.trim() === '') {
-        return res.status(400).json({ success: false, error: "INVALID_INPUT_NAME", message: "Validation error: name parameter attribute value must be a non-empty string." });
-    }
-    if (price === undefined || typeof price === 'boolean' || typeof price !== 'number' || !Number.isFinite(price) || price <= 0) {
-        return res.status(400).json({ success: false, error: "INVALID_INPUT_PRICE", message: "Validation error: price variable metrics must map to a finite positive numeric expression." });
-    }
+const normalizedName = typeof name === 'string' ? name.trim() : '';
+const normalizedDescription = typeof description === 'string'
+    ? description.trim()
+    : '';
 
-    const newItem = new MenuItem({
-        restaurantId: req.restaurant._id,
-        name: name.trim(),
-        price,
-        description: description && typeof description === 'string' ? description.trim() : '',
-        isAvailable: true
+const normalizedTags = Array.isArray(tags)
+    ? [
+        ...new Set(
+            tags
+                .filter((tag) => typeof tag === 'string')
+                .map((tag) => tag.trim())
+                .filter(Boolean)
+        )
+    ]
+    : [];
+
+if (!normalizedName) {
+    return res.status(400).json({
+        success: false,
+        error: 'INVALID_INPUT_NAME',
+        message: 'Menu item name is required.'
     });
+}
 
+if (
+    typeof price !== 'number' ||
+    !Number.isFinite(price) ||
+    !Number.isInteger(price) ||
+    price < 100
+) {
+    return res.status(400).json({
+        success: false,
+        error: 'INVALID_INPUT_PRICE',
+        message: 'Menu item price must be a whole number of at least NPR 100.'
+    });
+}
+
+if (
+    foodCategory !== undefined &&
+    foodCategory !== 'Veg' &&
+    foodCategory !== 'Non-Veg'
+) {
+    return res.status(400).json({
+        success: false,
+        error: 'INVALID_FOOD_CATEGORY',
+        message: 'Food category must be Veg or Non-Veg.'
+    });
+}
+
+if (!Array.isArray(tags) && tags !== undefined) {
+    return res.status(400).json({
+        success: false,
+        error: 'INVALID_TAGS',
+        message: 'Tags must be provided as an array.'
+    });
+}
+
+if (normalizedTags.length > 10) {
+    return res.status(400).json({
+        success: false,
+        error: 'TOO_MANY_TAGS',
+        message: 'A menu item can have a maximum of 10 tags.'
+    });
+}
+
+if (normalizedTags.some((tag) => tag.length > 50)) {
+    return res.status(400).json({
+        success: false,
+        error: 'INVALID_TAG_LENGTH',
+        message: 'Each menu tag must be 50 characters or fewer.'
+    });
+}
+
+const newItem = new MenuItem({
+    restaurantId: req.restaurant._id,
+    name: normalizedName,
+    price,
+    description: normalizedDescription,
+    foodCategory: foodCategory || 'Veg',
+    tags: normalizedTags,
+    isAvailable: true,
+    isDeleted: false,
+    deletedAt: null,
+    createdBy: req.user.id,
+    updatedBy: req.user.id
+});
     await newItem.save();
-    return res.status(201).json({ success: true, message: "Menu item successfully registered.", item: newItem });
+
+    return res.status(201).json({
+        success: true,
+        message: 'Menu item successfully registered.',
+        item: newItem
+    });
 }));
 
-// 2. GET SELLER'S MENU (GET /api/seller/menu)
+// 2. UPDATE SELLER MENU ITEM (PATCH /api/seller/menu/:id)
+router.patch('/menu/:id', verifySeller, attachRestaurantContext, asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const rawVersion = req.body.__v;
+    const version = Number(rawVersion);
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({
+            success: false,
+            error: 'INVALID_MENU_ITEM_ID',
+            message: 'Menu item ID is invalid.'
+        });
+    }
+
+    if (
+        rawVersion === undefined ||
+        !Number.isInteger(version) ||
+        version < 0
+    ) {
+        return res.status(400).json({
+            success: false,
+            error: 'INVALID_MENU_ITEM_VERSION',
+            message: 'A valid menu item version is required for editing.'
+        });
+    }
+
+    const updateFields = {};
+
+    if (req.body.name !== undefined) {
+        if (typeof req.body.name !== 'string' || req.body.name.trim() === '') {
+            return res.status(400).json({
+                success: false,
+                error: 'INVALID_INPUT_NAME',
+                message: 'Menu item name must be a non-empty string.'
+            });
+        }
+
+        updateFields.name = req.body.name.trim();
+    }
+
+    if (req.body.price !== undefined) {
+        if (
+            typeof req.body.price !== 'number' ||
+            !Number.isFinite(req.body.price) ||
+            !Number.isInteger(req.body.price) ||
+            req.body.price < 100
+        ) {
+            return res.status(400).json({
+                success: false,
+                error: 'INVALID_INPUT_PRICE',
+                message: 'Menu item price must be a whole number of at least NPR 100.'
+            });
+        }
+
+        updateFields.price = req.body.price;
+    }
+
+    if (req.body.description !== undefined) {
+        if (typeof req.body.description !== 'string') {
+            return res.status(400).json({
+                success: false,
+                error: 'INVALID_INPUT_DESCRIPTION',
+                message: 'Description must be a string.'
+            });
+        }
+
+        updateFields.description = req.body.description.trim();
+    }
+
+    if (req.body.foodCategory !== undefined) {
+        if (
+            req.body.foodCategory !== 'Veg' &&
+            req.body.foodCategory !== 'Non-Veg'
+        ) {
+            return res.status(400).json({
+                success: false,
+                error: 'INVALID_FOOD_CATEGORY',
+                message: 'Food category must be Veg or Non-Veg.'
+            });
+        }
+
+        updateFields.foodCategory = req.body.foodCategory;
+    }
+
+    if (req.body.tags !== undefined) {
+        if (!Array.isArray(req.body.tags)) {
+            return res.status(400).json({
+                success: false,
+                error: 'INVALID_TAGS',
+                message: 'Tags must be provided as an array.'
+            });
+        }
+
+        const normalizedTags = [
+            ...new Set(
+                req.body.tags
+                    .filter((tag) => typeof tag === 'string')
+                    .map((tag) => tag.trim())
+                    .filter(Boolean)
+            )
+        ];
+
+        if (normalizedTags.length > 10) {
+            return res.status(400).json({
+                success: false,
+                error: 'TOO_MANY_TAGS',
+                message: 'A menu item can have a maximum of 10 tags.'
+            });
+        }
+
+        if (normalizedTags.some((tag) => tag.length > 50)) {
+            return res.status(400).json({
+                success: false,
+                error: 'INVALID_TAG_LENGTH',
+                message: 'Each menu tag must be 50 characters or fewer.'
+            });
+        }
+
+        updateFields.tags = normalizedTags;
+    }
+
+    if (req.body.isAvailable !== undefined) {
+        if (typeof req.body.isAvailable !== 'boolean') {
+            return res.status(400).json({
+                success: false,
+                error: 'INVALID_AVAILABILITY',
+                message: 'Availability must be a boolean value.'
+            });
+        }
+
+        updateFields.isAvailable = req.body.isAvailable;
+    }
+
+    if (Object.keys(updateFields).length === 0) {
+        return res.status(400).json({
+            success: false,
+            error: 'NO_VALID_MENU_FIELDS',
+            message: 'No valid menu item fields were provided for update.'
+        });
+    }
+
+    updateFields.updatedBy = req.user.id;
+
+    const updatedItem = await MenuItem.findOneAndUpdate(
+        buildMenuItemMutationFilter(
+            req.restaurant._id,
+            id,
+            version
+        ),
+        {
+            $set: updateFields,
+            $inc: { __v: 1 }
+        },
+        {
+            new: true,
+            runValidators: true
+        }
+    );
+
+    if (!updatedItem) {
+        const existingItem = await MenuItem.findOne({
+            _id: id,
+            restaurantId: req.restaurant._id
+        })
+            .select('_id isDeleted __v')
+            .lean();
+
+        if (!existingItem || existingItem.isDeleted) {
+            return res.status(404).json({
+                success: false,
+                error: 'MENU_ITEM_NOT_FOUND',
+                message: 'Menu item was not found for this restaurant.'
+            });
+        }
+
+        return res.status(409).json({
+            success: false,
+            error: 'CONCURRENCY_CONFLICT',
+            message: 'Menu item was changed by another request. Refresh the item and try again.'
+        });
+    }
+
+    return res.status(200).json({
+        success: true,
+        message: 'Menu item successfully updated.',
+        item: updatedItem
+    });
+}));
+
+// 3. UPLOAD MENU ITEM IMAGE (POST /api/seller/menu/:id/image)
+router.post(
+    '/menu/:id/image',
+    verifySeller,
+    attachRestaurantContext,
+    createImageUpload({
+        fieldName: 'menuImage'
+    }),
+    asyncHandler(async (req, res) => {
+        const { id } = req.params;
+        const rawVersion = req.body.__v;
+        const version = Number(rawVersion);
+
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            if (req.file) {
+                await cleanupUploadedMenuFiles([req.file]);
+            }
+
+            return res.status(400).json({
+                success: false,
+                error: 'INVALID_MENU_ITEM_ID',
+                message: 'Menu item ID is invalid.'
+            });
+        }
+
+        if (
+            rawVersion === undefined ||
+            !Number.isInteger(version) ||
+            version < 0
+        ) {
+            if (req.file) {
+                await cleanupUploadedMenuFiles([req.file]);
+            }
+
+            return res.status(400).json({
+                success: false,
+                error: 'INVALID_MENU_ITEM_VERSION',
+                message: 'A valid menu item version is required for image update.'
+            });
+        }
+
+        if (!req.file) {
+            return res.status(400).json({
+                success: false,
+                error: 'MENU_IMAGE_REQUIRED',
+                message: 'Menu item image is required.'
+            });
+        }
+
+        const currentItem = await MenuItem.findOne(
+            buildMenuItemMutationFilter(
+                req.restaurant._id,
+                id,
+                version
+            )
+        )
+            .select('_id image __v')
+            .lean();
+
+        if (!currentItem) {
+            await cleanupUploadedMenuFiles([req.file]);
+
+            const existingItem = await MenuItem.findOne({
+                _id: id,
+                restaurantId: req.restaurant._id
+            })
+                .select('_id isDeleted __v')
+                .lean();
+
+            if (!existingItem || existingItem.isDeleted) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'MENU_ITEM_NOT_FOUND',
+                    message: 'Menu item was not found for this restaurant.'
+                });
+            }
+
+            return res.status(409).json({
+                success: false,
+                error: 'CONCURRENCY_CONFLICT',
+                message: 'Menu item was changed by another request. Refresh the item and try again.'
+            });
+        }
+
+        let storedFilename = null;
+
+        try {
+            storedFilename = await storeMenuImage(
+                req.file,
+                req.restaurant._id,
+                id
+            );
+
+            const updatedItem = await MenuItem.findOneAndUpdate(
+                buildMenuItemMutationFilter(
+                    req.restaurant._id,
+                    id,
+                    version
+                ),
+                {
+                    $set: {
+                        image: storedFilename,
+                        updatedBy: req.user.id
+                    },
+                    $inc: {
+                        __v: 1
+                    }
+                },
+                {
+                    new: true,
+                    runValidators: true
+                }
+            );
+
+            if (!updatedItem) {
+                await deleteMenuImage(
+                    req.restaurant._id,
+                    id,
+                    storedFilename
+                );
+
+                return res.status(409).json({
+                    success: false,
+                    error: 'CONCURRENCY_CONFLICT',
+                    message: 'Menu item was changed by another request. Refresh the item and try again.'
+                });
+            }
+
+            if (
+                currentItem.image &&
+                currentItem.image !== storedFilename
+            ) {
+                try {
+                    await deleteMenuImage(
+                        req.restaurant._id,
+                        id,
+                        currentItem.image
+                    );
+                } catch (cleanupError) {
+                    if (req.log) {
+                        req.log.warn({
+                            event: 'MENU_ITEM_OLD_IMAGE_DELETE_FAILED',
+                            menuItemId: id,
+                            restaurantId: req.restaurant._id,
+                            filename: currentItem.image,
+                            error: cleanupError.message
+                        });
+                    }
+                }
+            }
+
+            req.file = null;
+
+            return res.status(200).json({
+                success: true,
+                message: 'Menu item image successfully updated.',
+                item: updatedItem
+            });
+        } catch (error) {
+            if (req.file) {
+                await cleanupUploadedMenuFiles([req.file]);
+            } else if (storedFilename) {
+                try {
+                    await deleteMenuImage(
+                        req.restaurant._id,
+                        id,
+                        storedFilename
+                    );
+                } catch (cleanupError) {
+                    if (req.log) {
+                        req.log.warn({
+                            event: 'MENU_ITEM_NEW_IMAGE_CLEANUP_FAILED',
+                            menuItemId: id,
+                            restaurantId: req.restaurant._id,
+                            filename: storedFilename,
+                            error: cleanupError.message
+                        });
+                    }
+                }
+            }
+
+            throw error;
+        }
+    })
+);
+
+// 4. SOFT DELETE SELLER MENU ITEM (DELETE /api/seller/menu/:id)
+router.delete('/menu/:id', verifySeller, attachRestaurantContext, asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const rawVersion = req.body?.__v;
+    const version = Number(rawVersion);
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({
+            success: false,
+            error: 'INVALID_MENU_ITEM_ID',
+            message: 'Menu item ID is invalid.'
+        });
+    }
+
+    if (
+        rawVersion === undefined ||
+        !Number.isInteger(version) ||
+        version < 0
+    ) {
+        return res.status(400).json({
+            success: false,
+            error: 'INVALID_MENU_ITEM_VERSION',
+            message: 'A valid menu item version is required for deletion.'
+        });
+    }
+
+    const deletedItem = await MenuItem.findOneAndUpdate(
+        buildMenuItemMutationFilter(
+            req.restaurant._id,
+            id,
+            version
+        ),
+        {
+            $set: {
+                isDeleted: true,
+                deletedAt: new Date(),
+                isAvailable: false,
+                updatedBy: req.user.id
+            },
+            $inc: {
+                __v: 1
+            }
+        },
+        {
+            new: true,
+            runValidators: true
+        }
+    );
+
+    if (!deletedItem) {
+        const existingItem = await MenuItem.findOne({
+            _id: id,
+            restaurantId: req.restaurant._id
+        })
+            .select('_id isDeleted __v')
+            .lean();
+
+        if (!existingItem || existingItem.isDeleted) {
+            return res.status(404).json({
+                success: false,
+                error: 'MENU_ITEM_NOT_FOUND',
+                message: 'Menu item was not found for this restaurant.'
+            });
+        }
+
+        return res.status(409).json({
+            success: false,
+            error: 'CONCURRENCY_CONFLICT',
+            message: 'Menu item was changed by another request. Refresh the item and try again.'
+        });
+    }
+
+    if (deletedItem.image) {
+        try {
+            await deleteMenuImage(
+                req.restaurant._id,
+                id,
+                deletedItem.image
+            );
+        } catch (cleanupError) {
+            if (req.log) {
+                req.log.warn({
+                    event: 'MENU_ITEM_IMAGE_DELETE_FAILED',
+                    menuItemId: id,
+                    restaurantId: req.restaurant._id,
+                    filename: deletedItem.image,
+                    error: cleanupError.message
+                });
+            }
+        }
+    }
+
+    return res.status(200).json({
+        success: true,
+        message: 'Menu item successfully deleted.',
+        item: deletedItem
+    });
+}));
+
+// 5. GET SELLER'S MENU (GET /api/seller/menu)
 router.get('/menu', verifySeller, attachRestaurantContext, asyncHandler(async (req, res) => {
     const MAX_SELLER_MENU_ITEMS = 200;
 
-const items = await MenuItem.find({ restaurantId: req.restaurant._id })
+const items = await MenuItem.find(
+    buildActiveSellerMenuFilter(req.restaurant._id)
+)
     .sort({ createdAt: -1 })
     .limit(MAX_SELLER_MENU_ITEMS)
     .lean();
@@ -368,30 +936,85 @@ if (normalizedReason.length > 300) {
 
     return res.status(200).json({ success: true, order });
 }));
+// DYNAMIC ROUTES (MUST STAY AT THE BOTTOM)
 
-// ==========================================
-// ⚠️ DYNAMIC ROUTES (MUST STAY AT THE BOTTOM)
-// ==========================================
+router.get('/menu/:id/image', asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({
+            success: false,
+            error: 'INVALID_MENU_ITEM_ID'
+        });
+    }
+
+    const menuItem = await MenuItem.findOne({
+        _id: id,
+        isAvailable: true,
+        isDeleted: false,
+        image: { $ne: null }
+    })
+        .select('_id restaurantId image')
+        .lean();
+
+    if (!menuItem || !menuItem.image) {
+        return res.status(404).json({
+            success: false,
+            error: 'MENU_ITEM_IMAGE_NOT_FOUND'
+        });
+    }
+
+    const imagePath = await resolveMenuImagePath(
+        menuItem.restaurantId,
+        menuItem._id,
+        menuItem.image
+    );
+
+    if (!imagePath) {
+        return res.status(404).json({
+            success: false,
+            error: 'MENU_ITEM_IMAGE_NOT_FOUND'
+        });
+    }
+
+    return res.sendFile(imagePath, (err) => {
+        if (err && !res.headersSent) {
+            return res.status(
+                err.statusCode === 404 ? 404 : 500
+            ).json({
+                success: false,
+                error: 'MENU_ITEM_IMAGE_NOT_FOUND'
+            });
+        }
+    });
+}));
+
 router.get('/:id', asyncHandler(async (req, res) => {
     const restaurantId = req.params.id;
 
     if (!mongoose.Types.ObjectId.isValid(restaurantId)) {
-        return res.status(400).json({ success: false, error: "INVALID_RESTAURANT_ID", message: "Target search parameters are not valid mongoose ObjectIds." });
+        return res.status(400).json({
+            success: false,
+            error: "INVALID_RESTAURANT_ID",
+            message: "Target search parameters are not valid mongoose ObjectIds."
+        });
     }
 
     const MAX_PUBLIC_MENU_ITEMS = 200;
 
-const items = await MenuItem.find({
-    restaurantId: restaurantId,
-    isAvailable: true
-})
-    .sort({ createdAt: -1 })
-    .limit(MAX_PUBLIC_MENU_ITEMS)
-    .lean();
+    const items = await MenuItem.find({
+        restaurantId: restaurantId,
+        isAvailable: true,
+        isDeleted: false
+    })
+        .sort({ createdAt: -1 })
+        .limit(MAX_PUBLIC_MENU_ITEMS)
+        .lean();
+
     return res.status(200).json(items);
 }));
 
-// 🚀 PROBLEM 1 FIXED: Global Error handler boundary moved natively to server roots. 
+// PROBLEM 1 FIXED: Global Error handler boundary moved natively to server roots. 
 // Route errors are seamlessly passed down via next(err) parameters.
 
 module.exports = router;

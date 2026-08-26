@@ -612,6 +612,8 @@ export default function useImageCapture({
   useEffect(() => {
     mountedRef.current = true;
 
+    const videoElement = videoRef.current;
+
     return () => {
       mountedRef.current = false;
 
@@ -623,8 +625,8 @@ export default function useImageCapture({
         streamRef.current = null;
       }
 
-      if (videoRef.current) {
-        videoRef.current.srcObject = null;
+      if (videoElement) {
+        videoElement.srcObject = null;
       }
     };
   }, []);
