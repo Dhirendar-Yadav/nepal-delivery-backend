@@ -12,7 +12,7 @@ const Signup = lazy(() => import("./Signup"));
 const SellerSignup = lazy(() => import("./SellerSignup"));
 const RiderSignup = lazy(() => import("./RiderSignup"));
 
-const Dashboard = lazy(() => import("./Dashboard"));
+const Dashboard = lazy(() => import("./pages/seller/SellerDashboard"));
 const RiderDashboard = lazy(() => import("./pages/rider/RiderDashboard"));
 const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
 const CustomerLayout = lazy(() => import("./layouts/CustomerLayout"));
