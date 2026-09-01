@@ -44,8 +44,9 @@ console.log("PHONE:", res.data.user?.phone);
                 navigate('/rider/dashboard');
             }
             // Partner/Seller Dashboard Redirection
-            else if (userRole === 'seller') {
-                alert(`Welcome back to Partner Dashboard, ${res.data.user.name}! 🏪`);
+                        else if (userRole === 'seller') {
+                sessionStorage.setItem('sellerDashboardActiveTab', 'account');
+                alert(`Welcome back to Partner Dashboard, ${res.data.user.name}`);
                 navigate('/dashboard');
             }
             // Default Customer Home

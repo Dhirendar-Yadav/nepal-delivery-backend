@@ -52,24 +52,26 @@ if (existingSettlement) {
 
             if (!updatedRestaurant) throw new Error('Insufficient balance');
 
+            Restaurant.assertFinancialInvariant(updatedRestaurant);
+
             await LedgerEntry.create([
                 {
                     settlementId: transactionReference,
                     entityType: 'RESTAURANT',
                     entityId: id,
-                    type: 'CREDIT',
+                    type: 'DEBIT',
                     amount: settlementAmount,
                     balanceAfter: updatedRestaurant.walletBalance,
-                    description: 'Admin Payout Processed'
+                    description: 'Seller Settlement Paid by Admin'
                 },
                 {
                     settlementId: transactionReference,
                     entityType: 'SYSTEM_CLEARING',
                     entityId: null,
-                    type: 'DEBIT',
+                    type: 'CREDIT',
                     amount: settlementAmount,
                     balanceAfter: null,
-                    description: 'Admin Restaurant Settlement Clearing'
+                    description: 'Seller Settlement Clearing'
                 }
             ], { session });
 

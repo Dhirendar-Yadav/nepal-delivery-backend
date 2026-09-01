@@ -365,8 +365,8 @@ exports.acceptOrder = async (req, res) => {
             return res.status(409).json({ success: false, message: "You already have an active order" });
         }
 
-        // The atomic assignment filter below enforces Ready for Pickup as the only legal predecessor.
-        const previousStatus = 'Ready for Pickup';
+        // Rider acceptance is the atomic handoff from seller acceptance into preparation.
+        const previousStatus = 'Accepted';
 
         // STEP 2: Generate cryptographically secure OTP using model's hash method
         const generatedOTP = crypto.randomInt(100000, 1000000).toString();
@@ -379,7 +379,7 @@ exports.acceptOrder = async (req, res) => {
                 offeredRiderId: riderId,
                 offerExpiresAt: { $gt: now },
                 assignedRiderId: null,
-                status: 'Ready for Pickup',
+                status: 'Accepted',
                 $or: [
                     { paymentMethod: 'COD' },
                     { paymentMethod: 'ONLINE', paymentStatus: 'PAID' }
@@ -388,8 +388,9 @@ exports.acceptOrder = async (req, res) => {
             {
                 $set: {
                     assignedRiderId: riderId,
-                    status: 'Out for Delivery',
+                    status: 'Preparing',
                     statusUpdatedAt: now,
+                    processingStartedAt: now,
                     offeredRiderId: null,
                     offerExpiresAt: null,
                     deliveryOTP: hashedOTP,
@@ -399,7 +400,7 @@ exports.acceptOrder = async (req, res) => {
                 $push: {
     statusHistory: {
         from: previousStatus,
-        to: 'Out for Delivery',
+        to: 'Preparing',
         actorType: 'RIDER',
         actorId: riderId,
         changedAt: now
@@ -668,109 +669,106 @@ exports.completeOrder = async (req, res) => {
         }
 
         // STEP 6: Create ledger entries (settlement record for idempotency and audit)
-        const riderBonus = order.riderIncentive || Math.round(order.totalAmount * 0.02);
-        const netAdminProfit = order.platformFee - riderBonus;
+        const riderEarning = order.deliveryFee;
+        const sellerEarning = order.sellerEarning;
+
+        if (
+            !Number.isSafeInteger(riderEarning) ||
+            riderEarning < 0 ||
+            !Number.isSafeInteger(sellerEarning) ||
+            sellerEarning < 0
+        ) {
+            throw new Error("Invalid seller or rider earning amount.");
+        }
 
         const ledgerEntries = [
-    // ==========================================
-    // CREDIT ENTRIES
-    // ==========================================
+            {
+                settlementId,
+                orderId: orderId,
+                entityType: 'RIDER',
+                entityId: riderId,
+                type: 'CREDIT',
+                amount: riderEarning,
+                currency: 'NPR',
+                balanceAfter: null,
+                description: 'Rider delivery earning',
+                createdAt: now
+            },
+            {
+                settlementId,
+                orderId: orderId,
+                entityType: 'RESTAURANT',
+                entityId: order.restaurantId,
+                type: 'CREDIT',
+                amount: sellerEarning,
+                currency: 'NPR',
+                balanceAfter: updatedRestaurant.walletBalance,
+                description: 'Seller earning after platform commission',
+                createdAt: now
+            },
+            {
+                settlementId,
+                orderId: orderId,
+                entityType: 'ADMIN',
+                entityId: null,
+                type: 'CREDIT',
+                amount: order.platformFee,
+                currency: 'NPR',
+                balanceAfter: null,
+                description: 'Platform commission',
+                createdAt: now
+            },
+            {
+                settlementId,
+                orderId: orderId,
+                entityType: 'SYSTEM_CLEARING',
+                entityId: null,
+                type: 'DEBIT',
+                amount: riderEarning,
+                currency: 'NPR',
+                balanceAfter: null,
+                description: 'Rider delivery clearing',
+                createdAt: now
+            },
+            {
+                settlementId,
+                orderId: orderId,
+                entityType: 'SYSTEM_CLEARING',
+                entityId: null,
+                type: 'DEBIT',
+                amount: sellerEarning,
+                currency: 'NPR',
+                balanceAfter: null,
+                description: 'Seller earning clearing',
+                createdAt: now
+            },
+            {
+                settlementId,
+                orderId: orderId,
+                entityType: 'SYSTEM_CLEARING',
+                entityId: null,
+                type: 'DEBIT',
+                amount: order.platformFee,
+                currency: 'NPR',
+                balanceAfter: null,
+                description: 'Platform commission clearing',
+                createdAt: now
+            }
+        ];
 
-    {
-        settlementId,
-        orderId: orderId,
-        entityType: 'RIDER',
-        entityId: riderId,
-        type: 'CREDIT',
-        amount: order.deliveryFee + riderBonus,
-        currency: 'NPR',
-        balanceAfter: null,
-        description: 'Delivery settlement',
-        createdAt: now
-    },
-    {
-        settlementId,
-        orderId: orderId,
-        entityType: 'RESTAURANT',
-        entityId: order.restaurantId,
-        type: 'CREDIT',
-        amount: order.foodCost,
-        currency: 'NPR',
-        balanceAfter: null,
-        description: 'Restaurant settlement',
-        createdAt: now
-    },
-    {
-        settlementId,
-        orderId: orderId,
-        entityType: 'ADMIN',
-        entityId: null,
-        type: 'CREDIT',
-        amount: order.platformFee,
-        currency: 'NPR',
-        balanceAfter: null,
-        description: 'Platform commission',
-        createdAt: now
-    },
-
-    // ==========================================
-    // MATCHING DEBIT ENTRIES (Audit #4 Fix)
-    // ==========================================
-
-    {
-        settlementId,
-        orderId: orderId,
-        entityType: 'SYSTEM_CLEARING',
-        entityId: null,
-        type: 'DEBIT',
-        amount: order.deliveryFee + riderBonus,
-        currency: 'NPR',
-        balanceAfter: null,
-        description: 'Rider settlement clearing',
-        createdAt: now
-    },
-    {
-        settlementId,
-        orderId: orderId,
-        entityType: 'SYSTEM_CLEARING',
-        entityId: null,
-        type: 'DEBIT',
-        amount: order.foodCost,
-        currency: 'NPR',
-        balanceAfter: null,
-        description: 'Restaurant settlement clearing',
-        createdAt: now
-    },
-    {
-        settlementId,
-        orderId: orderId,
-        entityType: 'SYSTEM_CLEARING',
-        entityId: null,
-        type: 'DEBIT',
-        amount: order.platformFee,
-        currency: 'NPR',
-        balanceAfter: null,
-        description: 'Platform revenue clearing',
-        createdAt: now
-    }
-];
-
-await LedgerEntry.insertMany(ledgerEntries, { session });
+        await LedgerEntry.insertMany(ledgerEntries, { session });
 
         // STEP 7: Update rider wallet
         const updatedRiderProfile = await RiderProfile.findOneAndUpdate(
             { userId: riderId },
             {
-              $inc: {
-    "wallet.balance": (order.deliveryFee + riderBonus),
-
-    ...(order.paymentMethod === "COD"
-        ? { "wallet.codPending": order.totalAmount }
-        : {}),
-
-    "wallet.incentiveEarnings": riderBonus,
-    "wallet.transactionCount": 1
-}
+                $inc: {
+                    "wallet.balance": riderEarning,
+                    ...(order.paymentMethod === "COD"
+                        ? { "wallet.codPending": order.totalAmount }
+                        : {}),
+                    "wallet.transactionCount": 1
+                }
             },
             { new: true, runValidators: true, session }
         );
@@ -784,10 +782,10 @@ await LedgerEntry.insertMany(ledgerEntries, { session });
             order.restaurantId,
             {
                 $inc: {
-    "walletBalance": order.foodCost,
-    "totalEarnings": order.foodCost,
-    "transactionCount": 1
-},
+                    "walletBalance": sellerEarning,
+                    "totalEarnings": sellerEarning,
+                    "transactionCount": 1
+                },
                 $set: {
                     "lastProcessedOrderId": orderId,
                     "lastSettlementId": settlementId
@@ -800,13 +798,14 @@ await LedgerEntry.insertMany(ledgerEntries, { session });
             throw new Error("Restaurant not found");
         }
 
+        Restaurant.assertFinancialInvariant(updatedRestaurant);
+
         // STEP 9: Update admin wallet with proper initialization
         await AdminWallet.findOneAndUpdate(
             { date: now.toISOString().slice(0,10) },
             {
                 $inc: {
                     totalPlatformRevenue: order.platformFee,
-                    totalRiderBonusesPaid: riderBonus,
                     totalOrdersProcessed: 1,
                     transactionCount: 1
                 },
@@ -855,7 +854,7 @@ await LedgerEntry.insertMany(ledgerEntries, { session });
             forcedOffline,
             orderDetails: {
                 orderId: order._id,
-                riderEarnings: order.deliveryFee + riderBonus,
+                riderEarnings: order.deliveryFee,
                 completedAt: now
             }
         });

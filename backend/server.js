@@ -280,33 +280,112 @@ if (restaurant.isPaused) {
             let computedFoodCost = 0;
             const normalizedItems = dbItems.map(dbItem => {
                 const qty = itemMap.get(dbItem._id.toString());
-                const itemPriceInteger = Math.round(dbItem.price); // Ensure integer format for strict schema
-                computedFoodCost += itemPriceInteger * qty;
+                const itemPriceNpr = Math.round(dbItem.price);
 
-                // ✨ FIX: Sending price directly inside items array to stop Mongoose crash
+                if (!Number.isSafeInteger(itemPriceNpr) || itemPriceNpr < 0) {
+                    throw {
+                        status: 400,
+                        code: 'INVALID_MENU_PRICE'
+                    };
+                }
+
+                const itemPricePaisa = itemPriceNpr * 100;
+
+                if (!Number.isSafeInteger(itemPricePaisa)) {
+                    throw {
+                        status: 400,
+                        code: 'PRICE_OVERFLOW'
+                    };
+                }
+
+                computedFoodCost += itemPricePaisa * qty;
+
+                if (!Number.isSafeInteger(computedFoodCost)) {
+                    throw {
+                        status: 400,
+                        code: 'FOOD_COST_OVERFLOW'
+                    };
+                }
+
                 return {
                     menuItemId: dbItem._id,
                     name: dbItem.name,
-                    price: itemPriceInteger,
+                    price: itemPricePaisa,
                     quantity: qty
                 };
             });
 
-            // ✨ FIX: Use frontend values directly and ensure they are integers for safety
-            const settings = await Settings.findOne().session(session).select('petrolPrice').lean();
-            const petrolPrice = Number.isFinite(settings?.petrolPrice) ? settings.petrolPrice : 175;
+            const settings = await Settings.findOne()
+                .session(session)
+                .select('petrolPrice platformCommission')
+                .lean();
+
+            const petrolPrice = Number.isFinite(settings?.petrolPrice)
+                ? settings.petrolPrice
+                : 175;
+
+            const platformCommission = Number.isFinite(settings?.platformCommission)
+                ? settings.platformCommission
+                : 10;
+
+            if (
+                petrolPrice < 0 ||
+                petrolPrice > 100000 ||
+                platformCommission < 0 ||
+                platformCommission > 100
+            ) {
+                throw {
+                    status: 500,
+                    code: 'INVALID_PRICING_CONFIGURATION'
+                };
+            }
+
             const distance = (() => {
                 const R = 6371;
                 const dLat = (customerLatitude - restaurantLatitude) * Math.PI / 180;
                 const dLon = (customerLongitude - restaurantLongitude) * Math.PI / 180;
                 const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                    Math.cos(restaurantLatitude * Math.PI / 180) * Math.cos(customerLatitude * Math.PI / 180) *
+                    Math.cos(restaurantLatitude * Math.PI / 180) *
+                    Math.cos(customerLatitude * Math.PI / 180) *
                     Math.sin(dLon / 2) * Math.sin(dLon / 2);
+
                 return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
             })();
-            const finalDeliveryFee = Math.max(25, Math.round(((petrolPrice / 40) + 12) * distance));
+
+            const finalDeliveryFeeNpr = Math.max(
+                25,
+                Math.round(((petrolPrice / 40) + 12) * distance)
+            );
+
+            const finalDeliveryFee = finalDeliveryFeeNpr * 100;
+
+            if (!Number.isSafeInteger(finalDeliveryFee)) {
+                throw {
+                    status: 400,
+                    code: 'DELIVERY_FEE_OVERFLOW'
+                };
+            }
+
+            const platformFee = Math.round(
+                computedFoodCost * platformCommission / 100
+            );
+
+            if (!Number.isSafeInteger(platformFee)) {
+                throw {
+                    status: 400,
+                    code: 'PLATFORM_FEE_OVERFLOW'
+                };
+            }
+
             const finalTotalAmount = computedFoodCost + finalDeliveryFee;
-            const platformFee = Math.round(computedFoodCost * 0.10);
+
+            if (!Number.isSafeInteger(finalTotalAmount)) {
+                throw {
+                    status: 400,
+                    code: 'TOTAL_AMOUNT_OVERFLOW'
+                };
+            }
+
             const financialStatus = Order.validateFinancialBreakdown({
                 foodCost: computedFoodCost,
                 deliveryFee: finalDeliveryFee,
@@ -316,7 +395,12 @@ if (restaurant.isPaused) {
                 totalAmount: finalTotalAmount
             }, { includePlatformFee: false });
 
-            if (!financialStatus.valid) throw { status: 400, code: 'INVALID_FINANCIAL_BREAKDOWN' };
+            if (!financialStatus.valid) {
+                throw {
+                    status: 400,
+                    code: 'INVALID_FINANCIAL_BREAKDOWN'
+                };
+            }
 
             const paymentProvider = null;
             const paymentReference = null;
@@ -331,6 +415,15 @@ if (paymentMethod === 'ONLINE') {
     };
 }
 
+            const sellerEarning = computedFoodCost - platformFee;
+
+            if (!Number.isSafeInteger(sellerEarning) || sellerEarning < 0) {
+                throw {
+                    status: 400,
+                    code: 'INVALID_SELLER_EARNING'
+                };
+            }
+
             const newOrder = new Order({
                 customerId: req.user.id,
                 restaurantId,
@@ -339,8 +432,15 @@ if (paymentMethod === 'ONLINE') {
                 foodCost: computedFoodCost,
                 deliveryFee: finalDeliveryFee,
                 platformFee,
+                sellerEarning,
                 deliveryDetails,
                 clientOrderId,
+                pricingSnapshot: {
+                    couponCode: null,
+                    taxPercentage: 0,
+                    commissionRate: platformCommission,
+                    deliveryStrategy: 'STANDARD'
+                },
                 status: 'Pending',
                 statusHistory: [{
                     from: 'Pending',
@@ -359,10 +459,10 @@ if (paymentMethod === 'ONLINE') {
             await session.commitTransaction();
             session.endSession();
 
-            // ✨ CEO LIVE ORDER FEATURE: Emit to restaurant's socket room
+                        //CEO LIVE ORDER FEATURE: Emit to restaurant's socket room
             try {
                 const liveOrderData = await Order.findById(newOrder._id)
-    .select('_id status restaurantId customerId items foodCost deliveryDetails.phone')
+    .select('_id status restaurantId customerId items foodCost deliveryDetails')
     .populate('customerId', 'name phone')
     .lean();
 

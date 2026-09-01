@@ -38,14 +38,14 @@ const orderSchema = new mongoose.Schema({
         },
         quantity: { type: Number, default: 1, min: 1 }
     }],
-
-    // --- 💰 Financial Allocation (SAFE INTEGERS ONLY - PAISA) ---
+        // Financial allocation stored in integer paisa
     totalAmount: { type: Number, required: true, min: 0, validate: { validator: Number.isSafeInteger } },
-    foodCost: { type: Number, default: 0, min: 0, validate: { validator: Number.isSafeInteger } }, 
-    deliveryFee: { type: Number, default: 0, min: 0, validate: { validator: Number.isSafeInteger } }, 
-    platformFee: { type: Number, default: 0, min: 0, validate: { validator: Number.isSafeInteger } }, 
+    foodCost: { type: Number, default: 0, min: 0, validate: { validator: Number.isSafeInteger } },
+    deliveryFee: { type: Number, default: 0, min: 0, validate: { validator: Number.isSafeInteger } },
+    platformFee: { type: Number, default: 0, min: 0, validate: { validator: Number.isSafeInteger } },
+    sellerEarning: { type: Number, default: 0, min: 0, validate: { validator: Number.isSafeInteger } },
     riderIncentive: { type: Number, default: 0, min: 0, validate: { validator: Number.isSafeInteger } },
-    discountAmount: { type: Number, default: 0, min: 0, validate: { validator: Number.isSafeInteger } }, 
+    discountAmount: { type: Number, default: 0, min: 0, validate: { validator: Number.isSafeInteger } },
     taxAmount: { type: Number, default: 0, min: 0, validate: { validator: Number.isSafeInteger } },      
 
     // Pricing Forensic Snapshot for Business Auditing & Disputes Resolution
@@ -56,7 +56,7 @@ const orderSchema = new mongoose.Schema({
         deliveryStrategy: { type: String, default: 'STANDARD' }
     },
 
-    // --- 🛡️ Status Workflow Management ---
+    //Status Workflow Management
     status: { 
         type: String, 
         enum: VALID_ORDER_STATUSES, 

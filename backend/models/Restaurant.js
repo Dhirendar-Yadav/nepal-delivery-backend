@@ -312,11 +312,43 @@ console.log("===== RESULT =====", computeDiscoverable(mergedDoc));
         }
     }
 });
+restaurantSchema.statics.assertFinancialInvariant = function(restaurant) {
+    if (!restaurant) {
+        throw new Error('Restaurant financial record is missing.');
+    }
 
-// ==========================================
-// ⚡ COMPOSITE INDEXING
-// ==========================================
+    const walletBalance = Number(restaurant.walletBalance);
+    const totalEarnings = Number(restaurant.totalEarnings);
+    const totalSettled = Number(restaurant.totalSettled);
 
+    if (
+        !Number.isSafeInteger(walletBalance) ||
+        !Number.isSafeInteger(totalEarnings) ||
+        !Number.isSafeInteger(totalSettled)
+    ) {
+        throw new Error('Restaurant financial values must be safe integer paisa amounts.');
+    }
+
+    if (walletBalance < 0 || totalEarnings < 0 || totalSettled < 0) {
+        throw new Error('Restaurant financial values cannot be negative.');
+    }
+
+    if (totalSettled > totalEarnings) {
+        throw new Error('Restaurant settled amount cannot exceed total earnings.');
+    }
+
+    const expectedPendingBalance = totalEarnings - totalSettled;
+
+    if (walletBalance !== expectedPendingBalance) {
+        throw new Error(
+            `Restaurant financial invariant violated. Expected pending balance ${expectedPendingBalance}, received ${walletBalance}.`
+        );
+    }
+
+    return true;
+};
+
+//COMPOSITE INDEXING
 restaurantSchema.index({ isDiscoverable: 1, isPureVeg: 1, foodTypes: 1, rating: -1 });
 restaurantSchema.index(
     { currentLocation: "2dsphere", isDiscoverable: 1 },

@@ -12,7 +12,7 @@ if (
     !existingOrder ||
     existingOrder.assignedRiderId ||
     existingOrder.offeredRiderId ||
-    existingOrder.status !== "Ready for Pickup"
+    !["Accepted", "Preparing"].includes(existingOrder.status)
 ) {
     return null;
 }
@@ -58,7 +58,7 @@ if (riderQueueIds.length === 0) {
             const updatedOrder = await Order.findOneAndUpdate(
                 {
     _id: orderId,
-    status: "Ready for Pickup",
+    status: { $in: ["Accepted", "Preparing"] },
     offeredRiderId: null,
     assignedRiderId: null
 },

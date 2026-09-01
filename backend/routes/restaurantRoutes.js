@@ -9,6 +9,7 @@ const path = require('path');
 const Restaurant = require('../models/Restaurant');
 const MenuItem = require('../models/MenuItem');
 const Order = require('../models/Order');
+const LedgerEntry = require('../models/LedgerEntry');
 
 const {
     createImageUpload
@@ -27,6 +28,158 @@ const { VALID_ORDER_STATUSES } = require('../constants/orderConstants');
 const dispatchService = require('../services/dispatchService');
 
 const DISPATCH_TRIGGER_STATUSES = ['Accepted', 'Preparing'];
+
+const PAYMENT_METHODS = Object.freeze(['Bank', 'eSewa']);
+
+const normalizePaymentText = (value, maxLength = 120) => {
+    if (typeof value !== 'string') {
+        return '';
+    }
+
+    return value.trim().replace(/\s+/g, ' ').slice(0, maxLength);
+};
+
+const normalizeAccountNumber = (value) => {
+    if (typeof value !== 'string') {
+        return '';
+    }
+
+    return value.trim().replace(/[\s-]/g, '');
+};
+
+const maskSensitiveValue = (value, visibleStart = 0, visibleEnd = 4) => {
+    const normalized = typeof value === 'string' ? value : '';
+
+    if (!normalized) {
+        return null;
+    }
+
+    if (normalized.length <= visibleEnd + visibleStart) {
+        return '*'.repeat(normalized.length);
+    }
+
+    const prefix = visibleStart > 0
+        ? normalized.slice(0, visibleStart)
+        : '';
+
+    const suffix = normalized.slice(-visibleEnd);
+
+    return `${prefix}${'*'.repeat(
+        Math.max(2, normalized.length - visibleStart - visibleEnd)
+    )}${suffix}`;
+};
+
+const buildSafePayoutSettings = (payoutSettings = {}) => {
+    const method = PAYMENT_METHODS.includes(payoutSettings.method)
+        ? payoutSettings.method
+        : null;
+
+    const bankDetails = payoutSettings.bankDetails || {};
+
+    return {
+        method,
+        eSewaId: method === 'eSewa'
+            ? maskSensitiveValue(payoutSettings.eSewaId, 2, 2)
+            : null,
+        bankDetails: method === 'Bank'
+            ? {
+                accountName: bankDetails.accountName || null,
+                bankName: bankDetails.bankName || null,
+                accountNumber: maskSensitiveValue(
+                    bankDetails.accountNumber,
+                    0,
+                    4
+                )
+            }
+            : null
+    };
+};
+
+const validatePaymentMethodPayload = (method, payload) => {
+    if (!PAYMENT_METHODS.includes(method)) {
+        return {
+            valid: false,
+            error: 'INVALID_PAYMENT_METHOD',
+            message: 'Only Bank and eSewa payment methods are currently supported.'
+        };
+    }
+
+    if (method === 'Bank') {
+        const accountName = normalizePaymentText(payload.accountName, 100);
+        const bankName = normalizePaymentText(payload.bankName, 100);
+        const accountNumber = normalizeAccountNumber(payload.accountNumber);
+
+        if (!accountName || accountName.length < 2) {
+            return {
+                valid: false,
+                error: 'INVALID_ACCOUNT_NAME',
+                message: 'A valid bank account holder name is required.'
+            };
+        }
+
+        if (!bankName || bankName.length < 2) {
+            return {
+                valid: false,
+                error: 'INVALID_BANK_NAME',
+                message: 'A valid bank name is required.'
+            };
+        }
+
+        if (!/^[A-Za-z0-9]{6,34}$/.test(accountNumber)) {
+            return {
+                valid: false,
+                error: 'INVALID_ACCOUNT_NUMBER',
+                message: 'Bank account number must contain 6 to 34 letters or digits.'
+            };
+        }
+
+        return {
+            valid: true,
+            data: {
+                method: 'Bank',
+                eSewaId: null,
+                bankDetails: {
+                    accountName,
+                    bankName,
+                    accountNumber
+                }
+            }
+        };
+    }
+
+    const accountName = normalizePaymentText(payload.accountName, 100);
+    const rawESewaId = normalizePaymentText(payload.eSewaId, 40);
+    const eSewaId = rawESewaId.replace(/\D/g, '');
+
+    if (!accountName || accountName.length < 2) {
+        return {
+            valid: false,
+            error: 'INVALID_ACCOUNT_NAME',
+            message: 'A valid eSewa account holder name is required.'
+        };
+    }
+
+    if (!eSewaId || eSewaId.length < 7 || eSewaId.length > 40) {
+        return {
+            valid: false,
+            error: 'INVALID_ESEWA_ID',
+            message: 'A valid eSewa ID or mobile number is required.'
+        };
+    }
+
+    return {
+        valid: true,
+        data: {
+            method: 'eSewa',
+            eSewaId,
+            bankDetails: {
+                accountName: null,
+                bankName: null,
+                accountNumber: null
+            }
+        }
+    };
+};
 
 const ORDER_STATUS_TRANSITIONS = {
     'Pending': ['Accepted', 'Cancelled'],
@@ -206,27 +359,434 @@ router.get('/:id/image', asyncHandler(async (req, res) => {
     });
 }));
 
-// ==========================================
-// 🏪 SELLER DASHBOARD ROUTES (Protected Sandbox)
-// ==========================================
+//SELLER DASHBOARD ROUTES
 router.get('/store', verifySeller, attachRestaurantContext, asyncHandler(async (req, res) => {
     res.set('Cache-Control', 'no-store, private, max-age=0');
     res.set('ETag', `"seller-store-${req.restaurant._id}-${Date.now()}"`);
 
+    const restaurant = await Restaurant.findOne({
+        _id: req.restaurant._id,
+        ownerId: req.user.id
+    })
+        .select(
+            '_id name panVatNumber isOpen status isDiscoverable image registrationDoc ' +
+            'walletBalance totalSettled ' +
+            'payoutSettings.method payoutSettings.eSewaId ' +
+            'payoutSettings.bankDetails.accountName ' +
+            'payoutSettings.bankDetails.bankName'
+        )
+        .select('+payoutSettings.bankDetails.accountNumber')
+        .lean();
+
+    if (!restaurant) {
+        return res.status(404).json({
+            success: false,
+            error: 'RESTAURANT_PROFILE_NOT_FOUND'
+        });
+    }
+
     return res.json({
         success: true,
         restaurant: {
-            _id: req.restaurant._id,
-            name: req.restaurant.name,
-            panVatNumber: req.restaurant.panVatNumber,
-            isOpen: req.restaurant.isOpen,
-            status: req.restaurant.status,
-            isDiscoverable: req.restaurant.isDiscoverable,
-            image: req.restaurant.image,
-            registrationDoc: req.restaurant.registrationDoc
+            _id: restaurant._id,
+            name: restaurant.name,
+            panVatNumber: restaurant.panVatNumber,
+            isOpen: restaurant.isOpen,
+            status: restaurant.status,
+            isDiscoverable: restaurant.isDiscoverable,
+            image: restaurant.image,
+            registrationDoc: restaurant.registrationDoc,
+            walletBalance: restaurant.walletBalance,
+            totalSettled: restaurant.totalSettled,
+            payoutSettings: buildSafePayoutSettings(
+                restaurant.payoutSettings
+            )
         }
     });
 }));
+
+router.patch(
+    '/store/payment-method',
+    verifySeller,
+    attachRestaurantContext,
+    asyncHandler(async (req, res) => {
+        const method = normalizePaymentText(req.body?.method, 20);
+        const validation = validatePaymentMethodPayload(
+            method,
+            req.body || {}
+        );
+
+        if (!validation.valid) {
+            return res.status(400).json({
+                success: false,
+                error: validation.error,
+                message: validation.message
+            });
+        }
+
+        const restaurant = await Restaurant.findOne({
+            _id: req.restaurant._id,
+            ownerId: req.user.id
+        }).select('+payoutSettings.bankDetails.accountNumber');
+
+        if (!restaurant) {
+            return res.status(404).json({
+                success: false,
+                error: 'RESTAURANT_PROFILE_NOT_FOUND',
+                message: 'Restaurant profile was not found.'
+            });
+        }
+
+        restaurant.payoutSettings = validation.data;
+
+        await restaurant.save();
+
+        return res.status(200).json({
+            success: true,
+            message: 'Payment method saved successfully.',
+            payoutSettings: buildSafePayoutSettings(
+                restaurant.payoutSettings
+            )
+        });
+    })
+);
+
+router.get(
+    '/store/statement',
+    verifySeller,
+    attachRestaurantContext,
+    asyncHandler(async (req, res) => {
+        const page = Number.parseInt(req.query.page, 10);
+        const limit = Number.parseInt(req.query.limit, 10);
+
+        const safePage = Number.isInteger(page) && page > 0 ? page : 1;
+        const safeLimit = Number.isInteger(limit)
+            ? Math.min(Math.max(limit, 1), 50)
+            : 20;
+
+        const skip = (safePage - 1) * safeLimit;
+
+        const fromDate = typeof req.query.from === 'string'
+            ? req.query.from.trim()
+            : '';
+
+        const toDate = typeof req.query.to === 'string'
+            ? req.query.to.trim()
+            : '';
+
+        const createdAt = {};
+
+        if (fromDate) {
+            const parsedFrom = new Date(`${fromDate}T00:00:00.000Z`);
+
+            if (Number.isNaN(parsedFrom.getTime())) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'INVALID_STATEMENT_FROM_DATE'
+                });
+            }
+
+            createdAt.$gte = parsedFrom;
+        }
+
+        if (toDate) {
+            const parsedTo = new Date(`${toDate}T23:59:59.999Z`);
+
+            if (Number.isNaN(parsedTo.getTime())) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'INVALID_STATEMENT_TO_DATE'
+                });
+            }
+
+            createdAt.$lte = parsedTo;
+        }
+
+        if (
+            createdAt.$gte &&
+            createdAt.$lte &&
+            createdAt.$gte > createdAt.$lte
+        ) {
+            return res.status(400).json({
+                success: false,
+                error: 'INVALID_STATEMENT_DATE_RANGE'
+            });
+        }
+
+        const ledgerFilter = {
+            entityType: 'RESTAURANT',
+            entityId: req.restaurant._id,
+            ...(Object.keys(createdAt).length > 0 ? { createdAt } : {})
+        };
+
+        const lifetimeLedgerFilter = {
+            entityType: 'RESTAURANT',
+            entityId: req.restaurant._id
+        };
+
+        const [
+            entries,
+            totalCount,
+            financialSummary,
+            lifetimeFinancialSummary,
+            currentRestaurant
+        ] = await Promise.all([
+            LedgerEntry.find(ledgerFilter)
+                .sort({ createdAt: -1, _id: -1 })
+                .skip(skip)
+                .limit(safeLimit)
+                .select(
+                    '_id settlementId orderId type amount currency balanceAfter description createdAt'
+                )
+                .lean(),
+            LedgerEntry.countDocuments(ledgerFilter),
+            LedgerEntry.aggregate([
+                {
+                    $match: ledgerFilter
+                },
+                {
+                    $group: {
+                        _id: null,
+                        totalEarned: {
+                            $sum: {
+                                $cond: [
+                                    {
+                                        $and: [
+                                            { $eq: ['$type', 'CREDIT'] },
+                                            { $ne: ['$orderId', null] }
+                                        ]
+                                    },
+                                    '$amount',
+                                    0
+                                ]
+                            }
+                        },
+                        totalReceived: {
+                            $sum: {
+                                $cond: [
+                                    {
+                                        $and: [
+                                            { $eq: ['$type', 'DEBIT'] },
+                                            { $eq: ['$orderId', null] }
+                                        ]
+                                    },
+                                    '$amount',
+                                    0
+                                ]
+                            }
+                        }
+                    }
+                }
+            ]),
+            LedgerEntry.aggregate([
+                {
+                    $match: lifetimeLedgerFilter
+                },
+                {
+                    $group: {
+                        _id: null,
+                        totalEarned: {
+                            $sum: {
+                                $cond: [
+                                    {
+                                        $and: [
+                                            { $eq: ['$type', 'CREDIT'] },
+                                            { $ne: ['$orderId', null] }
+                                        ]
+                                    },
+                                    '$amount',
+                                    0
+                                ]
+                            }
+                        },
+                        totalReceived: {
+                            $sum: {
+                                $cond: [
+                                    {
+                                        $and: [
+                                            { $eq: ['$type', 'DEBIT'] },
+                                            { $eq: ['$orderId', null] }
+                                        ]
+                                    },
+                                    '$amount',
+                                    0
+                                ]
+                            }
+                        }
+                    }
+                }
+            ]),
+            Restaurant.findOne({
+                _id: req.restaurant._id,
+                ownerId: req.user.id
+            })
+                .select('walletBalance totalSettled')
+                .lean()
+        ]);
+
+        const orderIds = entries
+            .map((entry) => entry.orderId)
+            .filter(Boolean);
+
+        const orders = orderIds.length > 0
+            ? await Order.find({
+                _id: { $in: orderIds },
+                restaurantId: req.restaurant._id
+            })
+                .select(
+                    '_id clientOrderId foodCost deliveryFee platformFee sellerEarning totalAmount status settlementStatus settlementId createdAt completedAt'
+                )
+                .lean()
+            : [];
+
+        const orderMap = new Map(
+            orders.map((order) => [order._id.toString(), order])
+        );
+
+        const transactions = entries.map((entry) => {
+            const order = entry.orderId
+                ? orderMap.get(entry.orderId.toString()) || null
+                : null;
+
+            let transactionType;
+
+            if (entry.type === 'CREDIT' && entry.orderId) {
+                transactionType = 'ORDER_EARNING';
+            } else if (entry.type === 'DEBIT' && !entry.orderId) {
+                transactionType = 'SETTLEMENT_PAID';
+            } else {
+                req.log.error({
+                    event: 'SELLER_STATEMENT_UNKNOWN_LEDGER_DIRECTION',
+                    restaurantId: req.restaurant._id.toString(),
+                    ledgerEntryId: entry._id.toString(),
+                    settlementId: entry.settlementId,
+                    orderId: entry.orderId,
+                    type: entry.type
+                });
+
+                return res.status(500).json({
+                    success: false,
+                    error: 'FINANCIAL_INTEGRITY_FAILURE'
+                });
+            }
+
+            return {
+                transactionId: entry._id,
+                transactionType,
+                orderId: entry.orderId,
+                clientOrderId: order?.clientOrderId || null,
+                settlementId: entry.settlementId,
+                amount: entry.amount,
+                currency: entry.currency,
+                balanceAfter: entry.balanceAfter,
+                description: entry.description,
+                order: order
+                    ? {
+                        foodCost: order.foodCost,
+                        deliveryFee: order.deliveryFee,
+                        platformFee: order.platformFee,
+                        sellerEarning: entry.amount,
+                        totalAmount: order.totalAmount,
+                        status: order.status,
+                        settlementStatus: order.settlementStatus
+                    }
+                    : null,
+                createdAt: entry.createdAt
+            };
+        });
+
+        const summaryData = financialSummary[0] || {
+            totalEarned: 0,
+            totalReceived: 0
+        };
+
+        const lifetimeSummaryData = lifetimeFinancialSummary[0] || {
+            totalEarned: 0,
+            totalReceived: 0
+        };
+
+        const currentPendingBalance = Number(currentRestaurant?.walletBalance || 0);
+        const totalSettled = Number(currentRestaurant?.totalSettled || 0);
+        const totalEarned = Number(summaryData.totalEarned || 0);
+        const totalReceived = Number(summaryData.totalReceived || 0);
+        const lifetimeTotalEarned = Number(lifetimeSummaryData.totalEarned || 0);
+        const lifetimeLedgerReceived = Number(lifetimeSummaryData.totalReceived || 0);
+
+        if (
+            !Number.isSafeInteger(currentPendingBalance) ||
+            !Number.isSafeInteger(totalSettled) ||
+            !Number.isSafeInteger(totalEarned) ||
+            !Number.isSafeInteger(lifetimeLedgerReceived)
+        ) {
+            req.log.error({
+                event: 'SELLER_STATEMENT_FINANCIAL_INTEGRITY_FAILURE',
+                restaurantId: req.restaurant._id.toString()
+            });
+
+            return res.status(500).json({
+                success: false,
+                error: 'FINANCIAL_INTEGRITY_FAILURE'
+            });
+        }
+
+        const expectedPendingBalance =
+            lifetimeTotalEarned - totalSettled;
+        const ledgerWalletDifference =
+            currentPendingBalance - expectedPendingBalance;
+
+        const financialIntegrity = {
+            valid:
+                currentPendingBalance === expectedPendingBalance &&
+                totalSettled === lifetimeLedgerReceived,
+            expectedPendingBalance,
+            actualPendingBalance: currentPendingBalance,
+            ledgerReceived: lifetimeLedgerReceived,
+            recordedReceived: totalSettled,
+            ledgerWalletDifference
+        };
+
+        if (!financialIntegrity.valid) {
+            req.log.error({
+                event: 'SELLER_STATEMENT_RECONCILIATION_FAILURE',
+                restaurantId: req.restaurant._id.toString(),
+                expectedPendingBalance,
+                actualPendingBalance: currentPendingBalance,
+                ledgerReceived: lifetimeLedgerReceived,
+                recordedReceived: totalSettled,
+                ledgerWalletDifference
+            });
+
+            return res.status(500).json({
+                success: false,
+                error: 'FINANCIAL_RECONCILIATION_FAILED',
+                statement: {
+                    financialIntegrity
+                }
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            statement: {
+                summary: {
+                    currentPendingBalance,
+                    totalEarned,
+                    totalReceived
+                },
+                financialIntegrity,
+                transactions,
+                pagination: {
+                    page: safePage,
+                    limit: safeLimit,
+                    totalCount,
+                    totalPages: Math.ceil(totalCount / safeLimit),
+                    hasNextPage: skip + entries.length < totalCount
+                }
+            }
+        });
+    })
+);
+
 router.patch(
     '/store/status',
     verifySeller,

@@ -205,6 +205,10 @@ session.startTransaction();
                     throw new Error("Balance snapshot mismatch (Race condition).");
                 }
 
+                if (targetType === 'SELLER') {
+                    Restaurant.assertFinancialInvariant(updatedEntity);
+                }
+
                 const ledgerEntityType = targetType === 'RIDER' ? 'RIDER' : 'RESTAURANT';
                 const ledgerEntityId = targetType === 'RIDER' ? entity.userId : entity._id;
 
@@ -214,20 +218,22 @@ session.startTransaction();
                         orderId: null,
                         entityType: ledgerEntityType,
                         entityId: ledgerEntityId,
-                        type: 'CREDIT',
+                        type: 'DEBIT',
                         amount: payoutAmount,
-                        balanceAfter: 0,
-                        description: `Bulk Payout via Admin (Batch: ${batchId})`
+                        balanceAfter: targetType === 'SELLER'
+                            ? updatedEntity.walletBalance
+                            : null,
+                        description: `Bulk Seller Settlement Paid by Admin (Batch: ${batchId})`
                     },
                     {
                         settlementId,
                         orderId: null,
                         entityType: 'SYSTEM_CLEARING',
                         entityId: null,
-                        type: 'DEBIT',
+                        type: 'CREDIT',
                         amount: payoutAmount,
                         balanceAfter: 0,
-                        description: `Daily Admin Wallet Deduction (Batch: ${batchId})`
+                        description: `Seller Settlement Clearing (Batch: ${batchId})`
                     }
                 ];
 

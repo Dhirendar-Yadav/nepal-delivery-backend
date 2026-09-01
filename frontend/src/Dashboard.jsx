@@ -16,6 +16,9 @@ function Dashboard() {
 
 const [orders, setOrders] = useState([]);
 const [myItems, setMyItems] = useState([]);
+const [orderSection, setOrderSection] = useState(null);
+const [selectedOrderId, setSelectedOrderId] = useState(null);
+const [isOrdersDrawerOpen, setIsOrdersDrawerOpen] = useState(false);
 
 const [itemName, setItemName] = useState('');
 const [itemPrice, setItemPrice] = useState('');
@@ -34,6 +37,15 @@ const [profileImageRefreshKey, setProfileImageRefreshKey] = useState(() => Date.
 const [isProfilePhotoMenuOpen, setIsProfilePhotoMenuOpen] = useState(false);
 const [isDocumentsModalOpen, setIsDocumentsModalOpen] = useState(false);
 const [activeDocumentPreview, setActiveDocumentPreview] = useState(null);
+const [isStatementModalOpen, setIsStatementModalOpen] = useState(false);
+const [statementTransactions, setStatementTransactions] = useState([]);
+const [statementLoading, setStatementLoading] = useState(false);
+const [statementError, setStatementError] = useState('');
+const [statementFromDate, setStatementFromDate] = useState('');
+const [statementToDate, setStatementToDate] = useState('');
+const [statementPage, setStatementPage] = useState(1);
+const [statementTotalPages, setStatementTotalPages] = useState(1);
+const [statementHasNextPage, setStatementHasNextPage] = useState(false);
 const [rejectingOrderId, setRejectingOrderId] = useState(null);
 const [rejectReason, setRejectReason] = useState('');
 const [rejectReasonType, setRejectReasonType] = useState('');
@@ -43,7 +55,20 @@ const [activeTab, setActiveTab] = useState(
 const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
 
-  // 🚀 Fix: Use useRef for Socket and Audio to prevent memory leaks and infinite loops
+  useEffect(() => {
+    if (!isMobileMenuOpen) {
+      return undefined;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isMobileMenuOpen]);
+
+  //Fix: Use useRef for Socket and Audio to prevent memory leaks and infinite loops
   const socketRef = useRef(null);
   const newOrderSoundRef = useRef(null);
   const riderAssignedSoundRef = useRef(null);
@@ -178,13 +203,14 @@ socketRef.current = io(API_BASE, {
       }
     });
 
-    socketRef.current.on('orderAssignedToRider', (data) => {
-      console.log("🛵 Rider Assigned:", data);
+        socketRef.current.on('orderAssignedToRider', (data) => {
+      console.log("Rider Assigned:", data);
 
       setOrders((prevOrders) => prevOrders.map(order => {
         if (order._id === data.orderId) {
           return {
             ...order,
+            status: 'Preparing',
             assignedRiderId: {
               name: data.riderName,
               phone: data.riderPhone,
@@ -195,6 +221,15 @@ socketRef.current = io(API_BASE, {
         }
         return order;
       }));
+
+      if (
+        typeof Notification !== 'undefined' &&
+        Notification.permission === 'granted'
+      ) {
+        new Notification('Rider Assigned', {
+          body: `Rider ${data.riderName || 'Rider'} has been assigned to this order.`
+        });
+      }
 
       try {
         riderAssignedSoundRef.current.play();
@@ -603,6 +638,7 @@ socketRef.current = io(API_BASE, {
   setUpdatingStoreStatus(false);
 };
   const handleMobileLogoutConfirm = async () => {
+    sessionStorage.removeItem('sellerDashboardActiveTab');
     await logout();
     setIsLogoutConfirmOpen(false);
     navigate('/login', { replace: true });
@@ -612,8 +648,18 @@ socketRef.current = io(API_BASE, {
 
   const getSellerNavigationState = useCallback(() => ({
     tab: activeTab,
+    orderSection,
+    selectedOrderId,
+    ordersDrawer: isOrdersDrawerOpen,
+    mobileMenuOpen: isMobileMenuOpen,
     profilePhoto: null
-  }), [activeTab]);
+  }), [
+    activeTab,
+    orderSection,
+    selectedOrderId,
+    isOrdersDrawerOpen,
+    isMobileMenuOpen
+  ]);
 
   const handleSellerNavigationBack = useCallback((previousState) => {
     if (!previousState) {
@@ -629,17 +675,27 @@ socketRef.current = io(API_BASE, {
       setActiveTab(previousState);
     }
 
+    if (typeof previousState === 'object') {
+      setOrderSection(previousState.orderSection || null);
+      setSelectedOrderId(previousState.selectedOrderId || null);
+      setIsOrdersDrawerOpen(previousState.ordersDrawer === true);
+      setIsMobileMenuOpen(previousState.mobileMenuOpen === true);
+    } else {
+      setOrderSection(null);
+      setSelectedOrderId(null);
+      setIsOrdersDrawerOpen(false);
+      setIsMobileMenuOpen(false);
+    }
+
     if (
       typeof previousState === 'object' &&
       previousState.profilePhoto
     ) {
       setIsProfilePhotoMenuOpen(false);
-      setIsMobileMenuOpen(false);
       return;
     }
 
     setIsProfilePhotoMenuOpen(false);
-    setIsMobileMenuOpen(false);
   }, []);
 
   const {
@@ -665,6 +721,8 @@ socketRef.current = io(API_BASE, {
 
     const nextNavigationState = {
       tab: nextTab,
+      orderSection: null,
+      selectedOrderId: null,
       profilePhoto: null
     };
 
@@ -675,27 +733,168 @@ socketRef.current = io(API_BASE, {
     }
 
     setActiveTab(nextTab);
+    setOrderSection(null);
+    setSelectedOrderId(null);
+    setIsOrdersDrawerOpen(false);
     setIsMobileMenuOpen(false);
   };
+
+  const navigateToOrderSection = useCallback((nextSection) => {
+  const isDesktopViewport = window.matchMedia('(min-width: 768px)').matches;
+
+  const nextNavigationState = {
+    tab: 'orders',
+    orderSection: nextSection,
+    selectedOrderId: null,
+    ordersDrawer: isDesktopViewport,
+    mobileMenuOpen: isDesktopViewport,
+    profilePhoto: null
+  };
+
+  pushBrowserHistory(nextNavigationState);
+  setActiveTab('orders');
+  setOrderSection(nextSection);
+  setSelectedOrderId(null);
+  setIsOrdersDrawerOpen(isDesktopViewport);
+  setIsMobileMenuOpen(isDesktopViewport);
+}, [pushBrowserHistory]);
+
+  const openOrderDetail = useCallback((orderId) => {
+    if (!orderId) {
+      return;
+    }
+
+    const nextNavigationState = {
+      tab: 'orders',
+      orderSection,
+      selectedOrderId: orderId,
+      profilePhoto: null
+    };
+
+    pushBrowserHistory(nextNavigationState);
+    setActiveTab('orders');
+    setSelectedOrderId(orderId);
+    setIsMobileMenuOpen(false);
+  }, [orderSection, pushBrowserHistory]);
+    const orderSectionOrders = {
+    new: orders.filter((order) => order.status === 'Pending'),
+    preparing: orders.filter(
+      (order) =>
+        order.status === 'Accepted' ||
+        order.status === 'Preparing'
+    ),
+    ready: orders.filter(
+      (order) => order.status === 'Ready for Pickup'
+    ),
+    out: orders.filter(
+      (order) => order.status === 'Out for Delivery'
+    ),
+    history: orders.filter(
+      (order) =>
+        order.status === 'Delivered' ||
+        order.status === 'Cancelled'
+    )
+  };
+
+  const visibleOrders = orderSection
+    ? orderSectionOrders[orderSection] || []
+    : orders;
+  const loadSellerStatement = async (
+    page = 1,
+    fromDate = statementFromDate,
+    toDate = statementToDate
+  ) => {
+    setStatementLoading(true);
+    setStatementError('');
+
+    try {
+      const safePage = Number.isInteger(page) && page > 0 ? page : 1;
+      const params = new URLSearchParams({
+        limit: '20',
+        page: String(safePage)
+      });
+
+      if (fromDate) {
+        params.set('from', fromDate);
+      }
+
+      if (toDate) {
+        params.set('to', toDate);
+      }
+
+      const response = await fetch(
+        `${API_BASE}/api/seller/store/statement?${params.toString()}`,
+        {
+          credentials: 'include'
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.message ||
+            data.error ||
+            'Failed to load statement.'
+        );
+      }
+
+      const transactions = Array.isArray(data.statement?.transactions)
+        ? data.statement.transactions
+        : [];
+
+      const pagination = data.statement?.pagination || {};
+
+      setStatementTransactions(transactions);
+      setStatementPage(
+        Number.isInteger(pagination.page) && pagination.page > 0
+          ? pagination.page
+          : safePage
+      );
+
+      setStatementTotalPages(
+        Number.isInteger(pagination.totalPages) && pagination.totalPages >= 1
+          ? pagination.totalPages
+          : 1
+      );
+
+      setStatementHasNextPage(
+        pagination.hasNextPage === true
+      );
+    } catch (error) {
+      setStatementTransactions([]);
+      setStatementPage(1);
+      setStatementTotalPages(1);
+      setStatementHasNextPage(false);
+
+      setStatementError(
+        error instanceof Error
+          ? error.message
+          : 'Failed to load statement.'
+      );
+    } finally {
+      setStatementLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-900 text-white font-sans pb-20">
 
       {/* 🧭 Top Navbar */}
             <nav className="bg-gray-800 border-b border-gray-700 py-2.5 px-3 sm:py-4 sm:px-6 lg:px-8 flex justify-between items-center sticky top-0 z-50">
-        <div className="flex items-center gap-6">
-
-          <div className="border-l border-gray-700 pl-3 sm:pl-6">
-            <h1 className="text-base sm:text-2xl font-black text-orange-500 tracking-tight truncate max-w-[140px] sm:max-w-none">
+        <div className="min-w-0 flex-1">
+          <div className="min-w-0 border-l border-gray-700 pl-3 sm:pl-6">
+            <h1 className="max-w-full truncate text-base font-black tracking-tight text-orange-500 sm:text-2xl">
               {restaurant?.name || restaurantName || "My Restaurant"}
             </h1>
 
-            <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mt-1">
+            <p className="mt-1 max-w-full whitespace-normal break-all text-xs font-bold uppercase leading-tight tracking-widest text-gray-400">
               PAN: {restaurant?.panVatNumber || "Not Provided"}
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <div
             className={`md:hidden h-3 w-3 rounded-full ${
               restaurant?.isOpen ? "bg-green-500" : "bg-red-500"
@@ -708,8 +907,13 @@ socketRef.current = io(API_BASE, {
             onClick={() => {
               pushBrowserHistory({
                 tab: activeTab,
+                orderSection,
+                selectedOrderId,
+                ordersDrawer: isOrdersDrawerOpen,
+                mobileMenuOpen: true,
                 profilePhoto: null
               });
+
               setIsMobileMenuOpen(true);
             }}
             className="md:hidden flex items-center justify-center p-1 text-gray-200 transition active:scale-95"
@@ -722,41 +926,82 @@ socketRef.current = io(API_BASE, {
             </span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => setIsLogoutConfirmOpen(true)}
-            className="hidden md:block bg-red-500 hover:bg-red-600 px-6 py-2 rounded-xl font-bold transition-all shadow-lg active:scale-95 text-sm"
+          <div
+            className="hidden md:flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-gray-600 bg-gray-900 shadow-lg"
+            aria-label="Seller profile photo"
           >
-            LOGOUT
-          </button>
+            {userProfile?.profileImage ? (
+              <img
+                src={`${API_BASE}/api/auth/profile/photo?v=${profileImageRefreshKey}`}
+                alt={userProfile?.name || "Seller"}
+                className="h-full w-full object-cover"
+                loading="lazy"
+              />
+            ) : (
+              <span className="text-sm font-black text-gray-400">
+                {userProfile?.name?.charAt(0)?.toUpperCase() || "S"}
+              </span>
+            )}
+          </div>
         </div>
       </nav>
 
-            {isMobileMenuOpen && (
-        <div className="md:hidden fixed inset-0 z-[100]">
+            <div
+  className={`fixed inset-0 z-[100] ${
+    isMobileMenuOpen ? 'pointer-events-auto' : 'pointer-events-none'
+  } md:static md:block md:pointer-events-auto`}
+>
+        <div
+          className={`md:hidden fixed inset-0 ${
+            isMobileMenuOpen ? 'block' : 'hidden'
+          }`}
+        >
           <button
             type="button"
             aria-label="Close seller menu"
             onClick={() => goBackBrowserHistory()}
             className="absolute inset-0 bg-black/45 backdrop-blur-[2px]"
           />
+        </div>
 
-          <aside className="absolute left-1/2 top-1/2 w-[82%] max-w-sm -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-3xl border border-gray-700/80 bg-gray-900/95 shadow-2xl backdrop-blur-xl">
-            <div className="border-b border-gray-700/80 px-5 py-5">
+        <aside
+          className={`${
+            isMobileMenuOpen ? 'flex' : 'hidden'
+          } fixed left-1/2 top-16 bottom-4 z-[101] w-[82%] max-w-sm -translate-x-1/2 flex-col overflow-hidden rounded-3xl border border-gray-700/80 bg-gray-900/95 shadow-2xl backdrop-blur-xl md:left-0 md:top-[84px] md:bottom-0 md:flex md:w-60 md:max-w-none md:translate-x-0 md:rounded-none md:border-y-0 md:border-l-0 md:border-r md:border-gray-800 md:bg-gray-900 md:shadow-none md:backdrop-blur-none`}
+        >
+            <div className="shrink-0 border-b border-gray-700/80 px-5 py-4 md:hidden">
               <h2 className="truncate text-base font-black tracking-tight text-orange-500">
                 {restaurant?.name || restaurantName || "My Restaurant"}
               </h2>
 
-              <p className="mt-1 text-[11px] font-bold uppercase tracking-widest text-gray-500">
+              <p className="mt-1 whitespace-normal break-all text-[11px] font-bold uppercase leading-tight tracking-widest text-gray-500">
                 PAN: {restaurant?.panVatNumber || "Not Provided"}
               </p>
             </div>
 
-            <div className="px-3 py-4">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 [scrollbar-width:thin]">
               <div className="space-y-1">
                 <button
                   type="button"
-                  onClick={() => navigateToTab('orders')}
+                  onClick={() => {
+                    if (isOrdersDrawerOpen) {
+                      setIsOrdersDrawerOpen(false);
+                      return;
+                    }
+
+                    pushBrowserHistory({
+                      tab: 'orders',
+                      orderSection,
+                      selectedOrderId: null,
+                      ordersDrawer: true,
+                      mobileMenuOpen: true,
+                      profilePhoto: null
+                    });
+
+                    setActiveTab('orders');
+                    setSelectedOrderId(null);
+                    setIsOrdersDrawerOpen(true);
+                  }}
                   className={`w-full rounded-2xl px-4 py-3.5 text-left text-sm font-black transition active:scale-[0.99] ${
                     activeTab === 'orders'
                       ? 'border-l-4 border-orange-500 bg-gray-800 text-white'
@@ -765,6 +1010,70 @@ socketRef.current = io(API_BASE, {
                 >
                   Live Orders
                 </button>
+
+                {isOrdersDrawerOpen && (
+                  <div className="ml-3 mt-1 space-y-1 border-l border-gray-700/80 pl-3">
+                    <button
+                      type="button"
+                      onClick={() => navigateToOrderSection('new')}
+                      className={`w-full rounded-2xl px-4 py-3.5 text-left text-sm font-black transition active:scale-[0.99] ${
+                        orderSection === 'new'
+                          ? 'border-l-4 border-orange-500 bg-gray-800 text-white'
+                          : 'text-gray-300 hover:bg-gray-800/80'
+                      }`}
+                    >
+                      New Orders
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => navigateToOrderSection('preparing')}
+                      className={`w-full rounded-2xl px-4 py-3.5 text-left text-sm font-black transition active:scale-[0.99] ${
+                        orderSection === 'preparing'
+                          ? 'border-l-4 border-orange-500 bg-gray-800 text-white'
+                          : 'text-gray-300 hover:bg-gray-800/80'
+                      }`}
+                    >
+                      Rider Assigned / Preparing
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => navigateToOrderSection('ready')}
+                      className={`w-full rounded-2xl px-4 py-3.5 text-left text-sm font-black transition active:scale-[0.99] ${
+                        orderSection === 'ready'
+                          ? 'border-l-4 border-orange-500 bg-gray-800 text-white'
+                          : 'text-gray-300 hover:bg-gray-800/80'
+                      }`}
+                    >
+                      Ready for Pickup
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => navigateToOrderSection('out')}
+                      className={`w-full rounded-2xl px-4 py-3.5 text-left text-sm font-black transition active:scale-[0.99] ${
+                        orderSection === 'out'
+                          ? 'border-l-4 border-orange-500 bg-gray-800 text-white'
+                          : 'text-gray-300 hover:bg-gray-800/80'
+                      }`}
+                    >
+                      Out for Delivery
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => navigateToOrderSection('history')}
+                      className={`w-full rounded-2xl px-4 py-3.5 text-left text-sm font-black transition active:scale-[0.99] ${
+                        orderSection === 'history'
+                          ? 'border-l-4 border-orange-500 bg-gray-800 text-white'
+                          : 'text-gray-300 hover:bg-gray-800/80'
+                      }`}
+                    >
+                      Order History
+                    </button>
+                  </div>
+                )}
 
                 <button
                   type="button"
@@ -787,6 +1096,18 @@ socketRef.current = io(API_BASE, {
                       : 'text-gray-300 hover:bg-gray-800/80'
                   }`}
                 >
+                  Account
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => navigateToTab('profile')}
+                  className={`w-full rounded-2xl px-4 py-3.5 text-left text-sm font-black transition active:scale-[0.99] ${
+                    activeTab === 'profile'
+                      ? 'border-l-4 border-orange-500 bg-gray-800 text-white'
+                      : 'text-gray-300 hover:bg-gray-800/80'
+                  }`}
+                >
                   Profile
                 </button>
 
@@ -803,28 +1124,23 @@ socketRef.current = io(API_BASE, {
                 </button>
               </div>
 
-              <div className="my-3 border-t border-gray-700/80" />
+              </div>
 
+            <div className="shrink-0 border-t border-gray-700/80 px-3 py-3">
               <button
-  type="button"
-  onClick={() => setIsLogoutConfirmOpen(true)}
-  className="w-full rounded-2xl px-4 py-3.5 text-left text-sm font-black text-red-400 transition hover:bg-red-500/10 active:scale-[0.99]"
->
-  Logout
-</button>
+                type="button"
+                onClick={() => setIsLogoutConfirmOpen(true)}
+                className="w-full rounded-2xl px-4 py-3.5 text-left text-sm font-black text-red-400 transition hover:bg-red-500/10 active:scale-[0.99]"
+              >
+                Logout
+              </button>
             </div>
           </aside>
         </div>
-      )}
 
 
-      <div className="max-w-7xl mx-auto p-6 md:p-10 space-y-12">
-                {activeTab === 'profile' && (
-          <>
-          </>
-        )}
-
-        {activeTab === 'account' && (
+      <div className="ml-0 max-w-7xl p-6 md:ml-60 md:mr-0 md:p-10 space-y-12">
+        {activeTab === 'profile' && (
           <>
             {/* ================= SELLER PROFILE ================= */}
 
@@ -922,7 +1238,7 @@ socketRef.current = io(API_BASE, {
         Name :
       </span>
       <span className="min-w-0 break-words text-sm font-bold text-white">
-        {userProfile?.name || "—"}
+        {userProfile?.name || "â€”"}
       </span>
     </div>
 
@@ -931,7 +1247,7 @@ socketRef.current = io(API_BASE, {
         Email :
       </span>
       <span className="min-w-0 break-all text-sm font-bold text-white">
-        {userProfile?.email || "—"}
+        {userProfile?.email || "â€”"}
       </span>
     </div>
 
@@ -940,7 +1256,7 @@ socketRef.current = io(API_BASE, {
         Seller ID :
       </span>
       <span className="min-w-0 break-all font-mono text-xs font-bold text-white">
-        {userProfile?.id || "—"}
+        {userProfile?.id || "â€”"}
       </span>
     </div>
 
@@ -952,9 +1268,9 @@ socketRef.current = io(API_BASE, {
         {userProfile?.phone
           ? String(userProfile.phone).replace(
               /^(\d{4})\d+(\d{4})$/,
-              "$1••$2"
+              "$1â€¢â€¢$2"
             )
-          : "—"}
+          : "â€”"}
       </span>
     </div>
 
@@ -1015,7 +1331,6 @@ socketRef.current = io(API_BASE, {
               className="text-xl font-black text-gray-400 transition hover:text-white"
               aria-label="Close documents"
             >
-              ×
             </button>
           </div>
 
@@ -1032,10 +1347,9 @@ socketRef.current = io(API_BASE, {
                   src: `${API_BASE}/api/seller/${restaurant._id}/image`
                 });
               }}
-              className="flex w-full items-center justify-between border-b border-white/10 py-3 text-left text-sm font-black text-white transition hover:text-orange-400 disabled:cursor-not-allowed disabled:opacity-40"
+              className="w-full border-b border-white/10 py-3 text-left text-sm font-black text-white transition hover:bg-white/5 hover:text-orange-400 active:bg-orange-500/10 active:text-orange-400 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <span>Restaurant Image</span>
-              <span className="text-gray-500">›</span>
             </button>
 
             <button
@@ -1052,10 +1366,9 @@ socketRef.current = io(API_BASE, {
                   )}`
                 });
               }}
-              className="flex w-full items-center justify-between py-3 text-left text-sm font-black text-white transition hover:text-orange-400 disabled:cursor-not-allowed disabled:opacity-40"
+              className="w-full py-3 text-left text-sm font-black text-white transition hover:bg-white/5 hover:text-orange-400 active:bg-orange-500/10 active:text-orange-400 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <span>Registration Document</span>
-              <span className="text-gray-500">›</span>
             </button>
           </div>
         </div>
@@ -1075,6 +1388,303 @@ socketRef.current = io(API_BASE, {
   )}
 </section>
             {/* Profile Photo UI is now handled by UniversalImageEditor. */}
+          </>
+        )}
+
+        {activeTab === 'account' && (
+          <>
+            <section className="w-full max-w-2xl space-y-5 sm:space-y-6">
+              <div className="flex items-center justify-between gap-3 border-b border-gray-700 pb-3 sm:gap-5 sm:pb-4">
+                <h2 className="text-base font-black text-white sm:text-lg">
+                  ACCOUNT
+                </h2>
+
+                <button
+                  type="button"
+                  className="shrink-0 rounded-md px-2 py-1.5 text-[10px] font-black text-orange-400 transition hover:bg-orange-500/10 hover:text-orange-300 active:scale-[0.98] sm:px-3 sm:py-1.5 sm:text-xs"
+                >
+                  Add Payment Method
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-5 sm:gap-10">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-gray-500 sm:text-xs">
+                    Pending Balance
+                  </p>
+
+                  <p className="mt-1 truncate text-lg font-black text-white sm:text-xl">
+                    {Number.isSafeInteger(restaurant?.walletBalance)
+                      ? `NPR ${(restaurant.walletBalance / 100).toLocaleString('en-NP', {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2
+                        })}`
+                      : 'NPR -'}
+                  </p>
+                </div>
+
+                <div className="min-w-0 text-right">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-gray-500 sm:text-xs">
+                    Received Amount
+                  </p>
+
+                  <p className="mt-1 truncate text-lg font-black text-white sm:text-xl">
+                    {Number.isSafeInteger(restaurant?.totalSettled)
+                      ? `NPR ${(restaurant.totalSettled / 100).toLocaleString('en-NP', {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2
+                        })}`
+                      : 'NPR -'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="border-t border-gray-700 pt-3 sm:pt-4">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setIsStatementModalOpen(true);
+                    setStatementPage(1);
+                    await loadSellerStatement(1);
+                  }}
+                  className="px-1 py-1 text-xs font-black text-orange-400 transition hover:text-orange-300 active:scale-[0.98] sm:text-sm"
+                >
+                  Statement
+                </button>
+              </div>
+            </section>
+
+            {isStatementModalOpen &&
+              createPortal(
+                <div
+                  className="fixed inset-x-0 bottom-0 top-[64px] z-[120] flex items-center justify-center bg-black/35 px-2 py-3 backdrop-blur-xl backdrop-saturate-125 sm:px-4 sm:py-4 md:top-[84px]"
+                  onClick={() => setIsStatementModalOpen(false)}
+                >
+                  <div
+                  className="h-fit max-h-[calc(100vh-88px)] w-full max-w-lg overflow-hidden rounded-2xl border border-white/10 bg-gray-900/90 shadow-2xl backdrop-blur-xl sm:max-h-[calc(100vh-104px)]"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <div className="flex items-center justify-between gap-3 border-b border-gray-700 px-4 py-3 sm:px-5 sm:py-4">
+                    <h3 className="text-sm font-black text-white sm:text-base">
+                      Statement
+                    </h3>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsStatementModalOpen(false)}
+                      className="rounded-md px-2 py-1 text-xs font-black text-gray-400 transition hover:bg-white/5 hover:text-white active:scale-[0.98]"
+                    >
+                      Close
+                    </button>
+                  </div>
+
+                  <div className="max-h-[calc(100vh-160px)] overflow-y-auto px-4 py-3 sm:max-h-[calc(100vh-176px)] sm:px-5 sm:py-4">
+                    <div className="mb-3 border-b border-gray-800 pb-3">
+                      <div className="grid grid-cols-2 gap-3 sm:gap-4">
+                        <label className="min-w-0">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-gray-500 sm:text-xs">
+                            From
+                          </span>
+
+                          <input
+                            type="date"
+                            value={statementFromDate}
+                            onChange={(event) =>
+                              setStatementFromDate(event.target.value)
+                            }
+                            className="mt-1 w-full rounded-md border border-gray-700 bg-gray-950 px-2.5 py-2 text-xs font-bold text-white outline-none transition focus:border-orange-500"
+                          />
+                        </label>
+
+                        <label className="min-w-0">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-gray-500 sm:text-xs">
+                            To
+                          </span>
+
+                          <input
+                            type="date"
+                            value={statementToDate}
+                            onChange={(event) =>
+                              setStatementToDate(event.target.value)
+                            }
+                            className="mt-1 w-full rounded-md border border-gray-700 bg-gray-950 px-2.5 py-2 text-xs font-bold text-white outline-none transition focus:border-orange-500"
+                          />
+                        </label>
+                      </div>
+
+                      <div className="mt-2 flex justify-end">
+                        <button
+                          type="button"
+                          disabled={statementLoading}
+                          onClick={() => {
+                            if (
+                              statementFromDate &&
+                              statementToDate &&
+                              statementFromDate > statementToDate
+                            ) {
+                              setStatementError(
+                                'From date cannot be later than To date.'
+                              );
+                              return;
+                            }
+
+                            setStatementPage(1);
+                            loadSellerStatement(
+                              1,
+                              statementFromDate,
+                              statementToDate
+                            );
+                          }}
+                          className="rounded-md border border-gray-700 px-3 py-2 text-[10px] font-black text-gray-300 transition hover:bg-white/5 hover:text-white active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 sm:text-xs"
+                        >
+                          Apply
+                        </button>
+                      </div>
+                    </div>
+                    {statementLoading ? (
+                      <div className="py-5 text-center">
+                        <p className="text-xs font-black text-gray-400 sm:text-sm">
+                          Loading statement...
+                        </p>
+                      </div>
+                    ) : statementError ? (
+                      <div className="py-5 text-center">
+                        <p className="text-xs font-black text-red-400 sm:text-sm">
+                          {statementError}
+                        </p>
+                      </div>
+                    ) : statementTransactions.length === 0 ? (
+                      <div className="py-5 text-center">
+                        <p className="text-xs font-black text-gray-400 sm:text-sm">
+                          No statement transactions found.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {statementTransactions.map((transaction) => {
+                          const isOrderEarning =
+                            transaction.transactionType === 'ORDER_EARNING';
+
+                          return (
+                            <div
+                              key={transaction.transactionId}
+                              className="rounded-xl border border-gray-800 bg-gray-950/40 px-3 py-3 sm:px-4"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="text-xs font-black text-white sm:text-sm">
+                                    {isOrderEarning
+                                    ? 'Order Earning'
+                                    : 'Settlement Paid'}
+                                  </p>
+
+                                  <p className="mt-1 truncate text-[10px] font-medium text-gray-500 sm:text-xs">
+                                    {isOrderEarning
+                                      ? `Order ID: ${transaction.orderId}`
+                                      : `Settlement ID: ${transaction.settlementId}`}
+                                  </p>
+                                </div>
+
+                                <p
+                                  className={`shrink-0 text-xs font-black sm:text-sm ${
+                                    isOrderEarning
+                                      ? 'text-green-400'
+                                      : 'text-red-400'
+                                  }`}
+                                >
+                                  {isOrderEarning ? '+' : '-'} NPR {(
+                                    transaction.amount / 100
+                                  ).toLocaleString('en-NP', {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2
+                                  })}
+                                </p>
+                              </div>
+
+                              <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 border-t border-gray-800 pt-2 text-[10px] sm:text-xs">
+                                <span className="text-gray-500">
+                                  Date
+                                </span>
+
+                                <span className="text-right text-gray-300">
+                                  {new Date(transaction.createdAt).toLocaleDateString('en-IN')}
+                                </span>
+
+                                {isOrderEarning && transaction.order && (
+                                  <>
+                                    <span className="text-gray-500">
+                                      Food Amount
+                                    </span>
+
+                                    <span className="text-right text-gray-300">
+                                      NPR {(transaction.order.foodCost / 100).toLocaleString('en-NP', {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2
+                                      })}
+                                    </span>
+
+                                    <span className="text-gray-500">
+                                      Commission
+                                    </span>
+
+                                    <span className="text-right text-gray-300">
+                                      NPR {(transaction.order.platformFee / 100).toLocaleString('en-NP', {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2
+                                      })}
+                                    </span>
+
+                                    <span className="text-gray-500">
+                                      Seller Earning
+                                    </span>
+
+                                    <span className="text-right font-black text-white">
+                                      NPR {(transaction.amount / 100).toLocaleString('en-NP', {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2
+                                      })}
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    <div className="mt-4 flex items-center justify-between gap-3 border-t border-gray-800 pt-3">
+                      <button
+                        type="button"
+                        disabled={statementLoading || statementPage <= 1}
+                        onClick={() => loadSellerStatement(statementPage - 1)}
+                        className="rounded-md border border-gray-700 px-3 py-1.5 text-[10px] font-black text-gray-300 transition hover:bg-white/5 hover:text-white active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 sm:text-xs"
+                      >
+                        Previous
+                      </button>
+
+                      <p className="text-[10px] font-black text-gray-500 sm:text-xs">
+                        Page {statementPage} of {statementTotalPages}
+                      </p>
+
+                      <button
+                        type="button"
+                        disabled={
+                          statementLoading ||
+                          !statementHasNextPage ||
+                          statementPage >= statementTotalPages
+                        }
+                        onClick={() => loadSellerStatement(statementPage + 1)}
+                        className="rounded-md border border-gray-700 px-3 py-1.5 text-[10px] font-black text-gray-300 transition hover:bg-white/5 hover:text-white active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 sm:text-xs"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>,
+              document.body
+            )}
           </>
         )}
 
@@ -1127,124 +1737,121 @@ socketRef.current = io(API_BASE, {
             </section>
           </>
         )}
-
-        {activeTab === 'orders' && (
+                  {activeTab === 'orders' && (
           <>
-            {/* ================= SECTION 1: LIVE ORDERS ================= */}
+            {/* ================= SECTION 1: ORDERS ================= */}
             <section>
-          <div className="flex justify-between items-end mb-6">
-            <h2 className="text-3xl font-black text-white">Live Orders 🛎️</h2>
-            <span className="bg-orange-500/20 text-orange-400 px-4 py-2 rounded-lg font-bold text-sm border border-orange-500/30">
-              {orders.length} Total
-            </span>
-          </div>
+              <div className="mb-5 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className="truncate text-xl font-black text-white sm:text-2xl">
+                    {orderSection === 'new'
+                      ? 'New Orders'
+                      : orderSection === 'preparing'
+                        ? 'Rider Assigned / Preparing'
+                        : orderSection === 'ready'
+                          ? 'Ready for Pickup'
+                          : orderSection === 'out'
+                            ? 'Out for Delivery'
+                            : orderSection === 'history'
+                              ? 'Order History'
+                              : 'Orders'}
+                  </h2>
+                </div>
 
-          {orders.length === 0 ? (
-            <div className="bg-gray-800 p-12 text-center rounded-[2rem] border border-gray-700">
-              <p className="text-6xl mb-4 grayscale opacity-50">😴</p>
-              <h3 className="text-2xl font-black text-gray-300">No orders yet</h3>
-              <p className="text-gray-500 font-medium mt-2">Keep your kitchen ready! Orders will appear here automatically.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {orders.map(order => (
-                <div key={order._id} className="bg-gray-800 p-6 rounded-[2rem] shadow-xl border border-gray-700 relative overflow-hidden transition-all hover:border-orange-500/50">
+                <span className="shrink-0 rounded-lg bg-orange-500/10 px-3 py-1.5 text-xs font-bold text-orange-400 ring-1 ring-orange-500/20 sm:px-4 sm:py-2 sm:text-sm">
+                  {visibleOrders.length}
+                </span>
+              </div>
 
-                  <div className={`absolute top-0 right-0 px-4 py-2 rounded-bl-2xl font-black text-xs uppercase tracking-wider text-white ${
-                    order.status === 'Pending' ? 'bg-red-500 animate-pulse' : order.status === 'Preparing' ? 'bg-orange-500' : 'bg-green-500'
-                  }`}>
-                    {order.status}
-                  </div>
-
-                  <div className="mb-4 pr-24">
-                    <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Order ID: #{order._id.substring(order._id.length - 6)}</p>
-                    <h3 className="text-xl font-black text-white">Customer: {order.customerId?.name || "Guest"}</h3>
-                    <p className="text-sm font-bold text-orange-400 mt-1">📞 {order.customerId?.phone || order.deliveryDetails?.phone}</p>
-                  </div>
-
-                  <div className="bg-gray-900 p-4 rounded-2xl mb-6 border border-gray-700">
-                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Items to Cook:</p>
-                    <ul className="space-y-2">
-                      {order.items.map((item, idx) => (
-                        <li key={idx} className="flex justify-between font-bold text-gray-300 text-sm">
-                          <span>{item.quantity}x {item.name}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  {order.assignedRiderId && (
-                    <div className="bg-gray-900 p-4 rounded-2xl mb-6 border border-blue-500/30 flex justify-between items-center">
-                       <div>
-                          <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Rider Assigned 🛵</p>
-                          <h4 className="text-lg font-black text-white">{order.assignedRiderId.name}</h4>
-                          <p className="text-sm font-bold text-blue-400">📞 {order.assignedRiderId.phone}</p>
-                       </div>
-                       <div className="text-right bg-blue-500/10 px-4 py-2 rounded-xl border border-blue-500/20">
-                          <p className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-1">Status</p>
-                          <p className="text-sm font-black text-white animate-pulse">On the way 📍</p>
-                       </div>
-                    </div>
-                  )}
-
-                  <div className="flex justify-between items-center border-t border-gray-700 pt-4">
-                    <div>
-                      <p className="text-xs font-bold text-gray-500 uppercase">Your Earning</p>
-                      <p className="text-2xl font-black text-green-400">NPR {order.foodCost}</p>
+              {!orderSection ? (
+                <div className="rounded-2xl border border-gray-700 bg-gray-800/50 px-4 py-5 text-sm font-medium text-gray-500">
+                  Open <span className="font-bold text-gray-300">Live Orders</span> from the seller menu and choose the order section you want to manage.
+                </div>
+              ) : visibleOrders.length === 0 ? (
+                <div className="rounded-2xl border border-gray-700 bg-gray-800/50 px-4 py-8 text-center">
+                  <h3 className="text-sm font-black text-gray-400 sm:text-base">
+                    {orderSection === 'new'
+                      ? 'No New Orders'
+                      : orderSection === 'preparing'
+                        ? 'No Assigned Orders'
+                        : orderSection === 'ready'
+                          ? 'No Pickup Orders'
+                          : orderSection === 'out'
+                            ? 'No Delivery Orders'
+                            : 'No Order History'}
+                  </h3>
+                </div>
+              ) : (
+                               <div className="w-full overflow-hidden">
+                  <div className="w-full max-w-[720px]">
+                    <div className="grid w-full grid-cols-[34px_minmax(38px,0.8fr)_minmax(64px,1.25fr)_minmax(72px,1.2fr)_minmax(54px,0.9fr)_minmax(72px,1fr)] items-center border-b border-gray-700 px-0.5 py-1 text-[7px] font-black uppercase tracking-wide text-gray-500 sm:grid-cols-[42px_minmax(48px,0.8fr)_minmax(92px,1.25fr)_minmax(104px,1.2fr)_minmax(68px,0.9fr)_minmax(82px,1fr)] sm:px-1 sm:py-1.5 sm:text-[9px]">
+                      <span>S.N.</span>
+                      <span>Order</span>
+                      <span>Name</span>
+                      <span>Phone</span>
+                      <span>Status</span>
+                      <span>Action</span>
                     </div>
 
-                    <div className="flex flex-col items-end">
-                        {order.status === 'Pending' && (
-    <div className="flex items-center gap-3">
-        <button
-            type="button"
-            onClick={() => {
-                setRejectingOrderId(order._id);
-                setRejectReason("");
-                setRejectReasonType("");
-            }}
-            className="bg-red-600 hover:bg-red-700 text-white px-5 py-3 rounded-xl font-black shadow-lg active:scale-95 transition-all"
-        >
-            Reject Order
-        </button>
+                    <div className="divide-y divide-gray-700/80">
+                      {visibleOrders.map((order, index) => (
+                        <div
+                          key={order._id}
+                          className="grid w-full grid-cols-[34px_minmax(38px,0.8fr)_minmax(64px,1.25fr)_minmax(72px,1.2fr)_minmax(54px,0.9fr)_minmax(72px,1fr)] items-center px-0.5 py-1.5 transition hover:bg-gray-800 sm:grid-cols-[42px_minmax(48px,0.8fr)_minmax(92px,1.25fr)_minmax(104px,1.2fr)_minmax(68px,0.9fr)_minmax(82px,1fr)] sm:px-1 sm:py-2"
+                        >
+                          <span className="text-[8px] font-black text-gray-400 sm:text-xs">
+                            {index + 1}
+                          </span>
 
-        <button
-            type="button"
-            onClick={() => updateOrderStatus(order._id, 'Accepted')}
-            className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-xl font-black shadow-lg active:scale-95 transition-all"
-        >
-            Accept Order
-        </button>
-    </div>
-)}
+                          <button
+                            type="button"
+                            onClick={() => openOrderDetail(order._id)}
+                            className="min-w-0 truncate text-left text-[8px] font-black text-gray-300 transition hover:text-white sm:text-xs"
+                          >
+                            #{order._id.substring(order._id.length - 6)}
+                          </button>
 
-                        {order.status === 'Accepted' && !order.assignedRiderId && (
-                        <div className="text-right">
-                            <p className="text-sm text-gray-400 font-bold animate-pulse mb-2">📡 Finding Nearest Rider...</p>
-                            <button disabled className="bg-gray-600 text-gray-400 px-6 py-3 rounded-xl font-black shadow-lg cursor-not-allowed">
-                            Start Cooking 👨‍🍳
-                            </button>
+                          <p className="min-w-0 truncate text-[8px] font-black text-white sm:text-xs">
+                            {order.customerId?.name || 'Guest'}
+                          </p>
+
+                          <p className="min-w-0 truncate text-[8px] font-semibold text-gray-300 sm:text-xs">
+                            {order.customerId?.phone || order.deliveryDetails?.phone || 'Phone unavailable'}
+                          </p>
+
+                          <p
+                            className={`min-w-0 truncate text-[7px] font-black uppercase sm:text-[10px] ${
+                              order.status === 'Pending'
+                                ? 'text-red-400'
+                                : order.status === 'Accepted'
+                                  ? 'text-amber-400'
+                                  : order.status === 'Preparing'
+                                    ? 'text-orange-400'
+                                    : order.status === 'Ready for Pickup'
+                                      ? 'text-green-400'
+                                      : order.status === 'Out for Delivery'
+                                        ? 'text-blue-400'
+                                        : order.status === 'Delivered'
+                                          ? 'text-emerald-400'
+                                          : 'text-gray-400'
+                            }`}
+                          >
+                            {order.status}
+                          </p>
+
+                          <button
+                            type="button"
+                            onClick={() => openOrderDetail(order._id)}
+                            className="whitespace-nowrap text-left text-[8px] font-black text-orange-400 transition hover:text-orange-300 active:scale-95 sm:text-[10px]"
+                          >
+                            View Details
+                          </button>
                         </div>
-                        )}
-
-                        {order.status === 'Accepted' && order.assignedRiderId && (
-                        <button onClick={() => updateOrderStatus(order._id, 'Preparing')} className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-xl font-black shadow-lg active:scale-95 transition-all animate-bounce">
-                            Start Cooking 👨‍🍳
-                        </button>
-                        )}
-
-                        {order.status === 'Preparing' && (
-                        <button onClick={() => updateOrderStatus(order._id, 'Ready for Pickup')} className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-xl font-black shadow-lg active:scale-95 transition-all">
-                            Food Ready ✅
-                        </button>
-                        )}
+                      ))}
                     </div>
-
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
+              )}
             </section>
           </>
         )}
