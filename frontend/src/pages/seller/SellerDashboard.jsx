@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import useBrowserBackNavigation from '../../hooks/useBrowserBackNavigation';
@@ -9,7 +9,9 @@ import SellerMenu from './components/SellerMenu';
 import SellerProfile from './components/SellerProfile';
 import SellerAccount from './components/SellerAccount';
 import SellerSettings from './components/SellerSettings';
-import { io } from 'socket.io-client';
+import useSellerOrders from './hooks/useSellerOrders';
+import useSellerMenu from './hooks/useSellerMenu';
+import useSellerStatement from './hooks/useSellerStatement';
 import Cropper from 'react-easy-crop';
 
 function Dashboard() {
@@ -18,21 +20,37 @@ function Dashboard() {
   const restaurantName = localStorage.getItem('userName') || "My Restaurant";
   const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5005";
 
-const [orders, setOrders] = useState([]);
-const [myItems, setMyItems] = useState([]);
 const [orderSection, setOrderSection] = useState(null);
 const [selectedOrderId, setSelectedOrderId] = useState(null);
 const [isOrdersDrawerOpen, setIsOrdersDrawerOpen] = useState(false);
 
-const [itemName, setItemName] = useState('');
-const [itemPrice, setItemPrice] = useState('');
-const [itemDescription, setItemDescription] = useState('');
-const [itemFoodCategory, setItemFoodCategory] = useState('Veg');
-const [itemTags, setItemTags] = useState('');
-const [editingMenuItem, setEditingMenuItem] = useState(null);
-const [isMenuSheetOpen, setIsMenuSheetOpen] = useState(false);
-const [isMenuImageOverlayOpen, setIsMenuImageOverlayOpen] = useState(false);
-const [menuImageBlob, setMenuImageBlob] = useState(null);
+const {
+  myItems,
+  itemName,
+  setItemName,
+  itemPrice,
+  setItemPrice,
+  itemDescription,
+  setItemDescription,
+  itemFoodCategory,
+  setItemFoodCategory,
+  itemTags,
+  setItemTags,
+  editingMenuItem,
+  setEditingMenuItem,
+  isMenuSheetOpen,
+  setIsMenuSheetOpen,
+  isMenuImageOverlayOpen,
+  setIsMenuImageOverlayOpen,
+  menuImageBlob,
+  setMenuImageBlob,
+  fetchMyMenu,
+  handleAddItem,
+  handleDeleteMenuItem,
+  handleEditMenuItem
+} = useSellerMenu({
+  API_BASE
+});
 
 const [restaurant, setRestaurant] = useState(null);
 const [updatingStoreStatus, setUpdatingStoreStatus] = useState(false);
@@ -42,14 +60,24 @@ const [isProfilePhotoMenuOpen, setIsProfilePhotoMenuOpen] = useState(false);
 const [isDocumentsModalOpen, setIsDocumentsModalOpen] = useState(false);
 const [activeDocumentPreview, setActiveDocumentPreview] = useState(null);
 const [isStatementModalOpen, setIsStatementModalOpen] = useState(false);
-const [statementTransactions, setStatementTransactions] = useState([]);
-const [statementLoading, setStatementLoading] = useState(false);
-const [statementError, setStatementError] = useState('');
-const [statementFromDate, setStatementFromDate] = useState('');
-const [statementToDate, setStatementToDate] = useState('');
-const [statementPage, setStatementPage] = useState(1);
-const [statementTotalPages, setStatementTotalPages] = useState(1);
-const [statementHasNextPage, setStatementHasNextPage] = useState(false);
+
+const {
+  statementTransactions,
+  statementLoading,
+  statementError,
+  setStatementError,
+  statementFromDate,
+  setStatementFromDate,
+  statementToDate,
+  setStatementToDate,
+  statementPage,
+  setStatementPage,
+  statementTotalPages,
+  statementHasNextPage,
+  loadSellerStatement
+} = useSellerStatement({
+  API_BASE
+});
 const [rejectingOrderId, setRejectingOrderId] = useState(null);
 const [rejectReason, setRejectReason] = useState('');
 const [rejectReasonType, setRejectReasonType] = useState('');
@@ -72,48 +100,20 @@ const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
     };
   }, [isMobileMenuOpen]);
 
-  //Fix: Use useRef for Socket and Audio to prevent memory leaks and infinite loops
-  const socketRef = useRef(null);
-  const newOrderSoundRef = useRef(null);
-  const riderAssignedSoundRef = useRef(null);
-  const hasJoinedRoom = useRef(false);
-
-  const fetchOrders = useCallback(async () => {
-    try {
-      const res = await fetch(`${API_BASE}/api/seller/orders`, {
-        credentials: 'include'
-      });
-
-      const data = await res.json();
-
-      if (res.ok) {
-        setOrders(data.data || []);
-      } else {
-        console.error("Orders 400 Error:", data.error || "Restaurant Not Linked");
-      }
-    } catch (err) {
-      console.error("Order fetch error:", err);
+  const {
+    orders,
+    fetchOrders,
+    updateOrderStatus
+  } = useSellerOrders({
+    API_BASE,
+    enabled: !authLoading && isAuthenticated && localStorage.getItem('userRole') === 'Seller',
+    myItems,
+    onOrderCancelled: () => {
+      setRejectingOrderId(null);
+      setRejectReason('');
+      setRejectReasonType('');
     }
-  }, [API_BASE]);
-
-  const fetchMyMenu = useCallback(async () => {
-    try {
-      const response = await fetch(`${API_BASE}/api/seller/menu`, {
-        credentials: 'include'
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        setMyItems(data);
-      } else {
-        console.error("Menu 400 Error:", data.error || "Restaurant Not Linked");
-      }
-    } catch (error) {
-      console.error("Menu fetch error:", error);
-    }
-  }, [API_BASE]);
-
+  });
   const fetchRestaurant = useCallback(async () => {
     try {
       const response = await fetch(`${API_BASE}/api/seller/store`, {
@@ -153,30 +153,12 @@ const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   useEffect(() => {
     const role = localStorage.getItem('userRole');
 
-if (authLoading) return;
+    if (authLoading) return;
 
-if (role !== 'Seller' || !isAuthenticated) {
-  navigate('/login');
-  return;
-}
-
-    // Initialize Audio Objects ONCE
-    newOrderSoundRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3');
-    riderAssignedSoundRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
-
-    // Ask for Browser Notification Permission
-    if ("Notification" in window) {
-      Notification.requestPermission();
+    if (role !== 'Seller' || !isAuthenticated) {
+      navigate('/login');
+      return;
     }
-
-socketRef.current = io(API_BASE, {
-  withCredentials: true,
-  transports: ["websocket"]
-});
-
-    setTimeout(() => {
-      fetchOrders();
-    }, 0);
 
     setTimeout(() => {
       fetchMyMenu();
@@ -189,424 +171,21 @@ socketRef.current = io(API_BASE, {
     setTimeout(() => {
       fetchUserProfile();
     }, 0);
-
-    socketRef.current.on('newLiveOrder', (newOrder) => {
-      console.log("🔥 New Order Received:", newOrder);
-      // 🚀 Fix: Functional State Update
-      setOrders((prevOrders) => [newOrder, ...prevOrders]);
-
-      // 🚀 Fix: Removed blocking alert(), using native Notification
-      if (Notification.permission === "granted") {
-        new Notification(`🛎️ NEW ORDER!`, { body: `Customer: ${newOrder.customerId?.name || 'Guest'}` });
-      }
-
-      try {
-        newOrderSoundRef.current.play();
-      } catch {
-        console.log("Sound play blocked by browser");
-      }
-    });
-
-        socketRef.current.on('orderAssignedToRider', (data) => {
-      console.log("Rider Assigned:", data);
-
-      setOrders((prevOrders) => prevOrders.map(order => {
-        if (order._id === data.orderId) {
-          return {
-            ...order,
-            status: 'Preparing',
-            assignedRiderId: {
-              name: data.riderName,
-              phone: data.riderPhone,
-              bikeNumber: data.riderBike,
-              distance: data.distance
-            }
-          };
-        }
-        return order;
-      }));
-
-      if (
-        typeof Notification !== 'undefined' &&
-        Notification.permission === 'granted'
-      ) {
-        new Notification('Rider Assigned', {
-          body: `Rider ${data.riderName || 'Rider'} has been assigned to this order.`
-        });
-      }
-
-      try {
-        riderAssignedSoundRef.current.play();
-      } catch {
-        console.log("Sound play blocked by browser");
-      }
-    });
-
-    socketRef.current.on('connect', () => console.log("🛰️ Connected to Live Server"));
-
-    // Cleanup on Unmount
-    return () => {
-        if (socketRef.current) {
-            socketRef.current.off('newLiveOrder');
-            socketRef.current.off('orderAssignedToRider');
-            socketRef.current.disconnect();
-        }
-    };
-  }, [navigate, authLoading, isAuthenticated, fetchOrders, fetchMyMenu, fetchRestaurant, fetchUserProfile, API_BASE]);
+  }, [
+    navigate,
+    authLoading,
+    isAuthenticated,
+    fetchMyMenu,
+    fetchRestaurant,
+    fetchUserProfile
+  ]);
   useEffect(() => {
     sessionStorage.setItem(
       'sellerDashboardActiveTab',
       activeTab
     );
   }, [activeTab]);
-  // 🚀 Fix: Stable Room Joiner Logic
-  useEffect(() => {
-    if (socketRef.current && !hasJoinedRoom.current) {
-      let activeRestId = null;
-      if (orders.length > 0) activeRestId = orders[0].restaurantId;
-      else if (myItems.length > 0) activeRestId = myItems[0].restaurantId;
-
-      if (activeRestId) {
-        console.log("📍 Joining Restaurant Room:", activeRestId);
-        socketRef.current.emit('joinRestaurantDashboard', activeRestId);
-        hasJoinedRoom.current = true; // Mark as joined to prevent loop
-      }
-    }
-  }, [orders, myItems]);
-
-  const updateOrderStatus = async (orderId, newStatus, reason = '') => {
-  try {
-    const res = await fetch(`${API_BASE}/api/seller/orders/${orderId}/status`, {
-      method: 'PUT',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        status: newStatus,
-        ...(newStatus === 'Cancelled' ? { reason: reason.trim() } : {})
-      })
-    });
-
-    if (res.ok) {
-      setOrders(prevOrders => prevOrders.map(order =>
-        order._id === orderId
-          ? {
-              ...order,
-              status: newStatus,
-              ...(newStatus === 'Cancelled'
-                ? { cancellationReason: reason.trim() }
-                : {})
-            }
-          : order
-      ));
-
-      if (newStatus === 'Cancelled') {
-        setRejectingOrderId(null);
-        setRejectReason('');
-        setRejectReasonType('');
-      }
-    } else {
-      console.error("Failed to update order status.");
-    }
-  } catch {
-    console.error("Failed to update status.");
-  }
-};
-
-  const handleAddItem = async (e) => {
-    e.preventDefault();
-
-    const normalizedName = itemName.trim();
-    const normalizedDescription = itemDescription.trim();
-    const numericPrice = Number(itemPrice);
-    const normalizedTags = [
-      ...new Set(
-        itemTags
-          .split(',')
-          .map((tag) => tag.trim())
-          .filter(Boolean)
-      )
-    ];
-
-    const isEditing = Boolean(editingMenuItem?._id);
-    const hasMenuImage = Boolean(menuImageBlob);
-
-    if (!normalizedName) {
-      console.error('Menu item name is required.');
-      return false;
-    }
-
-    if (
-      !Number.isInteger(numericPrice) ||
-      numericPrice < 100
-    ) {
-      console.error(
-        'Menu item price must be a whole number of at least NPR 100.'
-      );
-      return false;
-    }
-
-    if (
-      itemFoodCategory !== 'Veg' &&
-      itemFoodCategory !== 'Non-Veg'
-    ) {
-      console.error('Menu item food category must be Veg or Non-Veg.');
-      return false;
-    }
-
-    if (normalizedTags.length > 10) {
-      console.error('A menu item can have a maximum of 10 tags.');
-      return false;
-    }
-
-    if (normalizedTags.some((tag) => tag.length > 50)) {
-      console.error('Each menu tag must be 50 characters or fewer.');
-      return false;
-    }
-    if (
-      isEditing &&
-      (!Number.isInteger(editingMenuItem.__v) ||
-        editingMenuItem.__v < 0)
-    ) {
-      console.error('Menu item version is missing or invalid.');
-      return false;
-    }
-
-    const endpoint = isEditing
-      ? `${API_BASE}/api/seller/menu/${encodeURIComponent(
-          editingMenuItem._id
-        )}`
-      : `${API_BASE}/api/seller/menu`;
-
-    const method = isEditing ? 'PATCH' : 'POST';
-
-    const payload = {
-      name: normalizedName,
-      price: numericPrice,
-      description: normalizedDescription,
-      foodCategory: itemFoodCategory,
-      tags: normalizedTags
-    };
-
-    if (isEditing) {
-      payload.__v = editingMenuItem.__v;
-    }
-
-    try {
-      const response = await fetch(endpoint, {
-        method,
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        if (response.status === 409) {
-          console.error(
-            'Menu item was changed by another request. Refreshing menu.'
-          );
-          await fetchMyMenu();
-          return false;
-        }
-
-        console.error(
-          `Failed: ${data.error || data.message || 'Invalid Data'}`
-        );
-        return false;
-      }
-
-      let savedItem = data.item;
-
-      if (
-        hasMenuImage &&
-        savedItem?._id &&
-        Number.isInteger(savedItem.__v)
-      ) {
-        const imageFormData = new FormData();
-
-        imageFormData.append(
-          'menuImage',
-          menuImageBlob,
-          'menu-image.jpg'
-        );
-
-        imageFormData.append(
-          '__v',
-          String(savedItem.__v)
-        );
-
-        const imageResponse = await fetch(
-          `${API_BASE}/api/seller/menu/${encodeURIComponent(
-            savedItem._id
-          )}/image`,
-          {
-            method: 'POST',
-            credentials: 'include',
-            body: imageFormData
-          }
-        );
-
-        const imageData = await imageResponse.json();
-
-        if (!imageResponse.ok) {
-          if (imageResponse.status === 409) {
-            console.error(
-              'Menu item changed before image upload. Refreshing menu.'
-            );
-          } else {
-            console.error(
-              `Menu image upload failed: ${
-                imageData.error ||
-                imageData.message ||
-                'Unable to upload image.'
-              }`
-            );
-          }
-
-          await fetchMyMenu();
-          return false;
-        }
-
-        savedItem = imageData.item || savedItem;
-      }
-
-      setItemName('');
-      setItemPrice('');
-      setItemDescription('');
-      setItemFoodCategory('Veg');
-      setItemTags('');
-      setEditingMenuItem(null);
-      setMenuImageBlob(null);
-      setIsMenuImageOverlayOpen(false);
-
-      await fetchMyMenu();
-
-      if (
-        typeof Notification !== 'undefined' &&
-        Notification.permission === 'granted'
-      ) {
-        new Notification(
-          isEditing ? 'Item Updated!' : 'Item Added!',
-          {
-            body: `${normalizedName} ${
-              isEditing ? 'was updated.' : 'is now live.'
-            }`
-          }
-        );
-      }
-
-      return true;
-    } catch (error) {
-      console.error(
-        `Network Error while ${
-          isEditing ? 'updating' : 'adding'
-        } menu item:`,
-        error
-      );
-
-      return false;
-    }
-  };
-  const handleDeleteMenuItem = async (item) => {
-    if (!item?._id) {
-      console.error('Menu item ID is missing.');
-      return;
-    }
-
-    if (!Number.isInteger(item.__v) || item.__v < 0) {
-      console.error('Menu item version is missing or invalid.');
-      return;
-    }
-
-    const confirmed = window.confirm(
-      `Delete "${item.name}" from your menu?`
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
-    try {
-      const response = await fetch(
-        `${API_BASE}/api/seller/menu/${encodeURIComponent(item._id)}`,
-        {
-          method: 'DELETE',
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            __v: item.__v
-          })
-        }
-      );
-
-      const data = await response.json();
-
-      if (response.ok) {
-        await fetchMyMenu();
-        return;
-      }
-
-      if (response.status === 409) {
-        console.error(
-          'Menu item was changed by another request. Refreshing menu.'
-        );
-        await fetchMyMenu();
-        return;
-      }
-
-      console.error(
-        `Menu delete failed: ${data.error || data.message || 'Invalid request'}`
-      );
-    } catch (error) {
-      console.error('Network Error while deleting menu item:', error);
-    }
-  };
-
-  const handleEditMenuItem = (item) => {
-    if (!item?._id) {
-      console.error('Menu item ID is missing.');
-      return;
-    }
-
-    if (!Number.isInteger(item.__v) || item.__v < 0) {
-      console.error('Menu item version is missing or invalid.');
-      return;
-    }
-
-    setEditingMenuItem(item);
-    setItemName(item.name || '');
-    setItemPrice(
-      item.price !== undefined && item.price !== null
-        ? String(item.price)
-        : ''
-    );
-    setItemDescription(item.description || '');
-    setItemFoodCategory(
-      item.foodCategory === 'Non-Veg'
-        ? 'Non-Veg'
-        : 'Veg'
-    );
-    setItemTags(
-      Array.isArray(item.tags)
-        ? item.tags.join(', ')
-        : ''
-    );
-    setIsMenuSheetOpen(true);
-
-    window.scrollTo({
-      top: 0,
-      behavior: 'smooth'
-    });
-  };
-
-  const toggleStoreStatus = async () => {
+const toggleStoreStatus = async () => {
   if (!restaurant) return;
 
   setUpdatingStoreStatus(true);
@@ -803,84 +382,6 @@ socketRef.current = io(API_BASE, {
   const visibleOrders = orderSection
     ? orderSectionOrders[orderSection] || []
     : orders;
-  const loadSellerStatement = async (
-    page = 1,
-    fromDate = statementFromDate,
-    toDate = statementToDate
-  ) => {
-    setStatementLoading(true);
-    setStatementError('');
-
-    try {
-      const safePage = Number.isInteger(page) && page > 0 ? page : 1;
-      const params = new URLSearchParams({
-        limit: '20',
-        page: String(safePage)
-      });
-
-      if (fromDate) {
-        params.set('from', fromDate);
-      }
-
-      if (toDate) {
-        params.set('to', toDate);
-      }
-
-      const response = await fetch(
-        `${API_BASE}/api/seller/store/statement?${params.toString()}`,
-        {
-          credentials: 'include'
-        }
-      );
-
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        throw new Error(
-          data.message ||
-            data.error ||
-            'Failed to load statement.'
-        );
-      }
-
-      const transactions = Array.isArray(data.statement?.transactions)
-        ? data.statement.transactions
-        : [];
-
-      const pagination = data.statement?.pagination || {};
-
-      setStatementTransactions(transactions);
-      setStatementPage(
-        Number.isInteger(pagination.page) && pagination.page > 0
-          ? pagination.page
-          : safePage
-      );
-
-      setStatementTotalPages(
-        Number.isInteger(pagination.totalPages) && pagination.totalPages >= 1
-          ? pagination.totalPages
-          : 1
-      );
-
-      setStatementHasNextPage(
-        pagination.hasNextPage === true
-      );
-    } catch (error) {
-      setStatementTransactions([]);
-      setStatementPage(1);
-      setStatementTotalPages(1);
-      setStatementHasNextPage(false);
-
-      setStatementError(
-        error instanceof Error
-          ? error.message
-          : 'Failed to load statement.'
-      );
-    } finally {
-      setStatementLoading(false);
-    }
-  };
-
   return (
     <div className="min-h-screen bg-gray-900 text-white font-sans pb-20">
 
