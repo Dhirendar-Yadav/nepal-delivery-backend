@@ -12,6 +12,8 @@ import SellerSettings from './components/SellerSettings';
 import useSellerOrders from './hooks/useSellerOrders';
 import useSellerMenu from './hooks/useSellerMenu';
 import useSellerStatement from './hooks/useSellerStatement';
+import useSellerStore from './hooks/useSellerStore';
+import useSellerProfile from './hooks/useSellerProfile';
 import Cropper from 'react-easy-crop';
 
 function Dashboard() {
@@ -52,9 +54,14 @@ const {
   API_BASE
 });
 
-const [restaurant, setRestaurant] = useState(null);
-const [updatingStoreStatus, setUpdatingStoreStatus] = useState(false);
-const [userProfile, setUserProfile] = useState(null);
+const {
+  userProfile,
+  setUserProfile,
+  fetchUserProfile
+} = useSellerProfile({
+  API_BASE
+});
+
 const [profileImageRefreshKey, setProfileImageRefreshKey] = useState(() => Date.now());
 const [isProfilePhotoMenuOpen, setIsProfilePhotoMenuOpen] = useState(false);
 const [isDocumentsModalOpen, setIsDocumentsModalOpen] = useState(false);
@@ -114,43 +121,16 @@ const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
       setRejectReasonType('');
     }
   });
-  const fetchRestaurant = useCallback(async () => {
-    try {
-      const response = await fetch(`${API_BASE}/api/seller/store`, {
-        credentials: 'include'
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        setRestaurant(data.restaurant);
-      } else {
-        console.error(data);
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  }, [API_BASE]);
-
-  const fetchUserProfile = useCallback(async () => {
-    try {
-      const response = await fetch(`${API_BASE}/api/auth/me`, {
-        credentials: 'include'
-      });
-
-      const data = await response.json();
-
-      if (response.ok && data.user) {
-        setUserProfile(data.user);
-      } else {
-        console.error(data);
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  }, [API_BASE]);
-
-  useEffect(() => {
+    const {
+    restaurant,
+    updatingStoreStatus,
+    fetchRestaurant,
+    toggleStoreStatus
+  } = useSellerStore({
+    API_BASE,
+    fetchOrders
+  });
+useEffect(() => {
     const role = localStorage.getItem('userRole');
 
     if (authLoading) return;
@@ -185,41 +165,6 @@ const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
       activeTab
     );
   }, [activeTab]);
-const toggleStoreStatus = async () => {
-  if (!restaurant) return;
-
-  setUpdatingStoreStatus(true);
-
-  try {
-    const response = await fetch(
-  `${API_BASE}/api/seller/store/status`,
-  {
-    method: 'PATCH',
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      isOpen: !restaurant.isOpen
-    })
-  }
-);
-
-    const data = await response.json();
-
-    if (response.ok) {
-      setRestaurant(data.restaurant);
-      fetchOrders();
-    } else {
-      alert(data.error || "Failed");
-    }
-
-  } catch (err) {
-    console.error(err);
-  }
-
-  setUpdatingStoreStatus(false);
-};
   const handleMobileLogoutConfirm = async () => {
     sessionStorage.removeItem('sellerDashboardActiveTab');
     await logout();
@@ -741,5 +686,4 @@ const toggleStoreStatus = async () => {
     </div>
   );
 }
-
 export default Dashboard;
