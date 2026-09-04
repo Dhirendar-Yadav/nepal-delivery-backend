@@ -9,6 +9,7 @@ const Restaurant = require('../models/Restaurant');
 const AdminWallet = require('../models/AdminWallet');
 const LedgerEntry = require('../models/LedgerEntry');
 const dispatchService = require('../services/dispatchService');
+const { getDistanceMeters } = require('../utils/geo');
 
 // Validation helpers
 const validateEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -509,19 +510,58 @@ exports.updateLocation = async (req, res) => {
             return res.status(400).json({ success: false, message: "Coordinates out of valid range" });
         }
 
+        const riderId = new mongoose.Types.ObjectId(req.user.id);
+        const orderObjectId = new mongoose.Types.ObjectId(orderId);
+
+        const currentOrder = await Order.findOne({
+            _id: orderObjectId,
+            assignedRiderId: riderId,
+            status: { $in: ['Preparing', 'Ready for Pickup', 'Out for Delivery'] }
+        }).select('_id restaurantId status riderLocation riderOnTheWayAt').lean();
+
+        if (!currentOrder) {
+            return res.status(404).json({ success: false, message: "Active order not found or access denied" });
+        }
+
+        const previousCoordinates = currentOrder.riderLocation?.coordinates;
+        let riderMovedOnTheWay = false;
+
+        if (
+            currentOrder.status === 'Ready for Pickup' &&
+            currentOrder.riderOnTheWayAt == null &&
+            Array.isArray(previousCoordinates) &&
+            previousCoordinates.length === 2
+        ) {
+            const previousLongitude = Number(previousCoordinates[0]);
+            const previousLatitude = Number(previousCoordinates[1]);
+
+            if (
+                Number.isFinite(previousLongitude) &&
+                Number.isFinite(previousLatitude)
+            ) {
+                const movementDistance = getDistanceMeters(
+                    previousLatitude,
+                    previousLongitude,
+                    latitude,
+                    longitude
+                );
+
+                riderMovedOnTheWay = movementDistance >= 50;
+            }
+        }
+
         const updatedOrder = await Order.findOneAndUpdate(
             {
-                _id: new mongoose.Types.ObjectId(orderId),
-                assignedRiderId: new mongoose.Types.ObjectId(req.user.id),
-                status: 'Out for Delivery'
+                _id: orderObjectId,
+                assignedRiderId: riderId,
+                status: { $in: ['Preparing', 'Ready for Pickup', 'Out for Delivery'] }
             },
             {
                 $set: {
                     riderLocation: {
                         type: 'Point',
                         coordinates: [longitude, latitude]
-                    },
-                    lastLocationUpdate: new Date()
+                    }
                 }
             },
             { new: true, runValidators: true }
@@ -529,6 +569,43 @@ exports.updateLocation = async (req, res) => {
 
         if (!updatedOrder) {
             return res.status(404).json({ success: false, message: "Active order not found or access denied" });
+        }
+
+        if (riderMovedOnTheWay) {
+            const movementTimestamp = new Date();
+
+            const markedOnTheWayOrder = await Order.findOneAndUpdate(
+                {
+                    _id: orderObjectId,
+                    assignedRiderId: riderId,
+                    status: 'Ready for Pickup',
+                    riderOnTheWayAt: null
+                },
+                {
+                    $set: {
+                        riderOnTheWayAt: movementTimestamp
+                    }
+                },
+                { new: true, runValidators: true }
+            ).select('_id restaurantId assignedRiderId riderOnTheWayAt').lean();
+
+            if (markedOnTheWayOrder) {
+                try {
+                    const appIoContext = req.app.get('io');
+
+                    if (appIoContext && markedOnTheWayOrder.restaurantId) {
+                        appIoContext
+                            .to(markedOnTheWayOrder.restaurantId.toString())
+                            .emit('riderOnTheWay', {
+                                orderId: markedOnTheWayOrder._id,
+                                riderId: markedOnTheWayOrder.assignedRiderId,
+                                riderOnTheWayAt: markedOnTheWayOrder.riderOnTheWayAt
+                            });
+                    }
+                } catch (socketErr) {
+                    console.error('Rider on the way socket emission failed:', socketErr);
+                }
+            }
         }
 
         return res.status(200).json({

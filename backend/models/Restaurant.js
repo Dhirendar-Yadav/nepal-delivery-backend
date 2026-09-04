@@ -153,10 +153,11 @@ lastActiveAt: { type: Date, default: Date.now, index: true },
 
     payoutSettings: {
         method: { type: String, enum: ['eSewa', 'Khalti', 'Bank'], default: 'eSewa' },
-        eSewaId: { type: String, default: null }, 
+        eSewaId: { type: String, default: null },
+        eSewaAccountName: { type: String, default: null },
         bankDetails: {
             accountName: { type: String, default: null },
-            accountNumber: { type: String, default: null, select: false }, 
+            accountNumber: { type: String, default: null, select: false },
             bankName: { type: String, default: null }
         }
     }

@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const router = express.Router();
 const { authMiddleware } = require('../middlewares/auth');
 const mongoose = require('mongoose'); 
@@ -81,6 +81,9 @@ const buildSafePayoutSettings = (payoutSettings = {}) => {
         eSewaId: method === 'eSewa'
             ? maskSensitiveValue(payoutSettings.eSewaId, 2, 2)
             : null,
+        eSewaAccountName: method === 'eSewa'
+            ? payoutSettings.eSewaAccountName || null
+            : null,
         bankDetails: method === 'Bank'
             ? {
                 accountName: bankDetails.accountName || null,
@@ -138,6 +141,7 @@ const validatePaymentMethodPayload = (method, payload) => {
             data: {
                 method: 'Bank',
                 eSewaId: null,
+                eSewaAccountName: null,
                 bankDetails: {
                     accountName,
                     bankName,
@@ -172,6 +176,7 @@ const validatePaymentMethodPayload = (method, payload) => {
         data: {
             method: 'eSewa',
             eSewaId,
+            eSewaAccountName: accountName,
             bankDetails: {
                 accountName: null,
                 bankName: null,
@@ -191,20 +196,15 @@ const ORDER_STATUS_TRANSITIONS = {
     'Cancelled': []  
 };
 
-// ==========================================
-// 🛠️ CENTRALIZED UTILITY MIDDLEWARES
-// ==========================================
+//CENTRALIZED UTILITY MIDDLEWARES
 
-/**
- * Centralized Express Async Error Handler Wrapper
- */
+
+//Centralized Express Async Error Handler Wrapper
 const asyncHandler = (fn) => (req, res, next) => {
     Promise.resolve(fn(req, res, next)).catch(next);
 };
 
-/**
- * Hardened Seller Security Middleware
- */
+//Hardened Seller Security Middleware
 const verifySeller = asyncHandler(async (req, res, next) => {
 
     authMiddleware(req, res, async () => {
@@ -241,15 +241,13 @@ const verifySeller = asyncHandler(async (req, res, next) => {
 
 });
 
-/**
- * Centralized Restaurant Context Attachment Middleware
- */
+//Centralized Restaurant Context Attachment Middleware
 const attachRestaurantContext = asyncHandler(async (req, res, next) => {
     const restaurant = await Restaurant.findOne({ ownerId: req.user.id })
         .select('_id currentLocation name isOpen status image registrationDoc panVatNumber')
         .lean();
 
-    //PROBLEM 2 FIXED: Removed non-standard HTTP 444 code to comply with native gateway proxies contracts
+    //FIX: Removed non-standard HTTP 444 code to comply with native gateway proxies contracts
     if (!restaurant) {
         return res.status(404).json({ success: false, error: "RESTAURANT_PROFILE_NOT_FOUND", message: "Operational block: Seller account possesses no active restaurant profile setup mapping entries." });
     }
@@ -372,6 +370,7 @@ router.get('/store', verifySeller, attachRestaurantContext, asyncHandler(async (
             '_id name panVatNumber isOpen status isDiscoverable image registrationDoc ' +
             'walletBalance totalSettled ' +
             'payoutSettings.method payoutSettings.eSewaId ' +
+            'payoutSettings.eSewaAccountName ' +
             'payoutSettings.bankDetails.accountName ' +
             'payoutSettings.bankDetails.bankName'
         )
@@ -434,6 +433,35 @@ router.patch(
                 success: false,
                 error: 'RESTAURANT_PROFILE_NOT_FOUND',
                 message: 'Restaurant profile was not found.'
+            });
+        }
+
+        const currentPayoutSettings = restaurant.payoutSettings || {};
+
+        if (
+            validation.data.method === 'eSewa' &&
+            currentPayoutSettings.method === 'eSewa' &&
+            currentPayoutSettings.eSewaId &&
+            currentPayoutSettings.eSewaId === validation.data.eSewaId
+        ) {
+            return res.status(409).json({
+                success: false,
+                error: 'PAYMENT_METHOD_ALREADY_ADDED',
+                message: 'This eSewa account is already added.'
+            });
+        }
+
+        if (
+            validation.data.method === 'Bank' &&
+            currentPayoutSettings.method === 'Bank' &&
+            currentPayoutSettings.bankDetails?.accountNumber &&
+            currentPayoutSettings.bankDetails.accountNumber ===
+                validation.data.bankDetails.accountNumber
+        ) {
+            return res.status(409).json({
+                success: false,
+                error: 'PAYMENT_METHOD_ALREADY_ADDED',
+                message: 'This bank account is already added.'
             });
         }
 
@@ -792,7 +820,7 @@ router.patch(
     verifySeller,
     restaurantController.updateStoreStatus
 );
-// 1. ADD NEW MENU ITEM (POST /api/seller/menu)
+//ADD NEW MENU ITEM (POST /api/seller/menu)
 router.post('/menu', verifySeller, attachRestaurantContext, asyncHandler(async (req, res) => {
 const { name, price, description, foodCategory, tags } = req.body;
 
@@ -891,7 +919,7 @@ const newItem = new MenuItem({
     });
 }));
 
-// 2. UPDATE SELLER MENU ITEM (PATCH /api/seller/menu/:id)
+//UPDATE SELLER MENU ITEM (PATCH /api/seller/menu/:id)
 router.patch('/menu/:id', verifySeller, attachRestaurantContext, asyncHandler(async (req, res) => {
     const { id } = req.params;
     const rawVersion = req.body.__v;
@@ -1080,7 +1108,7 @@ router.patch('/menu/:id', verifySeller, attachRestaurantContext, asyncHandler(as
     });
 }));
 
-// 3. UPLOAD MENU ITEM IMAGE (POST /api/seller/menu/:id/image)
+//UPLOAD MENU ITEM IMAGE (POST /api/seller/menu/:id/image)
 router.post(
     '/menu/:id/image',
     verifySeller,
@@ -1266,7 +1294,7 @@ router.post(
     })
 );
 
-// 4. SOFT DELETE SELLER MENU ITEM (DELETE /api/seller/menu/:id)
+//SOFT DELETE SELLER MENU ITEM (DELETE /api/seller/menu/:id)
 router.delete('/menu/:id', verifySeller, attachRestaurantContext, asyncHandler(async (req, res) => {
     const { id } = req.params;
     const rawVersion = req.body?.__v;
@@ -1365,7 +1393,7 @@ router.delete('/menu/:id', verifySeller, attachRestaurantContext, asyncHandler(a
     });
 }));
 
-// 5. GET SELLER'S MENU (GET /api/seller/menu)
+//GET SELLER'S MENU (GET /api/seller/menu)
 router.get('/menu', verifySeller, attachRestaurantContext, asyncHandler(async (req, res) => {
     const MAX_SELLER_MENU_ITEMS = 200;
 
@@ -1378,9 +1406,9 @@ const items = await MenuItem.find(
     return res.status(200).json(items);
 }));
 
-// 3. GET SELLER'S ORDERS (GET /api/seller/orders)
+//GET SELLER'S ORDERS (GET /api/seller/orders)
 router.get('/orders', verifySeller, attachRestaurantContext, asyncHandler(async (req, res) => {
-    // 🚀 PROBLEM 7 FIXED: Guard against memory saturation vulnerabilities via strict pagination bounds limits
+    //FIX: Guard against memory saturation vulnerabilities via strict pagination bounds limits
     const { page = 1, limit = 20 } = req.query;
     const pageValue = Math.max(1, parseInt(page, 10) || 1);
     const limitValue = Math.min(Math.max(1, parseInt(limit, 10) || 20), 50);
@@ -1397,7 +1425,7 @@ router.get('/orders', verifySeller, attachRestaurantContext, asyncHandler(async 
     return res.status(200).json({ success: true, count: orders.length, page: pageValue, data: orders });
 }));
 
-// 4. UPDATE ORDER STATUS (PUT /api/seller/orders/:id/status)
+//UPDATE ORDER STATUS (PUT /api/seller/orders/:id/status)
 router.put('/orders/:id/status', verifySeller, attachRestaurantContext, asyncHandler(async (req, res) => {
     const orderId = req.params.id;
     const { status, reason } = req.body;
@@ -1445,7 +1473,7 @@ if (normalizedReason.length > 300) {
         });
     }
 
-    // 🚀 PROBLEM 4 FIXED: Enriched Audit node tracking payload boundaries to track cross-platform transitions context securely
+    //FIX: Enriched Audit node tracking payload boundaries to track cross-platform transitions context securely
     const historicalAuditNode = {
         from: existingOrder.status,
         to: status,
@@ -1485,8 +1513,28 @@ if (normalizedReason.length > 300) {
         return res.status(409).json({ success: false, error: "CONCURRENCY_CONFLICT", message: "State Mutation Blocked: Target transaction version hijacked by concurrent processes." });
     }
 
+    if (status === 'Ready for Pickup' && order.assignedRiderId) {
+        try {
+            const appIoContext = req.app.get('io');
+
+            if (appIoContext) {
+                appIoContext
+                    .to(order.assignedRiderId.toString())
+                    .emit('foodReadyForPickup', {
+                        orderId: order._id,
+                        restaurantId: order.restaurantId?._id || order.restaurantId,
+                        restaurantName: order.restaurantId?.name || req.restaurant.name || 'Restaurant',
+                        status: order.status,
+                        readyAt: order.statusUpdatedAt
+                    });
+            }
+        } catch (socketErr) {
+            console.error('Food ready socket emission failed:', socketErr);
+        }
+    }
+
     if (DISPATCH_TRIGGER_STATUSES.includes(status)) {
-        // 🚀 NOTE ON PROBLEM 6: Switch from immediate asynchronous loops to persistent memory tasks queue 
+        //NOTE ON PROBLEM: Switch from immediate asynchronous loops to persistent memory tasks queue
         // to protect the platform against unpredictable process termination crashes.
         setImmediate(async () => {
             const appIoContext = req.app.get('io');
@@ -1574,7 +1622,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
     return res.status(200).json(items);
 }));
 
-// PROBLEM 1 FIXED: Global Error handler boundary moved natively to server roots. 
+// Global Error handler boundary moved natively to server roots.
 // Route errors are seamlessly passed down via next(err) parameters.
 
 module.exports = router;

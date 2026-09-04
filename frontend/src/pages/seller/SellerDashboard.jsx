@@ -110,7 +110,9 @@ const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const {
     orders,
     fetchOrders,
-    updateOrderStatus
+    updateOrderStatus,
+    riderOnTheWayNotification,
+    setRiderOnTheWayNotification
   } = useSellerOrders({
     API_BASE,
     enabled: !authLoading && isAuthenticated && localStorage.getItem('userRole') === 'Seller',
@@ -330,6 +332,29 @@ useEffect(() => {
   return (
     <div className="min-h-screen bg-gray-900 text-white font-sans pb-20">
 
+      {riderOnTheWayNotification && (
+        <div className="fixed top-4 left-1/2 z-[200] w-[90%] min-w-[300px] -translate-x-1/2 rounded-2xl bg-blue-600 px-4 py-3 text-white shadow-2xl transition-all animate-fade-in-up md:w-auto">
+          <div className="flex items-center gap-4">
+            <div className="flex-1">
+              <p className="text-sm font-black uppercase tracking-wide">
+                Rider On The Way
+              </p>
+              <p className="mt-0.5 text-xs font-medium opacity-90">
+                The rider has started moving toward the restaurant.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setRiderOnTheWayNotification(null)}
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-700 text-xs font-bold text-white transition hover:bg-blue-800"
+              aria-label="Dismiss rider notification"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
       {/*  Top Navbar */}
             <nav className="bg-gray-800 border-b border-gray-700 py-2.5 px-3 sm:py-4 sm:px-6 lg:px-8 flex justify-between items-center sticky top-0 z-50">
         <div className="min-w-0 flex-1">
@@ -477,18 +502,6 @@ useEffect(() => {
 
                     <button
                       type="button"
-                      onClick={() => navigateToOrderSection('preparing')}
-                      className={`w-full rounded-2xl px-4 py-3.5 text-left text-sm font-black transition active:scale-[0.99] ${
-                        orderSection === 'preparing'
-                          ? 'border-l-4 border-orange-500 bg-gray-800 text-white'
-                          : 'text-gray-300 hover:bg-gray-800/80'
-                      }`}
-                    >
-                      Rider Assigned / Preparing
-                    </button>
-
-                    <button
-                      type="button"
                       onClick={() => navigateToOrderSection('ready')}
                       className={`w-full rounded-2xl px-4 py-3.5 text-left text-sm font-black transition active:scale-[0.99] ${
                         orderSection === 'ready'
@@ -612,6 +625,8 @@ useEffect(() => {
 
         {activeTab === 'account' && (
           <SellerAccount
+            API_BASE={API_BASE}
+            fetchRestaurant={fetchRestaurant}
             restaurant={restaurant}
             isStatementModalOpen={isStatementModalOpen}
             setIsStatementModalOpen={setIsStatementModalOpen}

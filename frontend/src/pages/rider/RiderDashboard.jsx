@@ -10,7 +10,7 @@ import RiderOrdersTab from '../../components/rider/RiderOrdersTab';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5005';
 
-// Centralized Auth Fetch to handle Token Expiry (401)
+//Centralized Auth Fetch to handle Token Expiry (401)
 const authFetch = async (url, options = {}) => {
     const headers = {
         ...options.headers
@@ -48,6 +48,7 @@ function RiderDashboard() {
   const [deliveryStatus, setDeliveryStatus] = useState('pickup');
 
   const [newOrderToast, setNewOrderToast] = useState(null);
+const [foodReadyToast, setFoodReadyToast] = useState(null);
 
   const [isToggling, setIsToggling] = useState(false);
   const controllerRef = useRef(null);
@@ -59,6 +60,7 @@ function RiderDashboard() {
 
   const lastLocationRef = useRef(null);
   const lastOrderIdRef = useRef(null);
+  const lastLocationOrderIdRef = useRef(null);
   const lastUpdateTimeRef = useRef(0);
 
   const [isSocketConnected, setIsSocketConnected] = useState(false);
@@ -109,7 +111,7 @@ function RiderDashboard() {
     window.history.replaceState(null, "", `#${newTab}`);
   }, []);
 
-  // Initial Load Hash Setup
+  //Initial Load Hash Setup
   useEffect(() => {
     const hash = window.location.hash.replace('#', '');
     if (['home', 'orders', 'wallet', 'profile'].includes(hash)) {
@@ -242,6 +244,15 @@ function RiderDashboard() {
 
   useEffect(() => {
     let watchId;
+
+    const currentOrderId = activeOrder?._id?.toString() || null;
+
+    if (lastLocationOrderIdRef.current !== currentOrderId) {
+      lastLocationOrderIdRef.current = currentOrderId;
+      lastLocationRef.current = null;
+      lastUpdateTimeRef.current = 0;
+    }
+
     if (isOnline && navigator.geolocation) {
       const geoOptions = {
         enableHighAccuracy: activeOrder ? true : false,
@@ -290,7 +301,7 @@ function RiderDashboard() {
         (error) => {
           console.error("GPS Error:", error);
           if (error.code === error.PERMISSION_DENIED) {
-            // TODO: Replace with app toast/snackbar.
+            //Replace with app toast/snackbar.
           }
         },
         geoOptions
@@ -355,14 +366,28 @@ function RiderDashboard() {
       setTimeout(() => setNewOrderToast(null), 5000);
     };
 
+    const handleFoodReady = (orderData) => {
+      if (!isOnlineRef.current) return;
+
+      setFoodReadyToast(orderData);
+
+      setTimeout(() => {
+        setFoodReadyToast(null);
+      }, 5000);
+
+      fetchActiveOrder();
+    };
+
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
     socket.on('newOrderOffer', handleNewOrder);
+    socket.on('foodReadyForPickup', handleFoodReady);
 
     return () => {
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
       socket.off('newOrderOffer', handleNewOrder);
+      socket.off('foodReadyForPickup', handleFoodReady);
       socket.disconnect();
     };
   }, [authLoading, isAuthenticated, fetchAvailableOrders, fetchActiveOrder, fetchProfile]);
@@ -413,7 +438,7 @@ function RiderDashboard() {
   }, [isOnline, activeOrder, isSocketConnected, fetchAvailableOrders]);
 
   const handleToggleOnline = useCallback(async () => {
-    if (activeOrder) return; // TODO: Replace with app toast/snackbar.
+    if (activeOrder) return; //Replace with app toast/snackbar.
     if (isToggling || toggleInFlightRef.current) return;
 
     toggleInFlightRef.current = true;
@@ -441,11 +466,11 @@ function RiderDashboard() {
                     setOrders([]);
                 }
             } else {
-                // TODO: Replace with app toast/snackbar.
+                //Replace with app toast/snackbar.
             }
         }
     } catch {
-        // TODO: Replace with app toast/snackbar.
+        //Replace with app toast/snackbar.
     } finally {
         toggleInFlightRef.current = false;
         setIsToggling(false);
@@ -453,7 +478,7 @@ function RiderDashboard() {
 }, [activeOrder, isOnline, isToggling, fetchAvailableOrders]);
 
   const handleAcceptOrder = useCallback(async (orderId) => {
-    if (!isOnline) return; // TODO: Replace with app toast/snackbar.
+    if (!isOnline) return; //Replace with app toast/snackbar.
     if (acceptingRef.current) return;
     acceptingRef.current = true;
 
@@ -472,10 +497,10 @@ function RiderDashboard() {
         fetchAvailableOrders();
       } else if (res) {
         await res.json();
-        // TODO: Replace with app toast/snackbar.
+        //Replace with app toast/snackbar.
       }
     } catch {
-      // TODO: Replace with app toast/snackbar.
+      //Replace with app toast/snackbar.
     } finally {
       acceptingRef.current = false;
     }
@@ -532,16 +557,40 @@ function RiderDashboard() {
     <>
       {newOrderToast && (
         <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-[200] w-[90%] md:w-auto min-w-[300px] bg-gray-900 dark:bg-white text-white dark:text-gray-900 px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-4 transition-all animate-fade-in-up">
-          <span className="text-2xl animate-bounce">🛵</span>
           <div className="flex-1">
-            <p className="text-sm font-black uppercase tracking-wide text-orange-500">New Request Nearby!</p>
-            <p className="text-xs font-medium opacity-80 mt-0.5">Check Home Tab. Earn NPR {(newOrderToast.totalAmount / 100).toFixed(2) || "---"}</p>
+            <p className="text-sm font-black uppercase tracking-wide text-orange-500">
+              New Request Nearby!
+            </p>
+            <p className="text-xs font-medium opacity-80 mt-0.5">
+              Check Home Tab. Earn NPR {(newOrderToast.totalAmount / 100).toFixed(2) || "---"}
+            </p>
           </div>
           <button
             onClick={() => setNewOrderToast(null)}
             className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-800 dark:bg-gray-100 text-gray-400 dark:text-gray-500 hover:text-white dark:hover:text-black transition"
+            aria-label="Dismiss new order notification"
           >
-            ✕
+            Close
+          </button>
+        </div>
+      )}
+
+      {foodReadyToast && (
+        <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-[199] w-[90%] md:w-auto min-w-[300px] bg-green-600 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-4 transition-all animate-fade-in-up">
+          <div className="flex-1">
+            <p className="text-sm font-black uppercase tracking-wide">
+              Food Ready for Pickup
+            </p>
+            <p className="text-xs font-medium opacity-90 mt-0.5">
+              {foodReadyToast.restaurantName || "Restaurant"} has prepared your order.
+            </p>
+          </div>
+          <button
+            onClick={() => setFoodReadyToast(null)}
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-green-700/70 text-green-50 hover:bg-green-700 transition"
+            aria-label="Dismiss food ready notification"
+          >
+            Close
           </button>
         </div>
       )}
@@ -558,17 +607,17 @@ function RiderDashboard() {
 
           <nav className="flex-1 px-4 space-y-2 mt-4">
             <button onClick={() => handleTabSwitch('home')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${activeTab === 'home' ? 'bg-orange-50 dark:bg-orange-500/10 text-orange-600 dark:text-orange-500' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-900'}`}>
-              <span className="text-lg">🏠</span> Home
+              <span className="text-lg"></span> Home
             </button>
             <button onClick={() => handleTabSwitch('orders')} className={`w-full flex items-center justify-between px-4 py-3 rounded-xl font-bold text-sm transition-all ${activeTab === 'orders' ? 'bg-orange-50 dark:bg-orange-500/10 text-orange-600 dark:text-orange-500' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-900'}`}>
-              <div className="flex items-center gap-3"><span className="text-lg">📦</span> Orders</div>
+              <div className="flex items-center gap-3"><span className="text-lg"></span> Orders</div>
               {activeOrder && <span className="w-2.5 h-2.5 rounded-full bg-orange-500 animate-pulse"></span>}
             </button>
             <button onClick={() => handleTabSwitch('wallet')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${activeTab === 'wallet' ? 'bg-orange-50 dark:bg-orange-500/10 text-orange-600 dark:text-orange-500' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-900'}`}>
-              <span className="text-lg">💰</span> Wallet
+              <span className="text-lg"></span> Wallet
             </button>
             <button onClick={() => handleTabSwitch('profile')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${activeTab === 'profile' ? 'bg-orange-50 dark:bg-orange-500/10 text-orange-600 dark:text-orange-500' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-900'}`}>
-              <span className="text-lg">👤</span> Profile
+              <span className="text-lg"></span> Profile
             </button>
           </nav>
         </aside>
@@ -608,7 +657,7 @@ function RiderDashboard() {
               </div>
 
               <button onClick={handleLogoutClick} className="text-red-500 bg-red-50 dark:bg-red-500/10 p-2 md:px-4 md:py-2 rounded-lg md:rounded-xl hover:bg-red-100 transition-colors">
-                  <span className="md:hidden text-lg">🚪</span>
+                  <span className="md:hidden text-lg"></span>
                   <span className="hidden md:inline text-xs font-bold uppercase tracking-wider">Logout</span>
               </button>
             </div>
@@ -644,20 +693,20 @@ function RiderDashboard() {
 
           <nav className="md:hidden fixed bottom-0 w-full bg-white dark:bg-gray-950 border-t border-gray-200 dark:border-gray-800 flex justify-around p-2 z-50 pb-safe shadow-[0_-5px_15px_rgba(0,0,0,0.05)]">
             <button onClick={() => handleTabSwitch('home')} className={`flex flex-col items-center p-2 min-w-[64px] transition-colors ${activeTab === 'home' ? 'text-orange-500' : 'text-gray-400'}`}>
-              <span className="text-xl mb-1">🏠</span>
+              <span className="text-xl mb-1"></span>
               <span className="text-[10px] font-bold">Home</span>
             </button>
             <button onClick={() => handleTabSwitch('orders')} className={`flex flex-col items-center p-2 min-w-[64px] relative transition-colors ${activeTab === 'orders' ? 'text-orange-500' : 'text-gray-400'}`}>
-              <span className="text-xl mb-1">📦</span>
+              <span className="text-xl mb-1"></span>
               <span className="text-[10px] font-bold">Orders</span>
               {activeOrder && <span className="absolute top-2 right-2 w-2.5 h-2.5 rounded-full bg-orange-500 animate-pulse"></span>}
             </button>
             <button onClick={() => handleTabSwitch('wallet')} className={`flex flex-col items-center p-2 min-w-[64px] transition-colors ${activeTab === 'wallet' ? 'text-orange-500' : 'text-gray-400'}`}>
-              <span className="text-xl mb-1">💰</span>
+              <span className="text-xl mb-1"></span>
               <span className="text-[10px] font-bold">Wallet</span>
             </button>
             <button onClick={() => handleTabSwitch('profile')} className={`flex flex-col items-center p-2 min-w-[64px] transition-colors ${activeTab === 'profile' ? 'text-orange-500' : 'text-gray-400'}`}>
-              <span className="text-xl mb-1">👤</span>
+              <span className="text-xl mb-1"></span>
               <span className="text-[10px] font-bold">Profile</span>
             </button>
           </nav>
@@ -668,7 +717,6 @@ function RiderDashboard() {
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
           <div className="bg-white dark:bg-gray-900 rounded-3xl p-6 md:p-8 max-w-sm w-full shadow-2xl border border-gray-200 dark:border-gray-800 text-center animate-fade-in-up">
             <div className="w-16 h-16 bg-red-100 dark:bg-red-500/20 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
-              🚪
             </div>
             <h3 className="text-xl font-black text-gray-900 dark:text-white mb-2">Leaving so soon?</h3>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-8 font-medium">Are you sure you want to log out of your rider account?</p>
@@ -681,13 +729,13 @@ function RiderDashboard() {
                 }}
                 className="app-close-btn flex-1 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 font-bold py-3.5 rounded-xl hover:bg-red-100 transition border border-red-200 dark:border-red-500/20"
               >
-                ❌ Cancel
+                Cancel
               </button>
               <button
                 onClick={executeLogout}
                 className="flex-1 bg-green-600 text-white font-bold py-3.5 rounded-xl hover:bg-green-700 shadow-lg shadow-green-500/30 transition"
               >
-                ✅ Confirm
+              Confirm
               </button>
             </div>
           </div>

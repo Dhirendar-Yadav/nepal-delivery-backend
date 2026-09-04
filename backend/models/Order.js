@@ -3,9 +3,9 @@ const crypto = require('crypto');
 const { VALID_ORDER_STATUSES, VALID_TRANSITIONS, VALID_ACTORS } = require('../constants/orderConstants');
 
 /**
- * @description Order Schema for Food Samundar (The Absolute Master Copy ❄️)
- * 🛡️ FINANCIAL INTEGRITY: Enforces Safe Integer validation (Paisa) up to 2^53 - 1 boundaries.
- * 🔒 ATOMIC ARCHITECTURE COMPLIANT: 100% hook-free execution layer driven explicitly via static factories.
+ * @description Order Schema for Food Samundar (The Absolute Master Copy)
+ * FINANCIAL INTEGRITY: Enforces Safe Integer validation (Paisa) up to 2^53 - 1 boundaries.
+ * ATOMIC ARCHITECTURE COMPLIANT: 100% hook-free execution layer driven explicitly via static factories.
  */
 const orderSchema = new mongoose.Schema({
     customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
@@ -17,7 +17,7 @@ const orderSchema = new mongoose.Schema({
     offerExpiresAt: { type: Date, default: null, index: true },
     currentDispatchIndex: { type: Number, default: -1 }, 
     
-    // 🚀 INVARIANT HARDENING: Explicit boundary caps preventing document size memory bloat drops
+    //INVARIANT HARDENING: Explicit boundary caps preventing document size memory bloat drops
     dispatchQueue: {
         type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
         validate: {
@@ -26,7 +26,7 @@ const orderSchema = new mongoose.Schema({
         }
     },
     
-    // --- 🛒 Items Specification Matrix ---
+    //Items Specification Matrix
     items: [{
         menuItemId: { type: mongoose.Schema.Types.ObjectId, ref: 'MenuItem' }, 
         name: { type: String, required: true },
@@ -95,8 +95,8 @@ const orderSchema = new mongoose.Schema({
         from: { type: String, enum: VALID_ORDER_STATUSES, required: true },
         to: { type: String, enum: VALID_ORDER_STATUSES, required: true },
         actorType: { type: String, enum: VALID_ACTORS, required: true },
-        // 🚀 SUBDOC CONTEXT FIX: Dropped function required rules to block atomic array update query context failures.
-        // Contract schema structural validation is delegated strictly to the factory layer payload builders instead.
+        //SUBDOC CONTEXT FIX: Dropped function required rules to block atomic array update query context failures.
+        //Contract schema structural validation is delegated strictly to the factory layer payload builders instead.
         actorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
 reason: {
     type: String,
@@ -152,7 +152,7 @@ default:null
 deliveryOTP: { type: String, default: null },
 deliveryOTPExpiresAt: { type: Date, default: null },
     
-    // --- 📍 Logistics & Geolocation Metadata ---
+    //Logistics & Geolocation Metadata
     deliveryDetails: {
         address: { type: String, required: true },
         phone: { 
@@ -188,6 +188,12 @@ deliveryOTPExpiresAt: { type: Date, default: null },
                 message: 'Invalid GeoJSON coordinates spatial layout.'
             }
         }
+    },
+
+    riderOnTheWayAt: {
+        type: Date,
+        default: null,
+        index: true
     }
 
 }, { 
@@ -196,12 +202,8 @@ deliveryOTPExpiresAt: { type: Date, default: null },
     toObject: { virtuals: true },
     autoIndex: false 
 });
-
-// =========================================================================
-// 🔐 TIMING-SAFE STATIC & INSTANCE OTP UTILITIES
-// =========================================================================
-
-// Internal salt/pepper retrieval pattern configuration mapping rules
+//TIMING-SAFE STATIC & INSTANCE OTP UTILITIES
+//Internal salt/pepper retrieval pattern configuration mapping rules
 const getSystemPepperToken = () => process.env.OTP_SECRET || 'FoodSamundarSystemServerPepperStringSignatureHashToken';
 
 orderSchema.statics.hashOTP = function(otp) {
@@ -221,11 +223,7 @@ orderSchema.statics.verifyTimingSafeOTP = function(rawOtp, storedHash, expiresAt
     if (incomingHash.length !== existingHash.length) return false;
     return crypto.timingSafeEqual(incomingHash, existingHash);
 };
-
-// =========================================================================
-// 🚀 STATE ATOMIC UPDATE FACTORY UTILITIES
-// =========================================================================
-
+// STATE ATOMIC UPDATE FACTORY UTILITIES
 /**
  * Centralized Deterministic Update Payload Generation Factory
  */
@@ -352,11 +350,7 @@ orderSchema.statics.validateFinancialBreakdown = function(financials, { includeP
         delta: totalAmount - expectedTotal
     };
 };
-
-// =========================================================================
-// ⚡ HIGH-SPEED PERFORMANCE STRATEGIC COMPOUND INDEXES
-// =========================================================================
-
+// HIGH-SPEED PERFORMANCE STRATEGIC COMPOUND INDEXES
 orderSchema.index({ customerId: 1, createdAt: -1 }); 
 orderSchema.index({ riderLocation: "2dsphere" }, { sparse: true }); 
 orderSchema.index({ assignedRiderId: 1, status: 1 }); 

@@ -8,6 +8,7 @@ export default function useSellerOrders({
   onOrderCancelled
 }) {
   const [orders, setOrders] = useState([]);
+  const [riderOnTheWayNotification, setRiderOnTheWayNotification] = useState(null);
 
   const socketRef = useRef(null);
   const newOrderSoundRef = useRef(null);
@@ -149,12 +150,37 @@ export default function useSellerOrders({
       }
     });
 
+    socket.on('riderOnTheWay', (data) => {
+      setRiderOnTheWayNotification(data);
+
+      setOrders((prevOrders) => prevOrders.map(order => {
+        if (order._id === data.orderId) {
+          return {
+            ...order,
+            riderOnTheWayAt: data.riderOnTheWayAt
+          };
+        }
+
+        return order;
+      }));
+
+      if (
+        typeof Notification !== 'undefined' &&
+        Notification.permission === 'granted'
+      ) {
+        new Notification('Rider On The Way', {
+          body: 'The assigned rider has started moving toward the restaurant.'
+        });
+      }
+    });
+
     socket.on('connect', () => console.log("Connected to Live Server"));
 
     return () => {
       if (socketRef.current) {
         socketRef.current.off('newLiveOrder');
         socketRef.current.off('orderAssignedToRider');
+        socketRef.current.off('riderOnTheWay');
         socketRef.current.disconnect();
       }
 
@@ -188,6 +214,8 @@ export default function useSellerOrders({
   return {
     orders,
     fetchOrders,
-    updateOrderStatus
+    updateOrderStatus,
+    riderOnTheWayNotification,
+    setRiderOnTheWayNotification
   };
 }

@@ -111,13 +111,31 @@
                       {order.status}
                     </p>
 
-                    <button
-                      type="button"
-                      onClick={() => openOrderDetail(order._id)}
-                      className="whitespace-nowrap text-left text-[8px] font-black text-orange-400 transition hover:text-orange-300 active:scale-95 sm:text-[10px]"
-                    >
-                      View Details
-                    </button>
+                    {order.status === 'Pending' ? (
+                      <button
+                        type="button"
+                        onClick={() => updateOrderStatus(order._id, 'Accepted')}
+                        className="whitespace-nowrap text-left text-[8px] font-black text-green-400 transition hover:text-green-300 active:scale-95 sm:text-[10px]"
+                      >
+                        Accept
+                      </button>
+                    ) : order.status === 'Preparing' ? (
+                      <span className="whitespace-nowrap text-left text-[8px] font-black text-orange-400 sm:text-[10px]">
+                        Preparing
+                      </span>
+                    ) : order.status === 'Accepted' ? (
+                      <span className="whitespace-nowrap text-left text-[8px] font-black text-amber-400 sm:text-[10px]">
+                        Waiting for Rider
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => openOrderDetail(order._id)}
+                        className="whitespace-nowrap text-left text-[8px] font-black text-orange-400 transition hover:text-orange-300 active:scale-95 sm:text-[10px]"
+                      >
+                        View Details
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>

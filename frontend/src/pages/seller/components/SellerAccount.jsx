@@ -1,6 +1,10 @@
-﻿import { createPortal } from 'react-dom';
+﻿import { useState } from 'react';
+import { createPortal } from 'react-dom';
+import PaymentMethodModal from './PaymentMethodModal';
 
 function SellerAccount({
+  API_BASE,
+  fetchRestaurant,
   restaurant,
   isStatementModalOpen,
   setIsStatementModalOpen,
@@ -18,6 +22,64 @@ function SellerAccount({
   statementTotalPages,
   statementHasNextPage
 }) {
+  const [isPaymentMethodModalOpen, setIsPaymentMethodModalOpen] = useState(false);
+  const [paymentMethodSaving, setPaymentMethodSaving] = useState(false);
+  const [paymentMethodError, setPaymentMethodError] = useState('');
+
+  const hasPaymentMethod =
+    restaurant?.payoutSettings?.method === 'Bank'
+      ? Boolean(
+          restaurant.payoutSettings.bankDetails?.accountName &&
+          restaurant.payoutSettings.bankDetails?.bankName &&
+          restaurant.payoutSettings.bankDetails?.accountNumber
+        )
+      : restaurant?.payoutSettings?.method === 'eSewa'
+        ? Boolean(
+            restaurant.payoutSettings.eSewaAccountName &&
+            restaurant.payoutSettings.eSewaId
+          )
+        : false;
+
+  const handleSavePaymentMethod = async (payload) => {
+    setPaymentMethodSaving(true);
+    setPaymentMethodError('');
+
+    try {
+      const response = await fetch(
+        `${API_BASE}/api/seller/store/payment-method`,
+        {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.message ||
+            data.error ||
+            'Unable to save payment method.'
+        );
+      }
+
+      await fetchRestaurant();
+      setIsPaymentMethodModalOpen(false);
+    } catch (error) {
+      setPaymentMethodError(
+        error instanceof Error
+          ? error.message
+          : 'Unable to save payment method.'
+      );
+    } finally {
+      setPaymentMethodSaving(false);
+    }
+  };
+
   return (
           <>
             <section className="w-full max-w-2xl space-y-5 sm:space-y-6">
@@ -28,9 +90,15 @@ function SellerAccount({
 
                 <button
                   type="button"
+                  onClick={() => {
+                    setPaymentMethodError('');
+                    setIsPaymentMethodModalOpen(true);
+                  }}
                   className="shrink-0 rounded-md px-2 py-1.5 text-[10px] font-black text-orange-400 transition hover:bg-orange-500/10 hover:text-orange-300 active:scale-[0.98] sm:px-3 sm:py-1.5 sm:text-xs"
                 >
-                  Add Payment Method
+                  {hasPaymentMethod
+                    ? 'Edit Payment Method'
+                    : 'Add Payment Method'}
                 </button>
               </div>
 
@@ -65,7 +133,70 @@ function SellerAccount({
                   </p>
                 </div>
               </div>
+              {hasPaymentMethod ? (
+                <div className="border-t border-gray-700 pt-4">
+                  <div className="rounded-2xl border border-gray-700 bg-gray-800/60 px-4 py-4">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-gray-500 sm:text-xs">
+                      Payment Method
+                    </p>
 
+                    <p className="mt-2 text-sm font-black text-white">
+                      {restaurant.payoutSettings.method}
+                    </p>
+
+                    {restaurant.payoutSettings.method === 'Bank' ? (
+                      <div className="mt-3 space-y-2 text-xs">
+                        <p className="text-gray-300">
+                          <span className="font-black text-gray-500">
+                            Account Holder&apos;s Name
+                          </span>
+                          {' — '}
+                          {restaurant.payoutSettings.bankDetails?.accountName ||
+                            'Not Provided'}
+                        </p>
+
+                        <p className="text-gray-300">
+                          <span className="font-black text-gray-500">
+                            Bank Name
+                          </span>
+                          {' — '}
+                          {restaurant.payoutSettings.bankDetails?.bankName ||
+                            'Not Provided'}
+                        </p>
+
+                        <p className="text-gray-300">
+                          <span className="font-black text-gray-500">
+                            Account Number
+                          </span>
+                          {' — '}
+                          {restaurant.payoutSettings.bankDetails?.accountNumber ||
+                            'Not Provided'}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="mt-3 space-y-2 text-xs">
+                        <p className="text-gray-300">
+                          <span className="font-black text-gray-500">
+                            Account Holder&apos;s Name
+                          </span>
+                          {' — '}
+                          {restaurant.payoutSettings.eSewaAccountName ||
+                            'Not Provided'}
+                        </p>
+
+                        <p className="text-gray-300">
+                          <span className="font-black text-gray-500">
+                            eSewa Mobile Number
+                          </span>
+                          {' — '}
+                          {restaurant.payoutSettings.eSewaId ||
+                            'Not Provided'}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : null}
               <div className="border-t border-gray-700 pt-3 sm:pt-4">
                 <button
                   type="button"
@@ -80,6 +211,56 @@ function SellerAccount({
                 </button>
               </div>
             </section>
+
+            <PaymentMethodModal
+              isOpen={isPaymentMethodModalOpen}
+              title={
+                hasPaymentMethod
+                  ? 'Edit Payment Method'
+                  : 'Add Payment Method'
+              }
+              initialMethod={
+                hasPaymentMethod
+                  ? restaurant.payoutSettings.method
+                  : 'Bank'
+              }
+              initialValues={
+                restaurant?.payoutSettings?.method === 'Bank'
+                  ? {
+                      accountHolderName:
+                        restaurant?.payoutSettings?.bankDetails?.accountName || '',
+                      bankName:
+                        restaurant?.payoutSettings?.bankDetails?.bankName || '',
+                      accountNumber: '',
+                      eSewaId: ''
+                    }
+                  : restaurant?.payoutSettings?.method === 'eSewa'
+                    ? {
+                        accountHolderName:
+                          restaurant?.payoutSettings?.eSewaAccountName || '',
+                        bankName: '',
+                        accountNumber: '',
+                        eSewaId: ''
+                      }
+                    : {
+                        accountHolderName: '',
+                        bankName: '',
+                        accountNumber: '',
+                        eSewaId: ''
+                      }
+              }
+              loading={paymentMethodSaving}
+              error={paymentMethodError}
+              onSave={handleSavePaymentMethod}
+              onCancel={() => {
+                if (paymentMethodSaving) {
+                  return;
+                }
+
+                setPaymentMethodError('');
+                setIsPaymentMethodModalOpen(false);
+              }}
+            />
 
             {isStatementModalOpen &&
               createPortal(

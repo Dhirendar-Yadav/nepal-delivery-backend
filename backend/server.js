@@ -16,6 +16,7 @@ const helmet = require('helmet');
 const hpp = require('hpp');
 const pino = require('pino');
 const path = require('path');
+const { getDistanceMeters } = require('./utils/geo');
 const { authMiddleware } = require('./middlewares/auth');
 const {
     initializeSocket,
@@ -34,6 +35,7 @@ const AdminWallet = require('./models/AdminWallet');
 const LedgerEntry = require('./models/LedgerEntry');
 const startShiftMonitor = require('./services/shiftMonitor');
 const startDispatchMonitor = require('./services/dispatchMonitor');
+const startPreparationMonitor = require('./services/preparationMonitor');
 const { VALID_TRANSITIONS } = require('./constants/orderConstants');
 
 const app = express();
@@ -58,7 +60,7 @@ if (missingEnv.length) {
 const isProd = process.env.NODE_ENV === 'production';
 app.set('trust proxy', 1);
 
-// 📊 CEO Structured Logger (Pino Core)
+// CEO Structured Logger (Pino Core)
 const logger = pino({
     level: process.env.LOG_LEVEL || 'info',
     redact: ['req.headers.authorization', 'req.body.password'],
@@ -66,23 +68,23 @@ const logger = pino({
 });
 
 // ==========================================
-// 2. SECURITY & CONTEXT MIDDLEWARES
+// SECURITY & CONTEXT MIDDLEWARES
 // ==========================================
-// 🛡️ FIX: Security Headers (Adjusted to allow Cross-Origin Images for frontend)
+// FIX: Security Headers (Adjusted to allow Cross-Origin Images for frontend)
 app.use(helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" }
 }));
 
 // Private uploads are served only through authorized application routes.
-// ✅ Data Parsers
+// Data Parsers
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 app.use(cookieParser());
 
-// ✅ Parameter Pollution Guard
+// Parameter Pollution Guard
 app.use(hpp());
 
-// 🛡️ FIX: Added localhost:5173 to allow frontend connections
+// FIX: Added localhost:5173 to allow frontend connections
 const allowedOrigins = isProd
     ? [process.env.FRONTEND_URL].filter(Boolean)
     : [
@@ -98,7 +100,7 @@ app.use(cors({
     credentials: true
 }));
 
-// 🛡️ Request Context Binding
+// Request Context Binding
 app.use((req, res, next) => {
     req.requestId = req.header('x-request-id') || uuidv4();
     req.log = logger.child({ requestId: req.requestId });
@@ -134,12 +136,8 @@ const orderLimiter = rateLimit({
     max: 15,
     message: { success: false, error: 'RATE_LIMIT_EXCEEDED' }
 });
-
-// ==========================================
 // 3. CORE ORDER LOGIC (Apex Grade)
-// ==========================================
-
-// 🚀 SECURE ORDER STATUS UPDATE (State Machine Enforcement)
+// SECURE ORDER STATUS UPDATE (State Machine Enforcement)
 app.patch('/api/admin/orders/:id/status', authMiddleware, async (req, res) => {
     try {
         if (req.user.role !== 'Admin') return res.status(403).json({ success: false, error: 'UNAUTHORIZED_ACCESS' });
@@ -179,7 +177,7 @@ app.patch('/api/admin/orders/:id/status', authMiddleware, async (req, res) => {
 
 app.post('/api/orders', authMiddleware, orderLimiter, async (req, res, next) => {
     const MAX_RETRIES = 3;
-    // ✨ FIX: Accept deliveryFee and totalAmount strictly from the frontend Checkout
+    //FIX: Accept deliveryFee and totalAmount strictly from the frontend Checkout
     const { restaurantId, items, deliveryDetails, paymentMethod, clientOrderId: rawClientOrderId } = req.body;
     const clientOrderId = typeof rawClientOrderId === 'string' ? rawClientOrderId.trim() : '';
 
@@ -340,17 +338,12 @@ if (restaurant.isPaused) {
                 };
             }
 
-            const distance = (() => {
-                const R = 6371;
-                const dLat = (customerLatitude - restaurantLatitude) * Math.PI / 180;
-                const dLon = (customerLongitude - restaurantLongitude) * Math.PI / 180;
-                const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                    Math.cos(restaurantLatitude * Math.PI / 180) *
-                    Math.cos(customerLatitude * Math.PI / 180) *
-                    Math.sin(dLon / 2) * Math.sin(dLon / 2);
-
-                return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-            })();
+            const distance = getDistanceMeters(
+                restaurantLatitude,
+                restaurantLongitude,
+                customerLatitude,
+                customerLongitude
+            ) / 1000;
 
             const finalDeliveryFeeNpr = Math.max(
                 25,
@@ -591,17 +584,14 @@ return res.json({
         next(err);
     }
 });
-
-// ==========================================
-// 4. SOCKET ENGINE (DoS Protected)
-// ==========================================
+//SOCKET ENGINE (DoS Protected)
 const io = new Server(server, {
     cors: {
         origin: allowedOrigins,
         credentials: true
     }
 });
-app.set('io', io); // ✨ NEW: Expose IO to routes
+app.set('io', io); //NEW: Expose IO to routes
 initializeSocket(io);
 
 const riderThrottle = new Map();
@@ -646,14 +636,14 @@ io.use((socket, next) => {
 });
 
 io.on('connection', (socket) => {
-    // 🚀 CEO INJECTION: Automatically join EVERY authenticated user to their own personal room.
+    //CEO INJECTION: Automatically join EVERY authenticated user to their own personal room.
     // This makes io.to(rider._id).emit() work instantly without the frontend needing to request a room join!
     if (socket.user && socket.user.id) {
         socket.join(socket.user.id.toString());
         logger.info({ event: 'PRIVATE_ROOM_JOINED', userId: socket.user.id, role: socket.user.role });
     }
 
-    // ✨ NEW: Seller dashboard room join
+    //NEW: Seller dashboard room join
     socket.on('joinRestaurantDashboard', async (restaurantId) => {
         if (++socket.joinCount > 15 || !mongoose.Types.ObjectId.isValid(restaurantId)) return;
 
@@ -715,24 +705,21 @@ io.on('connection', (socket) => {
         } catch (err) { logger.error({ event: 'SOCKET_UPDATE_ERROR', error: err.message }); }
     });
 });
-
-// ==========================================
-// ✅ ROUTES INTEGRATION
-// ==========================================
+//ROUTES INTEGRATION
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/kyc', require('./routes/kycRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
 
-// 🚀 FIX APPLIED HERE: The Rider Routes were entirely missing!
+//FIX APPLIED HERE: The Rider Routes were entirely missing!
 app.use('/api/rider', require('./routes/riderRoutes'));
 
-// ✨ ADDED: Seller route integration pointing to your existing restaurantRoutes file
+//ADDED: Seller route integration pointing to your existing restaurantRoutes file
 app.use('/api/seller', require('./routes/restaurantRoutes'));
 
-// ✨ Integrated the Zomato-grade Restaurant & Search API (For Customer app)
+//Integrated the Zomato-grade Restaurant & Search API (For Customer app)
 app.use('/api/restaurants', require('./routes/restaurantRoutes'));
 
-// ✨ FIX: Routed the customer menu request to the same restaurant routes file
+//FIX: Routed the customer menu request to the same restaurant routes file
 app.use('/api/menu', require('./routes/restaurantRoutes'));
 // ==========================================
 // HEALTH & READINESS ENDPOINTS
@@ -764,14 +751,14 @@ app.use((err, req, res, next) => {
     res.status(status).json({ success: false, error: code, message: isProd ? "Internal Engine Error" : err.message });
 });
 
-// Database & Index Sync
+//Database & Index Sync
 mongoose.connect(process.env.MONGO_URI, { maxPoolSize: 50, serverSelectionTimeoutMS: 5000 })
 .then(async () => {
     logger.info({ event: 'DB_CONNECTED', detail: 'Apex V17 Ready' });
     if (isProd) {
         await Order.syncIndexes();
         await MenuItem.syncIndexes();
-        // ✨ NEW: Enforce syncing of our new High-Performance Geo & Text Indexes
+        //NEW: Enforce syncing of our new High-Performance Geo & Text Indexes
         await Restaurant.syncIndexes();
         await RiderProfile.syncIndexes();
         await AdminWallet.syncIndexes();
@@ -780,14 +767,12 @@ mongoose.connect(process.env.MONGO_URI, { maxPoolSize: 50, serverSelectionTimeou
     server.listen(PORT, () => {
         startShiftMonitor();
         startDispatchMonitor(io);
+        startPreparationMonitor();
         logger.info({ event: 'SERVER_UP', port: PORT });
     });
 })
 .catch(err => { logger.error({ event: 'DB_CONNECTION_FAILED', error: err.message }); process.exit(1); });
-
-// ==========================================
-// 🛡️ PRODUCTION GRACEFUL SHUTDOWN
-// ==========================================
+//PRODUCTION GRACEFUL SHUTDOWN
 let isShuttingDown = false;
 
 const shutdown = async (signal) => {
