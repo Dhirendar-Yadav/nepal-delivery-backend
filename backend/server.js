@@ -1,84 +1,80 @@
-// ==========================================
 // 1. INITIALIZATION & CORE CONFIG
-// ==========================================
-require('dotenv').config();
+require("dotenv").config();
 const PORT = process.env.PORT || 5005;
-const express = require('express');
-const mongoose = require('mongoose');
-const cors = require('cors');
-const cookieParser = require('cookie-parser');
-const http = require('http');
-const { Server } = require('socket.io');
-const jwt = require('jsonwebtoken');
-const rateLimit = require('express-rate-limit');
-const { v4: uuidv4 } = require('uuid');
-const helmet = require('helmet');
-const hpp = require('hpp');
-const pino = require('pino');
-const path = require('path');
-const { getDistanceMeters } = require('./utils/geo');
-const { authMiddleware } = require('./middlewares/auth');
+const express = require("express");
+const mongoose = require("mongoose");
+const cors = require("cors");
+const cookieParser = require("cookie-parser");
+const http = require("http");
+const { Server } = require("socket.io");
+const jwt = require("jsonwebtoken");
+const rateLimit = require("express-rate-limit");
+const { v4: uuidv4 } = require("uuid");
+const helmet = require("helmet");
+const hpp = require("hpp");
+const pino = require("pino");
+const path = require("path");
+const { getDistanceMeters } = require("./utils/geo");
+const { authMiddleware } = require("./middlewares/auth");
 const {
-    initializeSocket,
-    emitToUser,
-    emitToOrder,
-    emitToRestaurant
-} = require('./services/socketService');
+  initializeSocket,
+  emitToUser,
+  emitToOrder,
+  emitToRestaurant,
+} = require("./services/socketService");
 
 // Models
-const Restaurant = require('./models/Restaurant');
-const MenuItem = require('./models/MenuItem');
-const Order = require('./models/Order');
-const Settings = require('./models/Settings');
-const RiderProfile = require('./models/RiderProfile');
-const AdminWallet = require('./models/AdminWallet');
-const LedgerEntry = require('./models/LedgerEntry');
-const startShiftMonitor = require('./services/shiftMonitor');
-const startDispatchMonitor = require('./services/dispatchMonitor');
-const startPreparationMonitor = require('./services/preparationMonitor');
-const { VALID_TRANSITIONS } = require('./constants/orderConstants');
+const Restaurant = require("./models/Restaurant");
+const MenuItem = require("./models/MenuItem");
+const Order = require("./models/Order");
+const Settings = require("./models/Settings");
+const RiderProfile = require("./models/RiderProfile");
+const AdminWallet = require("./models/AdminWallet");
+const LedgerEntry = require("./models/LedgerEntry");
+const startShiftMonitor = require("./services/shiftMonitor");
+const startDispatchMonitor = require("./services/dispatchMonitor");
+const startPreparationMonitor = require("./services/preparationMonitor");
+const { VALID_TRANSITIONS } = require("./constants/orderConstants");
 
 const app = express();
-app.disable('x-powered-by');
+app.disable("x-powered-by");
 const server = http.createServer(app);
 
-const requiredEnv = [
-    "MONGO_URI",
-    "JWT_SECRET",
-    "PAYMENT_WEBHOOK_SECRET"
-];
+const requiredEnv = ["MONGO_URI", "JWT_SECRET", "PAYMENT_WEBHOOK_SECRET"];
 
-const missingEnv = requiredEnv.filter(
-    key => !process.env[key]?.trim()
-);
+const missingEnv = requiredEnv.filter((key) => !process.env[key]?.trim());
 
 if (missingEnv.length) {
-    throw new Error(
-        `Missing required environment variables: ${missingEnv.join(", ")}`
-    );
+  throw new Error(
+    `Missing required environment variables: ${missingEnv.join(", ")}`,
+  );
 }
-const isProd = process.env.NODE_ENV === 'production';
-app.set('trust proxy', 1);
+const isProd = process.env.NODE_ENV === "production";
+app.set("trust proxy", 1);
 
 // CEO Structured Logger (Pino Core)
 const logger = pino({
-    level: process.env.LOG_LEVEL || 'info',
-    redact: ['req.headers.authorization', 'req.body.password'],
-    transport: !isProd ? { target: 'pino-pretty', options: { colorize: true } } : undefined
+  level: process.env.LOG_LEVEL || "info",
+  redact: ["req.headers.authorization", "req.body.password"],
+  transport: !isProd
+    ? { target: "pino-pretty", options: { colorize: true } }
+    : undefined,
 });
 
 // ==========================================
 // SECURITY & CONTEXT MIDDLEWARES
 // ==========================================
 // FIX: Security Headers (Adjusted to allow Cross-Origin Images for frontend)
-app.use(helmet({
-    crossOriginResourcePolicy: { policy: "cross-origin" }
-}));
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  }),
+);
 
 // Private uploads are served only through authorized application routes.
 // Data Parsers
-app.use(express.json({ limit: '10kb' }));
-app.use(express.urlencoded({ extended: true, limit: '10kb' }));
+app.use(express.json({ limit: "10kb" }));
+app.use(express.urlencoded({ extended: true, limit: "10kb" }));
 app.use(cookieParser());
 
 // Parameter Pollution Guard
@@ -86,414 +82,514 @@ app.use(hpp());
 
 // FIX: Added localhost:5173 to allow frontend connections
 const allowedOrigins = isProd
-    ? [process.env.FRONTEND_URL].filter(Boolean)
-    : [
-        process.env.FRONTEND_URL,
-        'http://localhost:3000',
-        'http://localhost:5173'
+  ? [process.env.FRONTEND_URL].filter(Boolean)
+  : [
+      process.env.FRONTEND_URL,
+      "http://localhost:3000",
+      "http://localhost:5173",
     ].filter(Boolean);
-app.use(cors({
+app.use(
+  cors({
     origin: (origin, callback) => {
-        if (!origin || allowedOrigins.includes(origin)) callback(null, true);
-        else callback(new Error('CORS blocked by CEO Firewall.'));
+      if (!origin || allowedOrigins.includes(origin)) callback(null, true);
+      else callback(new Error("CORS blocked by CEO Firewall."));
     },
-    credentials: true
-}));
+    credentials: true,
+  }),
+);
 
 // Request Context Binding
 app.use((req, res, next) => {
-    req.requestId = req.header('x-request-id') || uuidv4();
-    req.log = logger.child({ requestId: req.requestId });
+  req.requestId = req.header("x-request-id") || uuidv4();
+  req.log = logger.child({ requestId: req.requestId });
 
-    const start = Date.now();
-res.on('finish', () => {
+  const start = Date.now();
+  res.on("finish", () => {
     const durationMs = Date.now() - start;
 
     const logPayload = {
-        event: 'REQUEST_COMPLETE',
-        path: req.originalUrl,
-        status: res.statusCode,
-        durationMs
+      event: "REQUEST_COMPLETE",
+      path: req.originalUrl,
+      status: res.statusCode,
+      durationMs,
     };
 
     if (durationMs >= 2000 || res.statusCode >= 500) {
-        req.log.warn({
-            ...logPayload,
-            event: durationMs >= 2000
-                ? 'SLOW_REQUEST'
-                : 'REQUEST_SERVER_ERROR'
-        });
+      req.log.warn({
+        ...logPayload,
+        event: durationMs >= 2000 ? "SLOW_REQUEST" : "REQUEST_SERVER_ERROR",
+      });
     } else {
-        req.log.info(logPayload);
+      req.log.info(logPayload);
     }
+  });
+  next();
 });
-    next();
-});
-
 
 const orderLimiter = rateLimit({
-    windowMs: 60 * 1000,
-    max: 15,
-    message: { success: false, error: 'RATE_LIMIT_EXCEEDED' }
+  windowMs: 60 * 1000,
+  max: 15,
+  message: { success: false, error: "RATE_LIMIT_EXCEEDED" },
 });
 // 3. CORE ORDER LOGIC (Apex Grade)
 // SECURE ORDER STATUS UPDATE (State Machine Enforcement)
-app.patch('/api/admin/orders/:id/status', authMiddleware, async (req, res) => {
-    try {
-        if (req.user.role !== 'Admin') return res.status(403).json({ success: false, error: 'UNAUTHORIZED_ACCESS' });
+app.patch("/api/admin/orders/:id/status", authMiddleware, async (req, res) => {
+  try {
+    if (req.user.role !== "Admin")
+      return res
+        .status(403)
+        .json({ success: false, error: "UNAUTHORIZED_ACCESS" });
 
-        const { id } = req.params;
-        const { status: nextStatus } = req.body;
+    const { id } = req.params;
+    const { status: nextStatus } = req.body;
 
-        const order = await Order.findById(id);
-        if (!order) return res.status(404).json({ success: false, error: 'ORDER_NOT_FOUND' });
+    const order = await Order.findById(id);
+    if (!order)
+      return res.status(404).json({ success: false, error: "ORDER_NOT_FOUND" });
 
-        if (order.paymentMethod === 'ONLINE' && order.paymentStatus !== 'PAID' && nextStatus !== 'Cancelled') {
-            return res.status(409).json({ success: false, error: 'PAYMENT_REQUIRED' });
-        }
-
-        const currentStatus = order.status;
-
-        // Verify if the transition is allowed by the CEO Guard
-        if (!VALID_TRANSITIONS[currentStatus].includes(nextStatus)) {
-            return res.status(400).json({
-                success: false,
-                error: 'INVALID_STATUS_TRANSITION',
-                message: `Error: Cannot move from ${currentStatus} to ${nextStatus}. System protocol violation.`
-            });
-        }
-
-        order.status = nextStatus;
-        await order.save();
-
-        req.log.info({ event: 'ORDER_STATUS_LOCKED', orderId: id, from: currentStatus, to: nextStatus });
-        res.status(200).json({ success: true, message: `Status updated to ${nextStatus}` });
-
-    } catch (err) {
-        req.log.error({ event: 'STATUS_UPDATE_FAILED', error: err.message });
-        res.status(500).json({ success: false, error: 'INTERNAL_SERVER_ERROR' });
+    if (
+      order.paymentMethod === "ONLINE" &&
+      order.paymentStatus !== "PAID" &&
+      nextStatus !== "Cancelled"
+    ) {
+      return res
+        .status(409)
+        .json({ success: false, error: "PAYMENT_REQUIRED" });
     }
+
+    const currentStatus = order.status;
+
+    // Verify if the transition is allowed by the CEO Guard
+    if (!VALID_TRANSITIONS[currentStatus].includes(nextStatus)) {
+      return res.status(400).json({
+        success: false,
+        error: "INVALID_STATUS_TRANSITION",
+        message: `Error: Cannot move from ${currentStatus} to ${nextStatus}. System protocol violation.`,
+      });
+    }
+
+    order.status = nextStatus;
+    await order.save();
+
+    req.log.info({
+      event: "ORDER_STATUS_LOCKED",
+      orderId: id,
+      from: currentStatus,
+      to: nextStatus,
+    });
+    res
+      .status(200)
+      .json({ success: true, message: `Status updated to ${nextStatus}` });
+  } catch (err) {
+    req.log.error({ event: "STATUS_UPDATE_FAILED", error: err.message });
+    res.status(500).json({ success: false, error: "INTERNAL_SERVER_ERROR" });
+  }
 });
 
-app.post('/api/orders', authMiddleware, orderLimiter, async (req, res, next) => {
+app.post(
+  "/api/orders",
+  authMiddleware,
+  orderLimiter,
+  async (req, res, next) => {
     const MAX_RETRIES = 3;
     //FIX: Accept deliveryFee and totalAmount strictly from the frontend Checkout
-    const { restaurantId, items, deliveryDetails, paymentMethod, clientOrderId: rawClientOrderId } = req.body;
-    const clientOrderId = typeof rawClientOrderId === 'string' ? rawClientOrderId.trim() : '';
+    const {
+      restaurantId,
+      items,
+      deliveryDetails,
+      paymentMethod,
+      clientOrderId: rawClientOrderId,
+    } = req.body;
+    const clientOrderId =
+      typeof rawClientOrderId === "string" ? rawClientOrderId.trim() : "";
 
-    if (!clientOrderId || clientOrderId.length > 100 || !/^[A-Za-z0-9_-]+$/.test(clientOrderId)) {
-        return res.status(400).json({ success: false, error: 'INVALID_CLIENT_ORDER_ID' });
+    if (
+      !clientOrderId ||
+      clientOrderId.length > 100 ||
+      !/^[A-Za-z0-9_-]+$/.test(clientOrderId)
+    ) {
+      return res
+        .status(400)
+        .json({ success: false, error: "INVALID_CLIENT_ORDER_ID" });
     }
 
-    if (paymentMethod !== 'COD') {
-        return res.status(400).json({ success: false, error: 'INVALID_PAYMENT_METHOD' });
+    if (paymentMethod !== "COD") {
+      return res
+        .status(400)
+        .json({ success: false, error: "INVALID_PAYMENT_METHOD" });
     }
 
-    const existingOrder = await Order.findOne({ customerId: req.user.id, clientOrderId }).lean();
+    const existingOrder = await Order.findOne({
+      customerId: req.user.id,
+      clientOrderId,
+    }).lean();
     if (existingOrder) {
-        const response = { success: true, orderId: existingOrder._id, message: "Idempotent replay detected." };
-        if (existingOrder.paymentMethod === 'ONLINE') response.paymentReference = existingOrder.paymentReference;
-        return res.json(response);
+      const response = {
+        success: true,
+        orderId: existingOrder._id,
+        message: "Idempotent replay detected.",
+      };
+      if (existingOrder.paymentMethod === "ONLINE")
+        response.paymentReference = existingOrder.paymentReference;
+      return res.json(response);
     }
 
-    req.log.info({ event: 'ORDER_CREATE_ATTEMPT', customerId: req.user.id });
+    req.log.info({ event: "ORDER_CREATE_ATTEMPT", customerId: req.user.id });
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-        const session = await mongoose.startSession();
-        try {
-            session.startTransaction({ readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
+      const session = await mongoose.startSession();
+      try {
+        session.startTransaction({
+          readConcern: { level: "snapshot" },
+          writeConcern: { w: "majority" },
+        });
 
-            if (!restaurantId || !Array.isArray(items) || items.length === 0 || !deliveryDetails?.address) {
-                throw { status: 400, code: 'INVALID_SCHEMA' };
-            }
-
-            const itemMap = new Map();
-            for (const i of items) {
-                if (!mongoose.Types.ObjectId.isValid(i.menuItemId)) throw { status: 400, code: 'INVALID_ITEM_ID' };
-                if (!Number.isInteger(i.quantity) || i.quantity <= 0 || i.quantity > 50) throw { status: 400, code: 'INVALID_QUANTITY' };
-                itemMap.set(i.menuItemId, (itemMap.get(i.menuItemId) || 0) + i.quantity);
-            }
-
-            for (const quantity of itemMap.values()) {
-                if (quantity < 1 || quantity > 50) throw { status: 400, code: 'INVALID_QUANTITY' };
-            }
-
-            const restaurant = await Restaurant.findById(restaurantId)
-    .session(session)
-    .select('status isOpen isPaused latitude longitude');
-            if (!restaurant) {
-    throw {
-        status: 404,
-        code: 'RESTAURANT_NOT_FOUND'
-    };
-}
-
-if (restaurant.status !== 'ACTIVE') {
-    throw {
-        status: 400,
-        code: 'RESTAURANT_UNAVAILABLE'
-    };
-}
-
-if (!restaurant.isOpen) {
-    throw {
-        status: 403,
-        code: 'RESTAURANT_CLOSED',
-        message: 'Restaurant is currently closed.'
-    };
-}
-
-if (restaurant.isPaused) {
-    throw {
-        status: 403,
-        code: 'RESTAURANT_PAUSED',
-        message: 'Restaurant is temporarily unavailable.'
-    };
-}
-
-            const customerLatitude = Number(deliveryDetails.latitude);
-            const customerLongitude = Number(deliveryDetails.longitude);
-            const restaurantLatitude = Number(restaurant.latitude);
-            const restaurantLongitude = Number(restaurant.longitude);
-            if (
-                deliveryDetails.latitude == null || deliveryDetails.longitude == null ||
-                restaurant.latitude == null || restaurant.longitude == null ||
-                !Number.isFinite(customerLatitude) || customerLatitude < -90 || customerLatitude > 90 ||
-                !Number.isFinite(customerLongitude) || customerLongitude < -180 || customerLongitude > 180 ||
-                !Number.isFinite(restaurantLatitude) || restaurantLatitude < -90 || restaurantLatitude > 90 ||
-                !Number.isFinite(restaurantLongitude) || restaurantLongitude < -180 || restaurantLongitude > 180
-            ) {
-                throw { status: 400, code: 'INVALID_DELIVERY_COORDINATES' };
-            }
-
-            const dbItems = await MenuItem.find({
-                _id: { $in: Array.from(itemMap.keys()) },
-                restaurantId,
-                isAvailable: true,
-                isDeleted: false
-            }).session(session).maxTimeMS(2000);
-
-            if (dbItems.length !== itemMap.size) throw { status: 400, code: 'MENU_ITEM_UNAVAILABLE' };
-
-            let computedFoodCost = 0;
-            const normalizedItems = dbItems.map(dbItem => {
-                const qty = itemMap.get(dbItem._id.toString());
-                const itemPriceNpr = Math.round(dbItem.price);
-
-                if (!Number.isSafeInteger(itemPriceNpr) || itemPriceNpr < 0) {
-                    throw {
-                        status: 400,
-                        code: 'INVALID_MENU_PRICE'
-                    };
-                }
-
-                const itemPricePaisa = itemPriceNpr * 100;
-
-                if (!Number.isSafeInteger(itemPricePaisa)) {
-                    throw {
-                        status: 400,
-                        code: 'PRICE_OVERFLOW'
-                    };
-                }
-
-                computedFoodCost += itemPricePaisa * qty;
-
-                if (!Number.isSafeInteger(computedFoodCost)) {
-                    throw {
-                        status: 400,
-                        code: 'FOOD_COST_OVERFLOW'
-                    };
-                }
-
-                return {
-                    menuItemId: dbItem._id,
-                    name: dbItem.name,
-                    price: itemPricePaisa,
-                    quantity: qty
-                };
-            });
-
-            const settings = await Settings.findOne()
-                .session(session)
-                .select('petrolPrice platformCommission')
-                .lean();
-
-            const petrolPrice = Number.isFinite(settings?.petrolPrice)
-                ? settings.petrolPrice
-                : 175;
-
-            const platformCommission = Number.isFinite(settings?.platformCommission)
-                ? settings.platformCommission
-                : 10;
-
-            if (
-                petrolPrice < 0 ||
-                petrolPrice > 100000 ||
-                platformCommission < 0 ||
-                platformCommission > 100
-            ) {
-                throw {
-                    status: 500,
-                    code: 'INVALID_PRICING_CONFIGURATION'
-                };
-            }
-
-            const distance = getDistanceMeters(
-                restaurantLatitude,
-                restaurantLongitude,
-                customerLatitude,
-                customerLongitude
-            ) / 1000;
-
-            const finalDeliveryFeeNpr = Math.max(
-                25,
-                Math.round(((petrolPrice / 40) + 12) * distance)
-            );
-
-            const finalDeliveryFee = finalDeliveryFeeNpr * 100;
-
-            if (!Number.isSafeInteger(finalDeliveryFee)) {
-                throw {
-                    status: 400,
-                    code: 'DELIVERY_FEE_OVERFLOW'
-                };
-            }
-
-            const platformFee = Math.round(
-                computedFoodCost * platformCommission / 100
-            );
-
-            if (!Number.isSafeInteger(platformFee)) {
-                throw {
-                    status: 400,
-                    code: 'PLATFORM_FEE_OVERFLOW'
-                };
-            }
-
-            const finalTotalAmount = computedFoodCost + finalDeliveryFee;
-
-            if (!Number.isSafeInteger(finalTotalAmount)) {
-                throw {
-                    status: 400,
-                    code: 'TOTAL_AMOUNT_OVERFLOW'
-                };
-            }
-
-            const financialStatus = Order.validateFinancialBreakdown({
-                foodCost: computedFoodCost,
-                deliveryFee: finalDeliveryFee,
-                platformFee,
-                taxAmount: 0,
-                discountAmount: 0,
-                totalAmount: finalTotalAmount
-            }, { includePlatformFee: false });
-
-            if (!financialStatus.valid) {
-                throw {
-                    status: 400,
-                    code: 'INVALID_FINANCIAL_BREAKDOWN'
-                };
-            }
-
-            const paymentProvider = null;
-            const paymentReference = null;
-            // ==========================================
-// TEMPORARILY DISABLE ONLINE PAYMENTS
-// ==========================================
-if (paymentMethod === 'ONLINE') {
-    throw {
-        status: 503,
-        code: 'ONLINE_PAYMENT_DISABLED',
-        message: 'Online payment is currently unavailable. Please use Cash on Delivery.'
-    };
-}
-
-            const sellerEarning = computedFoodCost - platformFee;
-
-            if (!Number.isSafeInteger(sellerEarning) || sellerEarning < 0) {
-                throw {
-                    status: 400,
-                    code: 'INVALID_SELLER_EARNING'
-                };
-            }
-
-            const newOrder = new Order({
-                customerId: req.user.id,
-                restaurantId,
-                items: normalizedItems,
-                totalAmount: finalTotalAmount,
-                foodCost: computedFoodCost,
-                deliveryFee: finalDeliveryFee,
-                platformFee,
-                sellerEarning,
-                deliveryDetails,
-                clientOrderId,
-                pricingSnapshot: {
-                    couponCode: null,
-                    taxPercentage: 0,
-                    commissionRate: platformCommission,
-                    deliveryStrategy: 'STANDARD'
-                },
-                status: 'Pending',
-                statusHistory: [{
-                    from: 'Pending',
-                    to: 'Pending',
-                    actorType: 'SYSTEM',
-                    actorId: null,
-                    changedAt: new Date()
-                }],
-                paymentMethod,
-                paymentProvider,
-                paymentReference,
-                paymentStatus: 'PENDING'
-            });
-
-            await newOrder.save({ session, maxTimeMS: 2000 });
-            await session.commitTransaction();
-            session.endSession();
-
-                        //CEO LIVE ORDER FEATURE: Emit to restaurant's socket room
-            try {
-                const liveOrderData = await Order.findById(newOrder._id)
-    .select('_id status restaurantId customerId items foodCost deliveryDetails')
-    .populate('customerId', 'name phone')
-    .lean();
-
-req.app.get('io').to(restaurantId.toString()).emit('newLiveOrder', liveOrderData);
-            } catch (socketErr) {
-                req.log.error({ event: 'SOCKET_EMIT_FAILED', error: socketErr.message });
-            }
-
-            req.log.info({ event: 'ORDER_CREATED', orderId: newOrder._id });
-            const response = { success: true, orderId: newOrder._id };
-            return res.status(201).json(response);
-
-        } catch (err) {
-            await session.abortTransaction();
-            session.endSession();
-            if (err.hasErrorLabel && err.hasErrorLabel('TransientTransactionError') && attempt < MAX_RETRIES) {
-                req.log.warn({ event: 'TRANSACTION_RETRY', attempt });
-                continue;
-            }
-            if (err.code === 11000) {
-                const existing = await Order.findOne({ customerId: req.user.id, clientOrderId }).lean();
-                const response = { success: true, orderId: existing._id, message: "Handled duplicate." };
-                if (existing.paymentMethod === 'ONLINE') response.paymentReference = existing.paymentReference;
-                return res.json(response);
-            }
-            return next(err);
+        if (
+          !restaurantId ||
+          !Array.isArray(items) ||
+          items.length === 0 ||
+          !deliveryDetails?.address
+        ) {
+          throw { status: 400, code: "INVALID_SCHEMA" };
         }
-    }
-});
-app.get('/api/orders', authMiddleware, async (req, res, next) => {
-    try {
 
-        const orders = await Order.find({
-    customerId: req.user.id
-})
-.populate('restaurantId', 'name image address')
-.populate('assignedRiderId', 'name phone bikeNumber')
-.select(`    _id
+        const itemMap = new Map();
+        for (const i of items) {
+          if (!mongoose.Types.ObjectId.isValid(i.menuItemId))
+            throw { status: 400, code: "INVALID_ITEM_ID" };
+          if (
+            !Number.isInteger(i.quantity) ||
+            i.quantity <= 0 ||
+            i.quantity > 50
+          )
+            throw { status: 400, code: "INVALID_QUANTITY" };
+          itemMap.set(
+            i.menuItemId,
+            (itemMap.get(i.menuItemId) || 0) + i.quantity,
+          );
+        }
+
+        for (const quantity of itemMap.values()) {
+          if (quantity < 1 || quantity > 50)
+            throw { status: 400, code: "INVALID_QUANTITY" };
+        }
+
+        const restaurant = await Restaurant.findById(restaurantId)
+          .session(session)
+          .select("status isOpen isPaused latitude longitude");
+        if (!restaurant) {
+          throw {
+            status: 404,
+            code: "RESTAURANT_NOT_FOUND",
+          };
+        }
+
+        if (restaurant.status !== "ACTIVE") {
+          throw {
+            status: 400,
+            code: "RESTAURANT_UNAVAILABLE",
+          };
+        }
+
+        if (!restaurant.isOpen) {
+          throw {
+            status: 403,
+            code: "RESTAURANT_CLOSED",
+            message: "Restaurant is currently closed.",
+          };
+        }
+
+        if (restaurant.isPaused) {
+          throw {
+            status: 403,
+            code: "RESTAURANT_PAUSED",
+            message: "Restaurant is temporarily unavailable.",
+          };
+        }
+
+        const customerLatitude = Number(deliveryDetails.latitude);
+        const customerLongitude = Number(deliveryDetails.longitude);
+        const restaurantLatitude = Number(restaurant.latitude);
+        const restaurantLongitude = Number(restaurant.longitude);
+        if (
+          deliveryDetails.latitude == null ||
+          deliveryDetails.longitude == null ||
+          restaurant.latitude == null ||
+          restaurant.longitude == null ||
+          !Number.isFinite(customerLatitude) ||
+          customerLatitude < -90 ||
+          customerLatitude > 90 ||
+          !Number.isFinite(customerLongitude) ||
+          customerLongitude < -180 ||
+          customerLongitude > 180 ||
+          !Number.isFinite(restaurantLatitude) ||
+          restaurantLatitude < -90 ||
+          restaurantLatitude > 90 ||
+          !Number.isFinite(restaurantLongitude) ||
+          restaurantLongitude < -180 ||
+          restaurantLongitude > 180
+        ) {
+          throw { status: 400, code: "INVALID_DELIVERY_COORDINATES" };
+        }
+
+        const dbItems = await MenuItem.find({
+          _id: { $in: Array.from(itemMap.keys()) },
+          restaurantId,
+          isAvailable: true,
+          isDeleted: false,
+        })
+          .session(session)
+          .maxTimeMS(2000);
+
+        if (dbItems.length !== itemMap.size)
+          throw { status: 400, code: "MENU_ITEM_UNAVAILABLE" };
+
+        let computedFoodCost = 0;
+        const normalizedItems = dbItems.map((dbItem) => {
+          const qty = itemMap.get(dbItem._id.toString());
+          const itemPriceNpr = Math.round(dbItem.price);
+
+          if (!Number.isSafeInteger(itemPriceNpr) || itemPriceNpr < 0) {
+            throw {
+              status: 400,
+              code: "INVALID_MENU_PRICE",
+            };
+          }
+
+          const itemPricePaisa = itemPriceNpr * 100;
+
+          if (!Number.isSafeInteger(itemPricePaisa)) {
+            throw {
+              status: 400,
+              code: "PRICE_OVERFLOW",
+            };
+          }
+
+          computedFoodCost += itemPricePaisa * qty;
+
+          if (!Number.isSafeInteger(computedFoodCost)) {
+            throw {
+              status: 400,
+              code: "FOOD_COST_OVERFLOW",
+            };
+          }
+
+          return {
+            menuItemId: dbItem._id,
+            name: dbItem.name,
+            price: itemPricePaisa,
+            quantity: qty,
+          };
+        });
+
+        const settings = await Settings.findOne()
+          .session(session)
+          .select("petrolPrice platformCommission")
+          .lean();
+
+        const petrolPrice = Number.isFinite(settings?.petrolPrice)
+          ? settings.petrolPrice
+          : 175;
+
+        const platformCommission = Number.isFinite(settings?.platformCommission)
+          ? settings.platformCommission
+          : 10;
+
+        if (
+          petrolPrice < 0 ||
+          petrolPrice > 100000 ||
+          platformCommission < 0 ||
+          platformCommission > 100
+        ) {
+          throw {
+            status: 500,
+            code: "INVALID_PRICING_CONFIGURATION",
+          };
+        }
+
+        const distance =
+          getDistanceMeters(
+            restaurantLatitude,
+            restaurantLongitude,
+            customerLatitude,
+            customerLongitude,
+          ) / 1000;
+
+        const finalDeliveryFeeNpr = Math.max(
+          25,
+          Math.round((petrolPrice / 40 + 12) * distance),
+        );
+
+        const finalDeliveryFee = finalDeliveryFeeNpr * 100;
+
+        if (!Number.isSafeInteger(finalDeliveryFee)) {
+          throw {
+            status: 400,
+            code: "DELIVERY_FEE_OVERFLOW",
+          };
+        }
+
+        const platformFee = Math.round(
+          (computedFoodCost * platformCommission) / 100,
+        );
+
+        if (!Number.isSafeInteger(platformFee)) {
+          throw {
+            status: 400,
+            code: "PLATFORM_FEE_OVERFLOW",
+          };
+        }
+
+        const finalTotalAmount = computedFoodCost + finalDeliveryFee;
+
+        if (!Number.isSafeInteger(finalTotalAmount)) {
+          throw {
+            status: 400,
+            code: "TOTAL_AMOUNT_OVERFLOW",
+          };
+        }
+
+        const financialStatus = Order.validateFinancialBreakdown(
+          {
+            foodCost: computedFoodCost,
+            deliveryFee: finalDeliveryFee,
+            platformFee,
+            taxAmount: 0,
+            discountAmount: 0,
+            totalAmount: finalTotalAmount,
+          },
+          { includePlatformFee: false },
+        );
+
+        if (!financialStatus.valid) {
+          throw {
+            status: 400,
+            code: "INVALID_FINANCIAL_BREAKDOWN",
+          };
+        }
+
+        const paymentProvider = null;
+        const paymentReference = null;
+        // ==========================================
+        // TEMPORARILY DISABLE ONLINE PAYMENTS
+        // ==========================================
+        if (paymentMethod === "ONLINE") {
+          throw {
+            status: 503,
+            code: "ONLINE_PAYMENT_DISABLED",
+            message:
+              "Online payment is currently unavailable. Please use Cash on Delivery.",
+          };
+        }
+
+        const sellerEarning = computedFoodCost - platformFee;
+
+        if (!Number.isSafeInteger(sellerEarning) || sellerEarning < 0) {
+          throw {
+            status: 400,
+            code: "INVALID_SELLER_EARNING",
+          };
+        }
+
+        const newOrder = new Order({
+          customerId: req.user.id,
+          restaurantId,
+          items: normalizedItems,
+          totalAmount: finalTotalAmount,
+          foodCost: computedFoodCost,
+          deliveryFee: finalDeliveryFee,
+          platformFee,
+          sellerEarning,
+          deliveryDetails,
+          clientOrderId,
+          pricingSnapshot: {
+            couponCode: null,
+            taxPercentage: 0,
+            commissionRate: platformCommission,
+            deliveryStrategy: "STANDARD",
+          },
+          status: "Pending",
+          statusHistory: [
+            {
+              from: "Pending",
+              to: "Pending",
+              actorType: "SYSTEM",
+              actorId: null,
+              changedAt: new Date(),
+            },
+          ],
+          paymentMethod,
+          paymentProvider,
+          paymentReference,
+          paymentStatus: "PENDING",
+        });
+
+        await newOrder.save({ session, maxTimeMS: 2000 });
+        await session.commitTransaction();
+        session.endSession();
+
+        //CEO LIVE ORDER FEATURE: Emit to restaurant's socket room
+        try {
+          const liveOrderData = await Order.findById(newOrder._id)
+            .select(
+              "_id status restaurantId customerId items foodCost deliveryDetails",
+            )
+            .populate("customerId", "name phone")
+            .lean();
+
+          req.app
+            .get("io")
+            .to(restaurantId.toString())
+            .emit("newLiveOrder", liveOrderData);
+        } catch (socketErr) {
+          req.log.error({
+            event: "SOCKET_EMIT_FAILED",
+            error: socketErr.message,
+          });
+        }
+
+        req.log.info({ event: "ORDER_CREATED", orderId: newOrder._id });
+        const response = { success: true, orderId: newOrder._id };
+        return res.status(201).json(response);
+      } catch (err) {
+        await session.abortTransaction();
+        session.endSession();
+        if (
+          err.hasErrorLabel &&
+          err.hasErrorLabel("TransientTransactionError") &&
+          attempt < MAX_RETRIES
+        ) {
+          req.log.warn({ event: "TRANSACTION_RETRY", attempt });
+          continue;
+        }
+        if (err.code === 11000) {
+          const existing = await Order.findOne({
+            customerId: req.user.id,
+            clientOrderId,
+          }).lean();
+          const response = {
+            success: true,
+            orderId: existing._id,
+            message: "Handled duplicate.",
+          };
+          if (existing.paymentMethod === "ONLINE")
+            response.paymentReference = existing.paymentReference;
+          return res.json(response);
+        }
+        return next(err);
+      }
+    }
+  },
+);
+app.get("/api/orders", authMiddleware, async (req, res, next) => {
+  try {
+    const orders = await Order.find({
+      customerId: req.user.id,
+    })
+      .populate("restaurantId", "name image address")
+      .populate("assignedRiderId", "name phone bikeNumber")
+      .select(
+        `    _id
     items
     status
     totalAmount
@@ -506,45 +602,40 @@ app.get('/api/orders', authMiddleware, async (req, res, next) => {
     deliveryDetails
     restaurantId
     assignedRiderId
-    statusHistory`)
-.sort({ createdAt: -1 })
-.lean();
+    statusHistory`,
+      )
+      .sort({ createdAt: -1 })
+      .lean();
 
-        const activeOrders = orders.filter(order =>
-    ![
-        "Delivered",
-        "Cancelled"
-    ].includes(order.status)
-);
+    const activeOrders = orders.filter(
+      (order) => !["Delivered", "Cancelled"].includes(order.status),
+    );
 
-const historyOrders = orders.filter(order =>
-    [
-        "Delivered",
-        "Cancelled"
-    ].includes(order.status)
-);
+    const historyOrders = orders.filter((order) =>
+      ["Delivered", "Cancelled"].includes(order.status),
+    );
 
-return res.json({
-    success: true,
-    activeOrders,
-    historyOrders
+    return res.json({
+      success: true,
+      activeOrders,
+      historyOrders,
+    });
+  } catch (err) {
+    next(err);
+  }
 });
-
-    } catch (err) {
-        next(err);
+app.get("/api/orders/:id", authMiddleware, async (req, res, next) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(404).json({ success: false, error: "ORDER_NOT_FOUND" });
     }
-});
-app.get('/api/orders/:id', authMiddleware, async (req, res, next) => {
-    try {
-        if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-            return res.status(404).json({ success: false, error: 'ORDER_NOT_FOUND' });
-        }
 
-        const order = await Order.findOne({
-    _id: req.params.id,
-    customerId: req.user.id
-})
-.select(`
+    const order = await Order.findOne({
+      _id: req.params.id,
+      customerId: req.user.id,
+    })
+      .select(
+        `
     _id
     items
     status
@@ -561,287 +652,348 @@ app.get('/api/orders/:id', authMiddleware, async (req, res, next) => {
     deliveryDetails
     assignedRiderId
     restaurantId
-`)
-.populate('assignedRiderId', 'name phone bikeNumber')
-.populate('restaurantId', 'name image address')
-.lean();
+`,
+      )
+      .populate("assignedRiderId", "name phone bikeNumber")
+      .populate("restaurantId", "name image address")
+      .lean();
 
-        if (!order) {
-            return res.status(404).json({ success: false, error: 'ORDER_NOT_FOUND' });
-        }
-
-        const responseOrder = { ...order };
-
-if (responseOrder.status !== 'Out for Delivery') {
-    delete responseOrder.deliveryOTP;
-}
-
-return res.json({
-    success: true,
-    order: responseOrder
-});
-    } catch (err) {
-        next(err);
+    if (!order) {
+      return res.status(404).json({ success: false, error: "ORDER_NOT_FOUND" });
     }
+
+    const responseOrder = { ...order };
+
+    if (responseOrder.status !== "Out for Delivery") {
+      delete responseOrder.deliveryOTP;
+    }
+
+    return res.json({
+      success: true,
+      order: responseOrder,
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 //SOCKET ENGINE (DoS Protected)
 const io = new Server(server, {
-    cors: {
-        origin: allowedOrigins,
-        credentials: true
-    }
+  cors: {
+    origin: allowedOrigins,
+    credentials: true,
+  },
 });
-app.set('io', io); //NEW: Expose IO to routes
+app.set("io", io); //NEW: Expose IO to routes
 initializeSocket(io);
 
 const riderThrottle = new Map();
 
 const gcThrottle = setInterval(() => {
-    const now = Date.now();
-    for (const [key, value] of riderThrottle.entries()) {
-        if (now - value > 60000) riderThrottle.delete(key);
-    }
+  const now = Date.now();
+  for (const [key, value] of riderThrottle.entries()) {
+    if (now - value > 60000) riderThrottle.delete(key);
+  }
 }, 60000);
 
 io.use((socket, next) => {
-    const authToken = socket.handshake.auth?.token;
+  const authToken = socket.handshake.auth?.token;
 
-    const cookieHeader = socket.handshake.headers?.cookie || '';
-    const cookieToken = cookieHeader
-        .split(';')
-        .map(part => part.trim())
-        .find(part => part.startsWith('access_token='))
-        ?.slice('access_token='.length);
+  const cookieHeader = socket.handshake.headers?.cookie || "";
+  const cookieToken = cookieHeader
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith("access_token="))
+    ?.slice("access_token=".length);
 
-    const token = authToken || cookieToken;
+  const token = authToken || cookieToken;
 
-    if (!token) return next(new Error('No token provided'));
+  if (!token) return next(new Error("No token provided"));
+
+  try {
+    socket.user = jwt.verify(token, process.env.JWT_SECRET, {
+      algorithms: ["HS256"],
+      issuer: "food-samundar",
+      audience: "user-app",
+    });
+
+    socket.joinCount = 0;
+    next();
+  } catch {
+    next(new Error("Auth failed"));
+  }
+});
+
+io.on("connection", (socket) => {
+  //CEO INJECTION: Automatically join EVERY authenticated user to their own personal room.
+  // This makes io.to(rider._id).emit() work instantly without the frontend needing to request a room join!
+  if (socket.user && socket.user.id) {
+    socket.join(socket.user.id.toString());
+    logger.info({
+      event: "PRIVATE_ROOM_JOINED",
+      userId: socket.user.id,
+      role: socket.user.role,
+    });
+  }
+
+  //NEW: Seller dashboard room join
+  socket.on("joinRestaurantDashboard", async (restaurantId) => {
+    if (
+      ++socket.joinCount > 15 ||
+      !mongoose.Types.ObjectId.isValid(restaurantId)
+    )
+      return;
+
+    const restaurant =
+      socket.user.role === "Admin"
+        ? await Restaurant.findById(restaurantId).select("_id").lean()
+        : socket.user.role === "Seller"
+          ? await Restaurant.findOne({
+              _id: restaurantId,
+              ownerId: socket.user.id,
+            })
+              .select("_id")
+              .lean()
+          : null;
+
+    if (!restaurant) return;
+
+    socket.join(restaurantId.toString());
+    logger.info({ event: "SELLER_LIVE_DASHBOARD_CONNECTED", restaurantId });
+  });
+
+  socket.on("joinOrderTrack", async (orderId) => {
+    if (++socket.joinCount > 15 || !mongoose.Types.ObjectId.isValid(orderId))
+      return;
+
+    const isAdmin = socket.user.role === "Admin";
+    const userId = new mongoose.Types.ObjectId(socket.user.id);
+    const order = await Order.findOne({
+      _id: orderId,
+      ...(isAdmin
+        ? {}
+        : { $or: [{ customerId: userId }, { assignedRiderId: userId }] }),
+    })
+      .select("_id")
+      .lean();
+    if (order) {
+      socket.join(orderId);
+      logger.info({
+        event: "SOCKET_ROOM_JOINED",
+        userId: socket.user.id,
+        orderId,
+      });
+    }
+  });
+
+  socket.on("updateRiderLocation", async (data) => {
+    if (!data || typeof data !== "object") return;
+
+    if (
+      socket.user.role !== "Rider" ||
+      typeof data.orderId !== "string" ||
+      !mongoose.Types.ObjectId.isValid(data.orderId)
+    ) {
+      return;
+    }
+
+    const now = Date.now();
+    if (now - (riderThrottle.get(socket.user.id) || 0) < 2000) return;
+    riderThrottle.set(socket.user.id, now);
+
+    if (
+      typeof data.lat !== "number" ||
+      typeof data.lng !== "number" ||
+      !Number.isFinite(data.lat) ||
+      !Number.isFinite(data.lng) ||
+      data.lat < -90 ||
+      data.lat > 90 ||
+      data.lng < -180 ||
+      data.lng > 180
+    ) {
+      return;
+    }
 
     try {
-        socket.user = jwt.verify(
-    token,
-    process.env.JWT_SECRET,
-    {
-        algorithms: ['HS256'],
-        issuer: 'food-samundar',
-        audience: 'user-app'
+      await Order.updateOne(
+        {
+          _id: data.orderId,
+          assignedRiderId: socket.user.id,
+          status: "Out for Delivery",
+        },
+        {
+          $set: {
+            riderLocation: { type: "Point", coordinates: [data.lng, data.lat] },
+            lastLocationUpdate: new Date(),
+          },
+        },
+      );
+      io.to(data.orderId).emit("riderMoved", {
+        orderId: data.orderId,
+        lat: data.lat,
+        lng: data.lng,
+        latitude: data.lat,
+        longitude: data.lng,
+      });
+    } catch (err) {
+      logger.error({ event: "SOCKET_UPDATE_ERROR", error: err.message });
     }
-);
-
-        socket.joinCount = 0;
-        next();
-    } catch {
-        next(new Error('Auth failed'));
-    }
-});
-
-io.on('connection', (socket) => {
-    //CEO INJECTION: Automatically join EVERY authenticated user to their own personal room.
-    // This makes io.to(rider._id).emit() work instantly without the frontend needing to request a room join!
-    if (socket.user && socket.user.id) {
-        socket.join(socket.user.id.toString());
-        logger.info({ event: 'PRIVATE_ROOM_JOINED', userId: socket.user.id, role: socket.user.role });
-    }
-
-    //NEW: Seller dashboard room join
-    socket.on('joinRestaurantDashboard', async (restaurantId) => {
-        if (++socket.joinCount > 15 || !mongoose.Types.ObjectId.isValid(restaurantId)) return;
-
-        const restaurant = socket.user.role === 'Admin'
-            ? await Restaurant.findById(restaurantId).select('_id').lean()
-            : socket.user.role === 'Seller'
-                ? await Restaurant.findOne({ _id: restaurantId, ownerId: socket.user.id }).select('_id').lean()
-                : null;
-
-        if (!restaurant) return;
-
-        socket.join(restaurantId.toString());
-        logger.info({ event: 'SELLER_LIVE_DASHBOARD_CONNECTED', restaurantId });
-    });
-
-    socket.on('joinOrderTrack', async (orderId) => {
-        if (++socket.joinCount > 15 || !mongoose.Types.ObjectId.isValid(orderId)) return;
-
-        const isAdmin = socket.user.role === 'Admin';
-        const userId = new mongoose.Types.ObjectId(socket.user.id);
-        const order = await Order.findOne({ _id: orderId, ...(isAdmin ? {} : { $or: [{ customerId: userId }, { assignedRiderId: userId }] }) }).select('_id').lean();
-        if (order) {
-            socket.join(orderId);
-            logger.info({ event: 'SOCKET_ROOM_JOINED', userId: socket.user.id, orderId });
-        }
-    });
-
-    socket.on('updateRiderLocation', async (data) => {
-        if (!data || typeof data !== 'object') return;
-
-        if (
-            socket.user.role !== 'Rider' ||
-            typeof data.orderId !== 'string' ||
-            !mongoose.Types.ObjectId.isValid(data.orderId)
-        ) {
-            return;
-        }
-
-        const now = Date.now();
-        if (now - (riderThrottle.get(socket.user.id) || 0) < 2000) return;
-        riderThrottle.set(socket.user.id, now);
-
-        if (
-            typeof data.lat !== 'number' ||
-            typeof data.lng !== 'number' ||
-            !Number.isFinite(data.lat) ||
-            !Number.isFinite(data.lng) ||
-            data.lat < -90 ||
-            data.lat > 90 ||
-            data.lng < -180 ||
-            data.lng > 180
-        ) {
-            return;
-        }
-
-        try {
-            await Order.updateOne({ _id: data.orderId, assignedRiderId: socket.user.id, status: 'Out for Delivery' }, { $set: { riderLocation: { type: 'Point', coordinates: [data.lng, data.lat] }, lastLocationUpdate: new Date() }});
-            io.to(data.orderId).emit('riderMoved', { orderId: data.orderId, lat: data.lat, lng: data.lng, latitude: data.lat, longitude: data.lng });
-        } catch (err) { logger.error({ event: 'SOCKET_UPDATE_ERROR', error: err.message }); }
-    });
+  });
 });
 //ROUTES INTEGRATION
-app.use('/api/auth', require('./routes/authRoutes'));
-app.use('/api/kyc', require('./routes/kycRoutes'));
-app.use('/api/admin', require('./routes/adminRoutes'));
+app.use("/api/auth", require("./routes/authRoutes"));
+app.use("/api/kyc", require("./routes/kycRoutes"));
+app.use("/api/admin", require("./routes/adminRoutes"));
 
 //FIX APPLIED HERE: The Rider Routes were entirely missing!
-app.use('/api/rider', require('./routes/riderRoutes'));
+app.use("/api/rider", require("./routes/riderRoutes"));
 
 //ADDED: Seller route integration pointing to your existing restaurantRoutes file
-app.use('/api/seller', require('./routes/restaurantRoutes'));
+app.use("/api/seller", require("./routes/restaurantRoutes"));
 
 //Integrated the Zomato-grade Restaurant & Search API (For Customer app)
-app.use('/api/restaurants', require('./routes/restaurantRoutes'));
+app.use("/api/restaurants", require("./routes/restaurantRoutes"));
 
 //FIX: Routed the customer menu request to the same restaurant routes file
-app.use('/api/menu', require('./routes/restaurantRoutes'));
+app.use("/api/menu", require("./routes/restaurantRoutes"));
 // ==========================================
 // HEALTH & READINESS ENDPOINTS
 // ==========================================
 
 // Liveness: process is running.
-app.get('/healthz', (req, res) => {
-    res.status(200).json({
-        success: true,
-        status: 'ok'
-    });
+app.get("/healthz", (req, res) => {
+  res.status(200).json({
+    success: true,
+    status: "ok",
+  });
 });
 
 // Readiness: process is running AND MongoDB is connected.
-app.get('/readyz', (req, res) => {
-    const ready = mongoose.connection.readyState === 1;
+app.get("/readyz", (req, res) => {
+  const ready = mongoose.connection.readyState === 1;
 
-    return res.status(ready ? 200 : 503).json({
-        success: ready,
-        status: ready ? 'ready' : 'not_ready'
-    });
+  return res.status(ready ? 200 : 503).json({
+    success: ready,
+    status: ready ? "ready" : "not_ready",
+  });
 });
 // Centralized Error Handler
 app.use((err, req, res, next) => {
-    const status = err.status || 500;
-    const code = err.code || 'INTERNAL_SERVER_ERROR';
-    const log = req.log || logger;
-    log.error({ event: 'GLOBAL_EXCEPTION', error: err.message, code, stack: !isProd ? err.stack : undefined });
-    res.status(status).json({ success: false, error: code, message: isProd ? "Internal Engine Error" : err.message });
+  const status = err.status || 500;
+  const code = err.code || "INTERNAL_SERVER_ERROR";
+  const log = req.log || logger;
+  log.error({
+    event: "GLOBAL_EXCEPTION",
+    error: err.message,
+    code,
+    stack: !isProd ? err.stack : undefined,
+  });
+  res
+    .status(status)
+    .json({
+      success: false,
+      error: code,
+      message: isProd ? "Internal Engine Error" : err.message,
+    });
 });
 
 //Database & Index Sync
-mongoose.connect(process.env.MONGO_URI, { maxPoolSize: 50, serverSelectionTimeoutMS: 5000 })
-.then(async () => {
-    logger.info({ event: 'DB_CONNECTED', detail: 'Apex V17 Ready' });
+mongoose
+  .connect(process.env.MONGO_URI, {
+    maxPoolSize: 50,
+    serverSelectionTimeoutMS: 5000,
+  })
+  .then(async () => {
+    logger.info({ event: "DB_CONNECTED", detail: "Apex V17 Ready" });
     if (isProd) {
-        await Order.syncIndexes();
-        await MenuItem.syncIndexes();
-        //NEW: Enforce syncing of our new High-Performance Geo & Text Indexes
-        await Restaurant.syncIndexes();
-        await RiderProfile.syncIndexes();
-        await AdminWallet.syncIndexes();
-        await LedgerEntry.syncIndexes();
+      await Order.syncIndexes();
+      await MenuItem.syncIndexes();
+      //NEW: Enforce syncing of our new High-Performance Geo & Text Indexes
+      await Restaurant.syncIndexes();
+      await RiderProfile.syncIndexes();
+      await AdminWallet.syncIndexes();
+      await LedgerEntry.syncIndexes();
     }
     server.listen(PORT, () => {
-        startShiftMonitor();
-        startDispatchMonitor(io);
-        startPreparationMonitor();
-        logger.info({ event: 'SERVER_UP', port: PORT });
+      startShiftMonitor();
+      startDispatchMonitor(io);
+      startPreparationMonitor();
+      logger.info({ event: "SERVER_UP", port: PORT });
     });
-})
-.catch(err => { logger.error({ event: 'DB_CONNECTION_FAILED', error: err.message }); process.exit(1); });
+  })
+  .catch((err) => {
+    logger.error({ event: "DB_CONNECTION_FAILED", error: err.message });
+    process.exit(1);
+  });
 //PRODUCTION GRACEFUL SHUTDOWN
 let isShuttingDown = false;
 
 const shutdown = async (signal) => {
-    if (isShuttingDown) {
-        logger.warn({
-            event: 'SHUTDOWN_ALREADY_IN_PROGRESS',
-            signal
-        });
-        return;
-    }
+  if (isShuttingDown) {
+    logger.warn({
+      event: "SHUTDOWN_ALREADY_IN_PROGRESS",
+      signal,
+    });
+    return;
+  }
 
-    isShuttingDown = true;
+  isShuttingDown = true;
 
-    logger.info({
-        event: 'SHUTDOWN_INITIATED',
-        signal
+  logger.info({
+    event: "SHUTDOWN_INITIATED",
+    signal,
+  });
+
+  clearInterval(gcThrottle);
+
+  const forceShutdownTimer = setTimeout(() => {
+    logger.error({
+      event: "SHUTDOWN_TIMEOUT",
+    });
+    process.exit(1);
+  }, 15000);
+
+  forceShutdownTimer.unref();
+
+  try {
+    await new Promise((resolve) => {
+      io.close(() => resolve());
     });
 
-    clearInterval(gcThrottle);
-
-    const forceShutdownTimer = setTimeout(() => {
-        logger.error({
-            event: 'SHUTDOWN_TIMEOUT'
-        });
-        process.exit(1);
-    }, 15000);
-
-    forceShutdownTimer.unref();
-
-    try {
-        await new Promise((resolve) => {
-            io.close(() => resolve());
-        });
-
-        await new Promise((resolve, reject) => {
-    if (!server.listening) {
+    await new Promise((resolve, reject) => {
+      if (!server.listening) {
         return resolve();
-    }
+      }
 
-    server.close((err) => {
-        if (err && err.code !== 'ERR_SERVER_NOT_RUNNING') {
-            return reject(err);
+      server.close((err) => {
+        if (err && err.code !== "ERR_SERVER_NOT_RUNNING") {
+          return reject(err);
         }
 
         resolve();
+      });
     });
-});
 
-        await mongoose.connection.close(false);
+    await mongoose.connection.close(false);
 
-        clearTimeout(forceShutdownTimer);
+    clearTimeout(forceShutdownTimer);
 
-        logger.info({
-            event: 'SHUTDOWN_COMPLETE'
-        });
+    logger.info({
+      event: "SHUTDOWN_COMPLETE",
+    });
 
-        process.exit(0);
-    } catch (err) {
-        clearTimeout(forceShutdownTimer);
+    process.exit(0);
+  } catch (err) {
+    clearTimeout(forceShutdownTimer);
 
-        logger.error({
-            event: 'SHUTDOWN_FAILED',
-            error: err.message,
-            stack: err.stack
-        });
+    logger.error({
+      event: "SHUTDOWN_FAILED",
+      error: err.message,
+      stack: err.stack,
+    });
 
-        process.exit(1);
-    }
+    process.exit(1);
+  }
 };
 
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));

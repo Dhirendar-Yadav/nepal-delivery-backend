@@ -1,5 +1,10 @@
 import { lazy, Suspense } from "react";
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Navigate,
+} from "react-router-dom";
 
 import { CartProvider } from "./cart/CartContext.jsx";
 
@@ -21,98 +26,53 @@ const SearchPage = lazy(() => import("./pages/customer/SearchPage"));
 const CustomerOrders = lazy(() => import("./pages/customer/CustomerOrders"));
 
 function App() {
-    return (
-                <CartProvider>
-            <Router>
+  return (
+    <CartProvider>
+      <Router>
+        <Suspense fallback={null}>
+          <Routes>
+            {/* ---------------- CUSTOMER LAYOUT ---------------- */}
 
-                <Suspense fallback={null}>
-                    <Routes>
+            <Route element={<CustomerLayout />}>
+              <Route path="/" element={<Home />} />
 
-                    {/* ---------------- CUSTOMER LAYOUT ---------------- */}
+              <Route path="/search" element={<SearchPage />} />
 
-                   <Route element={<CustomerLayout />}>
+              <Route path="/orders" element={<CustomerOrders />} />
+            </Route>
 
-    <Route
-        path="/"
-        element={<Home />}
-    />
+            {/* ---------------- MENU ---------------- */}
 
-    <Route
-        path="/search"
-        element={<SearchPage />}
-    />
+            <Route path="/menu/:id" element={<Menu />} />
 
-    <Route
-        path="/orders"
-        element={<CustomerOrders />}
-    />
+            <Route path="/checkout" element={<Checkout />} />
 
-</Route>
+            {/* ---------------- AUTH ---------------- */}
 
-                    {/* ---------------- MENU ---------------- */}
+            <Route path="/login" element={<Login />} />
 
-                    <Route
-                        path="/menu/:id"
-                        element={<Menu />}
-                    />
+            <Route path="/signup" element={<Signup />} />
 
-                    <Route
-                        path="/checkout"
-                        element={<Checkout />}
-                    />
+            <Route path="/seller/signup" element={<SellerSignup />} />
 
-                    {/* ---------------- AUTH ---------------- */}
+            <Route path="/rider/signup" element={<RiderSignup />} />
 
-                    <Route
-                        path="/login"
-                        element={<Login />}
-                    />
+            {/* ---------------- DASHBOARDS ---------------- */}
 
-                    <Route
-                        path="/signup"
-                        element={<Signup />}
-                    />
+            <Route path="/dashboard" element={<Dashboard />} />
 
-                    <Route
-                        path="/seller/signup"
-                        element={<SellerSignup />}
-                    />
+            <Route path="/rider/dashboard" element={<RiderDashboard />} />
 
-                    <Route
-                        path="/rider/signup"
-                        element={<RiderSignup />}
-                    />
+            <Route path="/admin-dhiru-portal-99" element={<AdminDashboard />} />
 
-                    {/* ---------------- DASHBOARDS ---------------- */}
+            {/* ---------------- FALLBACK ---------------- */}
 
-                    <Route
-                        path="/dashboard"
-                        element={<Dashboard />}
-                    />
-
-                    <Route
-                        path="/rider/dashboard"
-                        element={<RiderDashboard />}
-                    />
-
-                    <Route
-                        path="/admin-dhiru-portal-99"
-                        element={<AdminDashboard />}
-                    />
-
-                    {/* ---------------- FALLBACK ---------------- */}
-
-                    <Route
-                        path="*"
-                        element={<Navigate to="/" replace />}
-                    />
-
-                    </Routes>
-                </Suspense>
-
-            </Router>
-        </CartProvider>
-    );
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
+      </Router>
+    </CartProvider>
+  );
 }
 
 export default App;

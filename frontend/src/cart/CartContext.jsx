@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { CartContext } from "./CartContext";
 const CART_STORAGE_KEY = "foodsamundar:cart:v1";
 
@@ -14,45 +14,43 @@ const createEmptyCart = () => ({
   pendingCheckout: createEmptyCheckoutAttempt(),
 });
 
-const isValidCheckoutAttempt = (pendingCheckout) => (
+const isValidCheckoutAttempt = (pendingCheckout) =>
   pendingCheckout &&
-  typeof pendingCheckout === 'object' &&
+  typeof pendingCheckout === "object" &&
   !Array.isArray(pendingCheckout) &&
-  (pendingCheckout.attemptId === null || typeof pendingCheckout.attemptId === 'string') &&
-  (pendingCheckout.createdAt === null || Number.isFinite(pendingCheckout.createdAt)) &&
-  (pendingCheckout.status === null || typeof pendingCheckout.status === 'string')
-);
+  (pendingCheckout.attemptId === null ||
+    typeof pendingCheckout.attemptId === "string") &&
+  (pendingCheckout.createdAt === null ||
+    Number.isFinite(pendingCheckout.createdAt)) &&
+  (pendingCheckout.status === null ||
+    typeof pendingCheckout.status === "string");
 
-const isValidRestaurant = (restaurant) => (
-  restaurant === null || (
-    restaurant &&
-    typeof restaurant === 'object' &&
+const isValidRestaurant = (restaurant) =>
+  restaurant === null ||
+  (restaurant &&
+    typeof restaurant === "object" &&
     !Array.isArray(restaurant) &&
-    Boolean(restaurant._id || restaurant.id)
-  )
-);
+    Boolean(restaurant._id || restaurant.id));
 
-const isValidCartItem = (item) => (
+const isValidCartItem = (item) =>
   item &&
-  typeof item === 'object' &&
+  typeof item === "object" &&
   !Array.isArray(item) &&
   Boolean(item._id || item.id) &&
-  typeof item.name === 'string' &&
+  typeof item.name === "string" &&
   item.name.trim().length > 0 &&
-  typeof item.price === 'number' &&
+  typeof item.price === "number" &&
   Number.isFinite(item.price) &&
-  typeof item.quantity === 'number' &&
+  typeof item.quantity === "number" &&
   Number.isFinite(item.quantity) &&
-  item.quantity > 0
-);
+  item.quantity > 0;
 
-const isValidCart = (cart) => (
+const isValidCart = (cart) =>
   cart &&
-  typeof cart === 'object' &&
+  typeof cart === "object" &&
   !Array.isArray(cart) &&
   isValidRestaurant(cart.restaurant) &&
-  Array.isArray(cart.items)
-);
+  Array.isArray(cart.items);
 
 const persistCart = (cart) => {
   try {
@@ -86,7 +84,8 @@ const readStoredCart = () => {
   }
 };
 
-const getRestaurantId = (restaurant) => restaurant?._id || restaurant?.id || restaurant;
+const getRestaurantId = (restaurant) =>
+  restaurant?._id || restaurant?.id || restaurant;
 
 const getItemId = (item) => item?._id || item?.id;
 
@@ -95,8 +94,6 @@ const getItemRestaurant = (item) => {
   if (item?.restaurantId) return { _id: item.restaurantId };
   return null;
 };
-
-
 
 export function CartProvider({ children }) {
   const [cart, setCart] = useState(readStoredCart);
@@ -114,15 +111,18 @@ export function CartProvider({ children }) {
 
     setCart((currentCart) => {
       const currentRestaurantId = getRestaurantId(currentCart.restaurant);
-      if (currentRestaurantId && currentRestaurantId !== itemRestaurantId) return currentCart;
+      if (currentRestaurantId && currentRestaurantId !== itemRestaurantId)
+        return currentCart;
 
-      const existingItem = currentCart.items.find((cartItem) => getItemId(cartItem) === itemId);
+      const existingItem = currentCart.items.find(
+        (cartItem) => getItemId(cartItem) === itemId,
+      );
       const items = existingItem
-        ? currentCart.items.map((cartItem) => (
-          getItemId(cartItem) === itemId
-            ? { ...cartItem, quantity: cartItem.quantity + 1 }
-            : cartItem
-        ))
+        ? currentCart.items.map((cartItem) =>
+            getItemId(cartItem) === itemId
+              ? { ...cartItem, quantity: cartItem.quantity + 1 }
+              : cartItem,
+          )
         : [...currentCart.items, { ...item, quantity: 1 }];
 
       return {
@@ -136,9 +136,11 @@ export function CartProvider({ children }) {
   const increaseQuantity = (itemId) => {
     setCart((currentCart) => ({
       ...currentCart,
-      items: currentCart.items.map((item) => (
-        getItemId(item) === itemId ? { ...item, quantity: item.quantity + 1 } : item
-      )),
+      items: currentCart.items.map((item) =>
+        getItemId(item) === itemId
+          ? { ...item, quantity: item.quantity + 1 }
+          : item,
+      ),
     }));
   };
 
@@ -148,7 +150,9 @@ export function CartProvider({ children }) {
         if (getItemId(item) !== itemId) return [...updatedItems, item];
 
         const quantity = item.quantity - 1;
-        return quantity > 0 ? [...updatedItems, { ...item, quantity }] : updatedItems;
+        return quantity > 0
+          ? [...updatedItems, { ...item, quantity }]
+          : updatedItems;
       }, []);
 
       return {
@@ -161,7 +165,9 @@ export function CartProvider({ children }) {
 
   const removeItem = (itemId) => {
     setCart((currentCart) => {
-      const items = currentCart.items.filter((item) => getItemId(item) !== itemId);
+      const items = currentCart.items.filter(
+        (item) => getItemId(item) !== itemId,
+      );
 
       return {
         ...currentCart,
@@ -179,11 +185,12 @@ export function CartProvider({ children }) {
     if (cart.pendingCheckout.attemptId) return cart.pendingCheckout;
 
     const attempt = {
-      attemptId: typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      attemptId:
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       createdAt: Date.now(),
-      status: 'pending',
+      status: "pending",
     };
     const nextCart = { ...cart, pendingCheckout: attempt };
 
@@ -203,7 +210,7 @@ export function CartProvider({ children }) {
     const latestMenuItems = new Map(
       menuItems
         .map((menuItem) => [getItemId(menuItem), menuItem])
-        .filter(([menuItemId]) => menuItemId)
+        .filter(([menuItemId]) => menuItemId),
     );
 
     setCart((currentCart) => {
@@ -222,27 +229,45 @@ export function CartProvider({ children }) {
     });
   }, []);
 
-  const totalQuantity = cart.items.reduce((sum, item) => sum + item.quantity, 0);
+  const totalQuantity = cart.items.reduce(
+    (sum, item) => sum + item.quantity,
+    0,
+  );
   const totalAmount = cart.items.reduce((sum, item) => {
     const price = Number(item.price);
     const quantity = Number(item.quantity);
-    return sum + (Number.isFinite(price) && Number.isFinite(quantity) ? price * quantity : 0);
+    return (
+      sum +
+      (Number.isFinite(price) && Number.isFinite(quantity)
+        ? price * quantity
+        : 0)
+    );
   }, 0);
 
-  const value = useMemo(() => ({
-    cart,
-    addItem,
-    increaseQuantity,
-    decreaseQuantity,
-    removeItem,
-    clearCart,
-    beginCheckoutAttempt,
-    clearCheckoutAttempt,
-    reconcileCart,
-    pendingCheckout: cart.pendingCheckout,
-    totalQuantity,
-    totalAmount,
-  }), [cart, beginCheckoutAttempt, clearCheckoutAttempt, reconcileCart, totalAmount, totalQuantity]);
+  const value = useMemo(
+    () => ({
+      cart,
+      addItem,
+      increaseQuantity,
+      decreaseQuantity,
+      removeItem,
+      clearCart,
+      beginCheckoutAttempt,
+      clearCheckoutAttempt,
+      reconcileCart,
+      pendingCheckout: cart.pendingCheckout,
+      totalQuantity,
+      totalAmount,
+    }),
+    [
+      cart,
+      beginCheckoutAttempt,
+      clearCheckoutAttempt,
+      reconcileCart,
+      totalAmount,
+      totalQuantity,
+    ],
+  );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 }

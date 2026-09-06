@@ -1,107 +1,102 @@
 import { useEffect, useMemo, useState } from "react";
 import { AuthContext } from "./AuthContext";
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5005';
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5005";
 
 let logoutInFlight = null;
 
 export function AuthProvider({ children }) {
-    const [user, setUser] = useState(null);
+  const [user, setUser] = useState(null);
 
-    const [isAuthenticated, setIsAuthenticated] = useState(false);
-    const [loading, setLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
+  useEffect(() => {
     const restoreSession = async () => {
-        try {
-            const response = await fetch(`${API_BASE}/api/auth/me`, {
-                credentials: 'include'
-            });
+      try {
+        const response = await fetch(`${API_BASE}/api/auth/me`, {
+          credentials: "include",
+        });
 
-            if (!response.ok) return false;
+        if (!response.ok) return false;
 
-            const data = await response.json();
+        const data = await response.json();
 
-            if (data.success && data.user) {
-                setUser(data.user);
-                setIsAuthenticated(true);
-                return true;
-            }
-        } catch (err) {
-            console.error('Session restore failed:', err);
+        if (data.success && data.user) {
+          setUser(data.user);
+          setIsAuthenticated(true);
+          return true;
         }
+      } catch (err) {
+        console.error("Session restore failed:", err);
+      }
 
-        return false;
+      return false;
     };
 
     const initializeAuth = async () => {
-        await restoreSession();
-        setLoading(false);
+      await restoreSession();
+      setLoading(false);
     };
 
     initializeAuth();
-}, []);
-    const login = ({ user }) => {
+  }, []);
+  const login = ({ user }) => {
     if (user?.role) {
-        localStorage.setItem("userRole", user.role);
+      localStorage.setItem("userRole", user.role);
     }
 
-        if (user?.name) {
-            localStorage.setItem("userName", user.name);
-        }
-        if (user?.phone) {
-    localStorage.setItem("userPhone", user.phone);
-}
+    if (user?.name) {
+      localStorage.setItem("userName", user.name);
+    }
+    if (user?.phone) {
+      localStorage.setItem("userPhone", user.phone);
+    }
 
+    setUser(user);
+    setIsAuthenticated(true);
+  };
 
-setUser(user);
-setIsAuthenticated(true);
-    };
-
-    const logout = async () => {
+  const logout = async () => {
     if (logoutInFlight) {
-        await logoutInFlight;
-        return;
+      await logoutInFlight;
+      return;
     }
 
     logoutInFlight = (async () => {
-        try {
-            await fetch(`${API_BASE}/api/auth/logout`, {
-                method: 'POST',
-                credentials: 'include'
-            });
-        } catch (err) {
-            console.error('Logout request failed:', err);
-        }
+      try {
+        await fetch(`${API_BASE}/api/auth/logout`, {
+          method: "POST",
+          credentials: "include",
+        });
+      } catch (err) {
+        console.error("Logout request failed:", err);
+      }
 
-        localStorage.removeItem("userRole");
-        localStorage.removeItem("userName");
-        localStorage.removeItem("userPhone");
+      localStorage.removeItem("userRole");
+      localStorage.removeItem("userName");
+      localStorage.removeItem("userPhone");
 
-        setUser(null);
-        setIsAuthenticated(false);
+      setUser(null);
+      setIsAuthenticated(false);
     })();
 
     try {
-        await logoutInFlight;
+      await logoutInFlight;
     } finally {
-        logoutInFlight = null;
+      logoutInFlight = null;
     }
-};
+  };
 
-    const value = useMemo(
-        () => ({
-            user,
-            loading,
-            isAuthenticated,
-            login,
-            logout,
-        }),
-        [user, loading, isAuthenticated]
-    );
+  const value = useMemo(
+    () => ({
+      user,
+      loading,
+      isAuthenticated,
+      login,
+      logout,
+    }),
+    [user, loading, isAuthenticated],
+  );
 
-    return (
-        <AuthContext.Provider value={value}>
-            {children}
-        </AuthContext.Provider>
-    );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

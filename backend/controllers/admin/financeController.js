@@ -1,101 +1,107 @@
-const mongoose = require('mongoose');
-const Restaurant = require('../../models/Restaurant');
-const LedgerEntry = require('../../models/LedgerEntry');
+const mongoose = require("mongoose");
+const Restaurant = require("../../models/Restaurant");
+const LedgerEntry = require("../../models/LedgerEntry");
 
 exports.processRestaurantSettlement = async (req, res) => {
-    try {
-        const { id } = req.params;
-        if (!mongoose.Types.ObjectId.isValid(id)) {
-    return res.status(400).json({
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
         success: false,
-        error: "INVALID_RESTAURANT_ID"
-    });
-}
-        const { settlementAmount, transactionReference } = req.body; 
-        if (
-    !Number.isSafeInteger(settlementAmount) ||
-    settlementAmount <= 0
-) {
-    return res.status(400).json({
-        success: false,
-        error: "INVALID_SETTLEMENT_AMOUNT"
-    });
-}
-if (
-    typeof transactionReference !== "string" ||
-    transactionReference.trim().length < 3
-) {
-    return res.status(400).json({
-        success: false,
-        error: "INVALID_TRANSACTION_REFERENCE"
-    });
-}
-        const existingSettlement = await LedgerEntry.findOne({
-    settlementId: transactionReference
-});
-
-if (existingSettlement) {
-    return res.status(409).json({
-        success: false,
-        error: "DUPLICATE_SETTLEMENT_REFERENCE"
-    });
-}
-        const session = await mongoose.startSession();
-        session.startTransaction();
-
-        try {
-            const updatedRestaurant = await Restaurant.findOneAndUpdate(
-                { _id: id, walletBalance: { $gte: settlementAmount } },
-                { $inc: { walletBalance: -settlementAmount, totalSettled: settlementAmount }, $set: { lastSettlementId: transactionReference } },
-                { session, new: true }
-            );
-
-            if (!updatedRestaurant) throw new Error('Insufficient balance');
-
-            Restaurant.assertFinancialInvariant(updatedRestaurant);
-
-            await LedgerEntry.create([
-                {
-                    settlementId: transactionReference,
-                    entityType: 'RESTAURANT',
-                    entityId: id,
-                    type: 'DEBIT',
-                    amount: settlementAmount,
-                    balanceAfter: updatedRestaurant.walletBalance,
-                    description: 'Seller Settlement Paid by Admin'
-                },
-                {
-                    settlementId: transactionReference,
-                    entityType: 'SYSTEM_CLEARING',
-                    entityId: null,
-                    type: 'CREDIT',
-                    amount: settlementAmount,
-                    balanceAfter: null,
-                    description: 'Seller Settlement Clearing'
-                }
-            ], { session });
-
-            await session.commitTransaction();
-            session.endSession();
-            res.status(200).json({ success: true, data: updatedRestaurant });
-        } catch (txnErr) {
-            await session.abortTransaction();
-            session.endSession();
-            throw txnErr;
-        }
-    } catch (error) {
-        if (req.log) {
-            req.log.error({
-                event: 'RESTAURANT_SETTLEMENT_FAILED',
-                error: error.message,
-                stack: error.stack
-            });
-        }
-
-        res.status(500).json({
-            success: false,
-            error: 'INTERNAL_SERVER_ERROR',
-            message: 'Unable to process restaurant settlement.'
-        });
+        error: "INVALID_RESTAURANT_ID",
+      });
     }
+    const { settlementAmount, transactionReference } = req.body;
+    if (!Number.isSafeInteger(settlementAmount) || settlementAmount <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: "INVALID_SETTLEMENT_AMOUNT",
+      });
+    }
+    if (
+      typeof transactionReference !== "string" ||
+      transactionReference.trim().length < 3
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: "INVALID_TRANSACTION_REFERENCE",
+      });
+    }
+    const existingSettlement = await LedgerEntry.findOne({
+      settlementId: transactionReference,
+    });
+
+    if (existingSettlement) {
+      return res.status(409).json({
+        success: false,
+        error: "DUPLICATE_SETTLEMENT_REFERENCE",
+      });
+    }
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      const updatedRestaurant = await Restaurant.findOneAndUpdate(
+        { _id: id, walletBalance: { $gte: settlementAmount } },
+        {
+          $inc: {
+            walletBalance: -settlementAmount,
+            totalSettled: settlementAmount,
+          },
+          $set: { lastSettlementId: transactionReference },
+        },
+        { session, new: true },
+      );
+
+      if (!updatedRestaurant) throw new Error("Insufficient balance");
+
+      Restaurant.assertFinancialInvariant(updatedRestaurant);
+
+      await LedgerEntry.create(
+        [
+          {
+            settlementId: transactionReference,
+            entityType: "RESTAURANT",
+            entityId: id,
+            type: "DEBIT",
+            amount: settlementAmount,
+            balanceAfter: updatedRestaurant.walletBalance,
+            description: "Seller Settlement Paid by Admin",
+          },
+          {
+            settlementId: transactionReference,
+            entityType: "SYSTEM_CLEARING",
+            entityId: null,
+            type: "CREDIT",
+            amount: settlementAmount,
+            balanceAfter: null,
+            description: "Seller Settlement Clearing",
+          },
+        ],
+        { session },
+      );
+
+      await session.commitTransaction();
+      session.endSession();
+      res.status(200).json({ success: true, data: updatedRestaurant });
+    } catch (txnErr) {
+      await session.abortTransaction();
+      session.endSession();
+      throw txnErr;
+    }
+  } catch (error) {
+    if (req.log) {
+      req.log.error({
+        event: "RESTAURANT_SETTLEMENT_FAILED",
+        error: error.message,
+        stack: error.stack,
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      error: "INTERNAL_SERVER_ERROR",
+      message: "Unable to process restaurant settlement.",
+    });
+  }
 };

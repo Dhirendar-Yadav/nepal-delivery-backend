@@ -13,177 +13,104 @@ import { useLocation } from "../../hooks/useLocation";
 import { handleRestaurantClick } from "../../helpers/homeHelpers";
 
 function SearchPage() {
+  const { isAuthenticated } = useAuth();
+  const navigate = useNavigate();
 
-    const { isAuthenticated } = useAuth();
-    const navigate = useNavigate();
+  const { location } = useLocation();
 
-    const { location } = useLocation();
+  const [query, setQuery] = useState("");
 
-    const [query, setQuery] = useState("");
+  const [restaurants, setRestaurants] = useState([]);
 
-    const [restaurants, setRestaurants] = useState([]);
+  const [loading, setLoading] = useState(false);
 
-    const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      setLoading(true);
 
-    useEffect(() => {
+      const result = await fetchRestaurants({
+        search: query,
 
-        const timer = setTimeout(async () => {
+        lat: location?.lat,
 
-            setLoading(true);
+        lng: location?.lng,
 
-            const result = await fetchRestaurants({
+        limit: 50,
+      });
 
-                search: query,
+      if (result.success) {
+        setRestaurants(result.data);
+      } else {
+        setRestaurants([]);
+      }
 
-                lat: location?.lat,
+      setLoading(false);
+    }, 300);
 
-                lng: location?.lng,
+    return () => clearTimeout(timer);
+  }, [query, location]);
 
-                limit: 50,
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
 
-            });
+      <div className="sticky top-0 bg-white z-20 border-b">
+        <div className="flex items-center gap-3 p-4">
+          <button
+            onClick={() => navigate(-1)}
+            className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center"
+          >
+            <ArrowLeft size={20} />
+          </button>
 
-            if (result.success) {
-
-                setRestaurants(result.data);
-
-            } else {
-
-                setRestaurants([]);
-
-            }
-
-            setLoading(false);
-
-        }, 300);
-
-        return () => clearTimeout(timer);
-
-    }, [query, location]);
-
-    return (
-
-        <div className="min-h-screen bg-gray-50">
-
-            {/* Header */}
-
-            <div className="sticky top-0 bg-white z-20 border-b">
-
-                <div className="flex items-center gap-3 p-4">
-
-                    <button
-
-                        onClick={() => navigate(-1)}
-
-                        className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center"
-
-                    >
-
-                        <ArrowLeft size={20} />
-
-                    </button>
-
-                    <div className="flex-1">
-
-                        <SearchBar
-
-                            value={query}
-
-                            onChange={(e) => setQuery(e.target.value)}
-
-                            placeholder="Search restaurants, food..."
-
-                        />
-
-                    </div>
-
-                </div>
-
-            </div>
-
-            {/* Body */}
-
-            <div className="p-4">
-
-                {
-
-                    loading ? (
-
-                        <div className="grid grid-cols-2 gap-4">
-
-                            {
-
-                                [...Array(6)].map((_, index) => (
-
-                                    <SkeletonCard key={index} />
-
-                                ))
-
-                            }
-
-                        </div>
-
-                    ) : restaurants.length === 0 ? (
-
-                        <EmptyState
-
-                            icon="🔍"
-
-                            title="Nothing Found"
-
-                            message="Try searching restaurants, momo, pizza, burger..."
-
-                        />
-
-                    ) : (
-
-                        <>
-
-                            <p className="text-sm font-bold text-gray-500 mb-4">
-
-                                {restaurants.length} Results
-
-                            </p>
-
-                            <div className="grid grid-cols-2 gap-4">
-
-                                {
-
-                                    restaurants.map((restaurant) => (
-
-                                        <RestaurantCard
-
-                                            key={restaurant._id}
-
-                                            restaurant={restaurant}
-
-                                            userLocation={location}
-
-                                            handleRestaurantClick={(id) =>
-
-                                                 handleRestaurantClick(id, navigate, isAuthenticated)
-                                            }
-
-                                        />
-
-                                    ))
-
-                                }
-
-                            </div>
-
-                        </>
-
-                    )
-
-                }
-
-            </div>
-
+          <div className="flex-1">
+            <SearchBar
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search restaurants, food..."
+            />
+          </div>
         </div>
+      </div>
 
-    );
+      {/* Body */}
 
+      <div className="p-4">
+        {loading ? (
+          <div className="grid grid-cols-2 gap-4">
+            {[...Array(6)].map((_, index) => (
+              <SkeletonCard key={index} />
+            ))}
+          </div>
+        ) : restaurants.length === 0 ? (
+          <EmptyState
+            icon="🔍"
+            title="Nothing Found"
+            message="Try searching restaurants, momo, pizza, burger..."
+          />
+        ) : (
+          <>
+            <p className="text-sm font-bold text-gray-500 mb-4">
+              {restaurants.length} Results
+            </p>
+
+            <div className="grid grid-cols-2 gap-4">
+              {restaurants.map((restaurant) => (
+                <RestaurantCard
+                  key={restaurant._id}
+                  restaurant={restaurant}
+                  userLocation={location}
+                  handleRestaurantClick={(id) =>
+                    handleRestaurantClick(id, navigate, isAuthenticated)
+                  }
+                />
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default SearchPage;

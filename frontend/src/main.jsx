@@ -10,13 +10,13 @@ import { LocationProvider } from "./context/LocationContext.jsx";
 import { UIProvider } from "./context/UIContext.jsx";
 
 createRoot(document.getElementById("root")).render(
-    <StrictMode>
-        <AuthProvider>
-            <LocationProvider>
-                <UIProvider>
-                    <App />
-                </UIProvider>
-            </LocationProvider>
-        </AuthProvider>
-    </StrictMode>
+  <StrictMode>
+    <AuthProvider>
+      <LocationProvider>
+        <UIProvider>
+          <App />
+        </UIProvider>
+      </LocationProvider>
+    </AuthProvider>
+  </StrictMode>,
 );

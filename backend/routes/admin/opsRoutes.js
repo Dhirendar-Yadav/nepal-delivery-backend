@@ -1,370 +1,457 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const mongoose = require('mongoose');
-const crypto = require('crypto');
+const mongoose = require("mongoose");
+const crypto = require("crypto");
 
-const User = require('../../models/User');
-const Order = require('../../models/Order');
-const RiderProfile = require('../../models/RiderProfile');
-const AdminWallet = require('../../models/AdminWallet');
+const User = require("../../models/User");
+const Order = require("../../models/Order");
+const RiderProfile = require("../../models/RiderProfile");
+const AdminWallet = require("../../models/AdminWallet");
 
-const { verifyAdmin, statsLimiter, orderLimiter, criticalLimiter } = require('../../middlewares/adminAuth');
+const {
+  verifyAdmin,
+  statsLimiter,
+  orderLimiter,
+  criticalLimiter,
+} = require("../../middlewares/adminAuth");
 
-const generateHash = (...args) => crypto.createHash('sha256').update(args.join('_')).digest('hex');
+const generateHash = (...args) =>
+  crypto.createHash("sha256").update(args.join("_")).digest("hex");
 
-const AdminAuditLog = mongoose.models.AdminAuditLog || mongoose.model('AdminAuditLog', new mongoose.Schema({
-    _id: String, adminId: String, action: String, targetType: String, batchId: String, cursor: String, 
-    createdAt: { type: Date, default: Date.now, expires: 7776000 } 
-}));
+const AdminAuditLog =
+  mongoose.models.AdminAuditLog ||
+  mongoose.model(
+    "AdminAuditLog",
+    new mongoose.Schema({
+      _id: String,
+      adminId: String,
+      action: String,
+      targetType: String,
+      batchId: String,
+      cursor: String,
+      createdAt: { type: Date, default: Date.now, expires: 7776000 },
+    }),
+  );
 
 // ==========================================
 // 📊 DASHBOARD STATS
 // ==========================================
-router.get('/full-stats', verifyAdmin, statsLimiter, async (req, res) => {
-    try {
-        const now = new Date();
-        const todayString = now.toISOString().split('T')[0];
-        const startOfTodayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-        const wallet = await AdminWallet.findOne({ date: todayString }).lean();
-        
-        const dailyStats = await Order.aggregate([
-            { $match: { createdAt: { $gte: startOfTodayUTC }, status: 'Delivered' } },
-            { $group: { _id: null, count: { $sum: 1 }, revenue: { $sum: "$totalAmount" } } }
-        ]);
+router.get("/full-stats", verifyAdmin, statsLimiter, async (req, res) => {
+  try {
+    const now = new Date();
+    const todayString = now.toISOString().split("T")[0];
+    const startOfTodayUTC = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
+    const wallet = await AdminWallet.findOne({ date: todayString }).lean();
 
-        res.json({ success: true, data: {
-            totalOrdersProcessed: wallet?.totalOrdersProcessed || 0,
-            totalRevenue: ((wallet?.totalPlatformRevenue || 0) / 100).toFixed(2),
-            netProfit: ((wallet?.netCompanyProfit || 0) / 100).toFixed(2),
-            availableBalance: ((wallet?.totalPlatformRevenue || 0) / 100).toFixed(2),
-            dailyOrders: dailyStats[0]?.count || 0,
-            dailyRevenue: ((dailyStats[0]?.revenue || 0) / 100).toFixed(2)
-        }});
-    } catch (err) {
-        if (req.log) {
-            req.log.error({
-                event: 'ADMIN_FULL_STATS_FAILED',
-                error: err.message,
-                stack: err.stack
-            });
-        }
+    const dailyStats = await Order.aggregate([
+      { $match: { createdAt: { $gte: startOfTodayUTC }, status: "Delivered" } },
+      {
+        $group: {
+          _id: null,
+          count: { $sum: 1 },
+          revenue: { $sum: "$totalAmount" },
+        },
+      },
+    ]);
 
-        res.status(500).json({
-            success: false,
-            error: 'INTERNAL_SERVER_ERROR',
-            message: 'Unable to load dashboard statistics.'
-        });
+    res.json({
+      success: true,
+      data: {
+        totalOrdersProcessed: wallet?.totalOrdersProcessed || 0,
+        totalRevenue: ((wallet?.totalPlatformRevenue || 0) / 100).toFixed(2),
+        netProfit: ((wallet?.netCompanyProfit || 0) / 100).toFixed(2),
+        availableBalance: ((wallet?.totalPlatformRevenue || 0) / 100).toFixed(
+          2,
+        ),
+        dailyOrders: dailyStats[0]?.count || 0,
+        dailyRevenue: ((dailyStats[0]?.revenue || 0) / 100).toFixed(2),
+      },
+    });
+  } catch (err) {
+    if (req.log) {
+      req.log.error({
+        event: "ADMIN_FULL_STATS_FAILED",
+        error: err.message,
+        stack: err.stack,
+      });
     }
+
+    res.status(500).json({
+      success: false,
+      error: "INTERNAL_SERVER_ERROR",
+      message: "Unable to load dashboard statistics.",
+    });
+  }
 });
 
 // ==========================================
 // 🛵 RIDERS & CUSTOMERS
 // ==========================================
-router.get('/all-riders', verifyAdmin, statsLimiter, async (req, res) => {
-    try {
-        // 🛡️ CEO FIX: Frontend expects nested "userId" object (r.userId.name). We map it properly here!
-        const MAX_ADMIN_RIDERS = 100;
+router.get("/all-riders", verifyAdmin, statsLimiter, async (req, res) => {
+  try {
+    // 🛡️ CEO FIX: Frontend expects nested "userId" object (r.userId.name). We map it properly here!
+    const MAX_ADMIN_RIDERS = 100;
 
-const riders = await User.find({ role: 'Rider' })
-    .select('-password')
-    .sort({ _id: 1 })
-    .limit(MAX_ADMIN_RIDERS)
-    .lean();
+    const riders = await User.find({ role: "Rider" })
+      .select("-password")
+      .sort({ _id: 1 })
+      .limit(MAX_ADMIN_RIDERS)
+      .lean();
 
-// Fetch only profiles belonging to the riders already selected above.
-// This prevents loading the entire Rider/RiderProfile collection into memory.
-const RiderModel = mongoose.models.Rider || mongoose.models.RiderProfile || RiderProfile;
-const riderUserIds = riders.map(user => user._id);
+    // Fetch only profiles belonging to the riders already selected above.
+    // This prevents loading the entire Rider/RiderProfile collection into memory.
+    const RiderModel =
+      mongoose.models.Rider || mongoose.models.RiderProfile || RiderProfile;
+    const riderUserIds = riders.map((user) => user._id);
 
-const profiles = riderUserIds.length
-    ? await RiderModel.find({ userId: { $in: riderUserIds } }).lean()
-    : [];
+    const profiles = riderUserIds.length
+      ? await RiderModel.find({ userId: { $in: riderUserIds } }).lean()
+      : [];
 
-const profilesByUserId = new Map(
-    profiles
-        .filter(profile => profile.userId)
-        .map(profile => [profile.userId.toString(), profile])
-);
+    const profilesByUserId = new Map(
+      profiles
+        .filter((profile) => profile.userId)
+        .map((profile) => [profile.userId.toString(), profile]),
+    );
 
-        const formattedRiders = riders.map(user => {
-            const profile = profilesByUserId.get(user._id.toString()) || {};
-            return {
-                ...user,      // Original flat user data
-                ...profile,   // Extra KYC/Bike docs from profile (if any)
-                _id: user._id, // Ensure primary ID is user ID
-                userId: {     // This is exactly what your frontend filter (r.userId?.name) is looking for!
-                    _id: user._id,
-                    name: user.name,
-                    email: user.email,
-                    phone: user.phone,
-                    isActive: user.isActive,
-                    isOnline: user.isOnline, // ✨ CEO UPDATE: Passing live online/offline status to Admin Dashboard
-                    kycStatus: user.kycStatus
-                }
-            };
-        });
+    const formattedRiders = riders.map((user) => {
+      const profile = profilesByUserId.get(user._id.toString()) || {};
+      return {
+        ...user, // Original flat user data
+        ...profile, // Extra KYC/Bike docs from profile (if any)
+        _id: user._id, // Ensure primary ID is user ID
+        userId: {
+          // This is exactly what your frontend filter (r.userId?.name) is looking for!
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+          phone: user.phone,
+          isActive: user.isActive,
+          isOnline: user.isOnline, // ✨ CEO UPDATE: Passing live online/offline status to Admin Dashboard
+          kycStatus: user.kycStatus,
+        },
+      };
+    });
 
-        res.json({ success: true, data: formattedRiders });
-        } catch (err) {
-        if (req.log) {
-            req.log.error({
-                event: 'ADMIN_RIDERS_FETCH_FAILED',
-                error: err.message,
-                stack: err.stack
-            });
-        }
-
-        res.status(500).json({
-            success: false,
-            error: 'INTERNAL_SERVER_ERROR',
-            message: 'Unable to load rider data.'
-        });
+    res.json({ success: true, data: formattedRiders });
+  } catch (err) {
+    if (req.log) {
+      req.log.error({
+        event: "ADMIN_RIDERS_FETCH_FAILED",
+        error: err.message,
+        stack: err.stack,
+      });
     }
+
+    res.status(500).json({
+      success: false,
+      error: "INTERNAL_SERVER_ERROR",
+      message: "Unable to load rider data.",
+    });
+  }
 });
 
 // ✨ NEW: RIDER APPROVAL & KYC GATEKEEPER (For your Admin Control)
-router.patch('/riders/:id/status', verifyAdmin, criticalLimiter, async (req, res) => {
+router.patch(
+  "/riders/:id/status",
+  verifyAdmin,
+  criticalLimiter,
+  async (req, res) => {
     try {
-        const { status, isActive } = req.body;
-        const user = await User.findById(req.params.id);
-        if (!user) return res.status(404).json({ success: false, error: "Rider not found." });
+      const { status, isActive } = req.body;
+      const user = await User.findById(req.params.id);
+      if (!user)
+        return res
+          .status(404)
+          .json({ success: false, error: "Rider not found." });
 
-        if (status) user.kycStatus = status; // e.g., 'VERIFIED' or 'REJECTED'
-        if (typeof isActive === 'boolean') user.isActive = isActive; // true or false
+      if (status) user.kycStatus = status; // e.g., 'VERIFIED' or 'REJECTED'
+      if (typeof isActive === "boolean") user.isActive = isActive; // true or false
 
-        await user.save();
-        res.json({ success: true, message: `Rider successfully updated!` });
+      await user.save();
+      res.json({ success: true, message: `Rider successfully updated!` });
     } catch (err) {
-        if (req.log) {
-            req.log.error({
-                event: 'ADMIN_RIDER_STATUS_UPDATE_FAILED',
-                error: err.message,
-                stack: err.stack
-            });
-        }
-
-        res.status(500).json({
-            success: false,
-            error: 'INTERNAL_SERVER_ERROR',
-            message: 'Unable to update rider status.'
+      if (req.log) {
+        req.log.error({
+          event: "ADMIN_RIDER_STATUS_UPDATE_FAILED",
+          error: err.message,
+          stack: err.stack,
         });
+      }
+
+      res.status(500).json({
+        success: false,
+        error: "INTERNAL_SERVER_ERROR",
+        message: "Unable to update rider status.",
+      });
     }
+  },
+);
+
+router.get("/all-customers", verifyAdmin, statsLimiter, async (req, res) => {
+  try {
+    const MAX_ADMIN_CUSTOMERS = 200;
+
+    const customers = await User.find({ role: "Customer" })
+      .select("-password")
+      .sort({ _id: -1 })
+      .limit(MAX_ADMIN_CUSTOMERS)
+      .lean();
+    res.json({ success: true, data: customers });
+  } catch (err) {
+    if (req.log) {
+      req.log.error({
+        event: "ADMIN_CUSTOMERS_FETCH_FAILED",
+        error: err.message,
+        stack: err.stack,
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      error: "INTERNAL_SERVER_ERROR",
+      message: "Unable to load customer data.",
+    });
+  }
 });
 
-router.get('/all-customers', verifyAdmin, statsLimiter, async (req, res) => {
+router.get(
+  "/live-rider-shifts",
+  verifyAdmin,
+  statsLimiter,
+  async (req, res) => {
     try {
-        const MAX_ADMIN_CUSTOMERS = 200;
+      const MAX_LIVE_RIDER_SHIFTS = 200;
 
-const customers = await User.find({ role: 'Customer' })
-    .select('-password')
-    .sort({ _id: -1 })
-    .limit(MAX_ADMIN_CUSTOMERS)
-    .lean();
-        res.json({ success: true, data: customers });
+      const riders = await User.find({
+        role: "Rider",
+        isOnline: true,
+      })
+        .select("name phone shiftStartTime currentActiveOrderId")
+        .sort({ _id: -1 })
+        .limit(MAX_LIVE_RIDER_SHIFTS)
+        .lean();
+      const riderData = riders.map((rider) => {
+        const shiftDuration = rider.shiftStartTime
+          ? Math.floor(
+              (Date.now() - new Date(rider.shiftStartTime)) / (1000 * 60),
+            )
+          : 0;
+        return {
+          ...rider,
+          shiftDurationMinutes: shiftDuration,
+          isOvertime: shiftDuration >= 720,
+          isInBuffer: shiftDuration >= 700 && shiftDuration < 720,
+          isBusy: !!rider.currentActiveOrderId,
+        };
+      });
+      res.json({ success: true, data: riderData });
     } catch (err) {
-        if (req.log) {
-            req.log.error({
-                event: 'ADMIN_CUSTOMERS_FETCH_FAILED',
-                error: err.message,
-                stack: err.stack
-            });
-        }
-
-        res.status(500).json({
-            success: false,
-            error: 'INTERNAL_SERVER_ERROR',
-            message: 'Unable to load customer data.'
+      if (req.log) {
+        req.log.error({
+          event: "ADMIN_RIDER_SHIFTS_FETCH_FAILED",
+          error: err.message,
+          stack: err.stack,
         });
+      }
+
+      res.status(500).json({
+        success: false,
+        error: "INTERNAL_SERVER_ERROR",
+        message: "Unable to load rider shift data.",
+      });
     }
-});
+  },
+);
 
-router.get('/live-rider-shifts', verifyAdmin, statsLimiter, async (req, res) => {
-    try {
-        const MAX_LIVE_RIDER_SHIFTS = 200;
-
-const riders = await User.find({
-    role: 'Rider',
-    isOnline: true
-})
-    .select('name phone shiftStartTime currentActiveOrderId')
-    .sort({ _id: -1 })
-    .limit(MAX_LIVE_RIDER_SHIFTS)
-    .lean();
-        const riderData = riders.map(rider => {
-            const shiftDuration = rider.shiftStartTime ? Math.floor((Date.now() - new Date(rider.shiftStartTime)) / (1000 * 60)) : 0;
-            return { ...rider, shiftDurationMinutes: shiftDuration, isOvertime: shiftDuration >= 720, isInBuffer: shiftDuration >= 700 && shiftDuration < 720, isBusy: !!rider.currentActiveOrderId };
-        });
-        res.json({ success: true, data: riderData });
-    } catch (err) {
-        if (req.log) {
-            req.log.error({
-                event: 'ADMIN_RIDER_SHIFTS_FETCH_FAILED',
-                error: err.message,
-                stack: err.stack
-            });
-        }
-
-        res.status(500).json({
-            success: false,
-            error: 'INTERNAL_SERVER_ERROR',
-            message: 'Unable to load rider shift data.'
-        });
-    }
-});
-
-router.post('/reset-rider-shift', verifyAdmin, criticalLimiter, async (req, res) => {
+router.post(
+  "/reset-rider-shift",
+  verifyAdmin,
+  criticalLimiter,
+  async (req, res) => {
     const session = await mongoose.startSession();
     session.startTransaction();
     try {
-        const { riderId, clearCOD } = req.body;
-        const user = await User.findById(riderId).session(session);
-        if (!user) throw new Error("Rider not found");
-        if (user.currentActiveOrderId) throw new Error("Cannot reset shift during active delivery!");
+      const { riderId, clearCOD } = req.body;
+      const user = await User.findById(riderId).session(session);
+      if (!user) throw new Error("Rider not found");
+      if (user.currentActiveOrderId)
+        throw new Error("Cannot reset shift during active delivery!");
 
-        user.shiftStartTime = new Date(); user.isOnline = true;
-        await user.save({ session });
+      user.shiftStartTime = new Date();
+      user.isOnline = true;
+      await user.save({ session });
 
-        if (clearCOD) {
-            const riderProfile = await RiderProfile.findOne({ userId: riderId })
-                .session(session)
-                .select('wallet.balance wallet.codPending');
+      if (clearCOD) {
+        const riderProfile = await RiderProfile.findOne({ userId: riderId })
+          .session(session)
+          .select("wallet.balance wallet.codPending");
 
-            if (!riderProfile) {
-                throw new Error("Rider profile not found");
-            }
-
-            const walletBalance = riderProfile.wallet?.balance || 0;
-            const codPending = riderProfile.wallet?.codPending || 0;
-
-            const updatedRiderProfile = await RiderProfile.findOneAndUpdate(
-                {
-                    userId: riderId,
-                    "wallet.balance": walletBalance,
-                    "wallet.codPending": codPending
-                },
-                {
-                    $inc: {
-                        "wallet.balance": -walletBalance,
-                        "wallet.codPending": -codPending
-                    }
-                },
-                {
-                    session,
-                    new: true,
-                    runValidators: true
-                }
-            );
-
-            if (!updatedRiderProfile) {
-                throw new Error("Rider wallet changed during settlement reset");
-            }
+        if (!riderProfile) {
+          throw new Error("Rider profile not found");
         }
 
-        await session.commitTransaction(); res.json({ success: true, message: `Rider ${user.name} settled and shift restarted.` });
+        const walletBalance = riderProfile.wallet?.balance || 0;
+        const codPending = riderProfile.wallet?.codPending || 0;
+
+        const updatedRiderProfile = await RiderProfile.findOneAndUpdate(
+          {
+            userId: riderId,
+            "wallet.balance": walletBalance,
+            "wallet.codPending": codPending,
+          },
+          {
+            $inc: {
+              "wallet.balance": -walletBalance,
+              "wallet.codPending": -codPending,
+            },
+          },
+          {
+            session,
+            new: true,
+            runValidators: true,
+          },
+        );
+
+        if (!updatedRiderProfile) {
+          throw new Error("Rider wallet changed during settlement reset");
+        }
+      }
+
+      await session.commitTransaction();
+      res.json({
+        success: true,
+        message: `Rider ${user.name} settled and shift restarted.`,
+      });
     } catch (err) {
-        await session.abortTransaction();
+      await session.abortTransaction();
 
-        if (req.log) {
-            req.log.error({
-                event: 'ADMIN_RIDER_SHIFT_RESET_FAILED',
-                error: err.message,
-                stack: err.stack
-            });
-        }
-
-        res.status(400).json({
-            success: false,
-            error: 'RIDER_SHIFT_RESET_FAILED',
-            message: 'Unable to reset rider shift.'
+      if (req.log) {
+        req.log.error({
+          event: "ADMIN_RIDER_SHIFT_RESET_FAILED",
+          error: err.message,
+          stack: err.stack,
         });
-    } finally { session.endSession(); }
-});
+      }
+
+      res.status(400).json({
+        success: false,
+        error: "RIDER_SHIFT_RESET_FAILED",
+        message: "Unable to reset rider shift.",
+      });
+    } finally {
+      session.endSession();
+    }
+  },
+);
 
 // ==========================================
 // 🛡️ ORDERS & MAINTENANCE
 // ==========================================
-router.get('/all-orders', verifyAdmin, orderLimiter, async (req, res) => {
-    try {
-        const limit = Math.min(parseInt(req.query.limit) || 20, 100);
-        const { search, status, lastId } = req.query;
-        let query = {};
-        if (status) query.status = status;
-        
-        if (search && mongoose.Types.ObjectId.isValid(search)) {
-            query._id = new mongoose.Types.ObjectId(search);
-        } else if (lastId && mongoose.Types.ObjectId.isValid(lastId)) {
-            query._id = { $lt: new mongoose.Types.ObjectId(lastId) };
-        }
+router.get("/all-orders", verifyAdmin, orderLimiter, async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    const { search, status, lastId } = req.query;
+    let query = {};
+    if (status) query.status = status;
 
-        const orders = await Order.find(query).populate('customerId', 'name phone').populate('restaurantId', 'name').sort({ _id: -1 }).limit(limit).lean(); 
-        res.json({ success: true, data: orders });
-    } catch (err) {
-        if (req.log) {
-            req.log.error({
-                event: 'ADMIN_ORDERS_FETCH_FAILED',
-                error: err.message,
-                stack: err.stack
-            });
-        }
-
-        res.status(500).json({
-            success: false,
-            error: 'INTERNAL_SERVER_ERROR',
-            message: 'Unable to load order data.'
-        });
+    if (search && mongoose.Types.ObjectId.isValid(search)) {
+      query._id = new mongoose.Types.ObjectId(search);
+    } else if (lastId && mongoose.Types.ObjectId.isValid(lastId)) {
+      query._id = { $lt: new mongoose.Types.ObjectId(lastId) };
     }
+
+    const orders = await Order.find(query)
+      .populate("customerId", "name phone")
+      .populate("restaurantId", "name")
+      .sort({ _id: -1 })
+      .limit(limit)
+      .lean();
+    res.json({ success: true, data: orders });
+  } catch (err) {
+    if (req.log) {
+      req.log.error({
+        event: "ADMIN_ORDERS_FETCH_FAILED",
+        error: err.message,
+        stack: err.stack,
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      error: "INTERNAL_SERVER_ERROR",
+      message: "Unable to load order data.",
+    });
+  }
 });
 
-router.get('/active-tracking-orders', verifyAdmin, orderLimiter, async (req, res) => {
+router.get(
+  "/active-tracking-orders",
+  verifyAdmin,
+  orderLimiter,
+  async (req, res) => {
     try {
-        const MAX_ACTIVE_TRACKING_ORDERS = 100;
+      const MAX_ACTIVE_TRACKING_ORDERS = 100;
 
-const activeOrders = await Order.find({
-    status: { $in: ['Confirmed', 'Preparing', 'Out for Delivery'] }
-})
-    .sort({ _id: -1 })
-    .limit(MAX_ACTIVE_TRACKING_ORDERS)
-    .populate('restaurantId assignedRiderId')
-    .lean();
-        res.json({ success: true, data: activeOrders });
+      const activeOrders = await Order.find({
+        status: { $in: ["Confirmed", "Preparing", "Out for Delivery"] },
+      })
+        .sort({ _id: -1 })
+        .limit(MAX_ACTIVE_TRACKING_ORDERS)
+        .populate("restaurantId assignedRiderId")
+        .lean();
+      res.json({ success: true, data: activeOrders });
     } catch (err) {
-        if (req.log) {
-            req.log.error({
-                event: 'ADMIN_ACTIVE_ORDERS_FETCH_FAILED',
-                error: err.message,
-                stack: err.stack
-            });
-        }
-
-        res.status(500).json({
-            success: false,
-            error: 'INTERNAL_SERVER_ERROR',
-            message: 'Unable to load active order tracking.'
+      if (req.log) {
+        req.log.error({
+          event: "ADMIN_ACTIVE_ORDERS_FETCH_FAILED",
+          error: err.message,
+          stack: err.stack,
         });
+      }
+
+      res.status(500).json({
+        success: false,
+        error: "INTERNAL_SERVER_ERROR",
+        message: "Unable to load active order tracking.",
+      });
     }
-});
+  },
+);
 
 // Deprecated: Delivery settlement handled only via riderController.completeOrder
 
-router.delete('/purge/:type/:id', verifyAdmin, criticalLimiter, async (req, res) => {
+router.delete(
+  "/purge/:type/:id",
+  verifyAdmin,
+  criticalLimiter,
+  async (req, res) => {
     try {
-        await AdminAuditLog.create({ _id: crypto.randomUUID(), adminId: req.user.id, action: `SOFT_DELETE_${req.params.type.toUpperCase()}`, targetId: req.params.id });
-        res.json({ success: true, message: `Resource marked for deletion.` });
-        } catch (err) {
-        if (req.log) {
-            req.log.error({
-                event: 'ADMIN_PURGE_FAILED',
-                error: err.message,
-                stack: err.stack
-            });
-        }
-
-        res.status(500).json({
-            success: false,
-            error: 'INTERNAL_SERVER_ERROR',
-            message: 'Unable to process the requested operation.'
+      await AdminAuditLog.create({
+        _id: crypto.randomUUID(),
+        adminId: req.user.id,
+        action: `SOFT_DELETE_${req.params.type.toUpperCase()}`,
+        targetId: req.params.id,
+      });
+      res.json({ success: true, message: `Resource marked for deletion.` });
+    } catch (err) {
+      if (req.log) {
+        req.log.error({
+          event: "ADMIN_PURGE_FAILED",
+          error: err.message,
+          stack: err.stack,
         });
+      }
+
+      res.status(500).json({
+        success: false,
+        error: "INTERNAL_SERVER_ERROR",
+        message: "Unable to process the requested operation.",
+      });
     }
-});
+  },
+);
 
 module.exports = router;

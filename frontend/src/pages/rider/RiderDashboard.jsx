@@ -42,7 +42,12 @@ function RiderDashboard() {
   const [isOnline, setIsOnline] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  const [activeTab, setActiveTab] = useState('home');
+  const [activeTab, setActiveTab] = useState(() => {
+    const hash = window.location.hash.replace('#', '');
+    return ['home', 'orders', 'wallet', 'profile'].includes(hash)
+      ? hash
+      : 'home';
+  });
 
   const [activeOrder, setActiveOrder] = useState(null);
   const [deliveryStatus, setDeliveryStatus] = useState('pickup');
@@ -114,11 +119,9 @@ const [foodReadyToast, setFoodReadyToast] = useState(null);
   //Initial Load Hash Setup
   useEffect(() => {
     const hash = window.location.hash.replace('#', '');
-    if (['home', 'orders', 'wallet', 'profile'].includes(hash)) {
-      setActiveTab(hash);
-    } else {
+
+    if (!['home', 'orders', 'wallet', 'profile'].includes(hash)) {
       window.history.replaceState(null, "", "#home");
-      setActiveTab('home');
     }
   }, []);
 
@@ -393,8 +396,14 @@ const [foodReadyToast, setFoodReadyToast] = useState(null);
   }, [authLoading, isAuthenticated, fetchAvailableOrders, fetchActiveOrder, fetchProfile]);
 
   useEffect(() => {
-    fetchProfile();
-    fetchActiveOrder();
+    const initialSync = setTimeout(() => {
+      fetchProfile();
+      fetchActiveOrder();
+    }, 0);
+
+    return () => {
+      clearTimeout(initialSync);
+    };
   }, [fetchProfile, fetchActiveOrder]);
 
   useEffect(() => {
@@ -425,16 +434,29 @@ const [foodReadyToast, setFoodReadyToast] = useState(null);
 
   useEffect(() => {
     if (isOnline && !activeOrder) {
-      fetchAvailableOrders();
+      const initialFetch = setTimeout(() => {
+        fetchAvailableOrders();
+      }, 0);
+
       let interval;
       if (!isSocketConnected) {
         interval = setInterval(fetchAvailableOrders, 10000);
       }
-      return () => { if (interval) clearInterval(interval); };
-    } else {
+
+      return () => {
+        clearTimeout(initialFetch);
+        if (interval) clearInterval(interval);
+      };
+    }
+
+    const resetState = setTimeout(() => {
       setOrders([]);
       setIsLoading(false);
-    }
+    }, 0);
+
+    return () => {
+      clearTimeout(resetState);
+    };
   }, [isOnline, activeOrder, isSocketConnected, fetchAvailableOrders]);
 
   const handleToggleOnline = useCallback(async () => {

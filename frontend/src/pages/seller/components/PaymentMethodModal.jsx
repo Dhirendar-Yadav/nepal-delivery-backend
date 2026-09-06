@@ -1,34 +1,34 @@
-﻿import { useState } from 'react';
-import { createPortal } from 'react-dom';
+﻿import { useState } from "react";
+import { createPortal } from "react-dom";
 
 const PAYMENT_METHODS = [
-  { value: 'Bank', label: 'Bank' },
-  { value: 'eSewa', label: 'eSewa' }
+  { value: "Bank", label: "Bank" },
+  { value: "eSewa", label: "eSewa" },
 ];
 
 const createEmptyFields = () => ({
-  accountHolderName: '',
-  bankName: '',
-  accountNumber: '',
-  eSewaId: ''
+  accountHolderName: "",
+  bankName: "",
+  accountNumber: "",
+  eSewaId: "",
 });
 
 function PaymentMethodModal({
   isOpen,
-  title = 'Add Payment Method',
-  initialMethod = 'Bank',
+  title = "Add Payment Method",
+  initialMethod = "Bank",
   initialValues = {},
   loading = false,
-  error = '',
+  error = "",
   onSave,
-  onCancel
+  onCancel,
 }) {
   const [method, setMethod] = useState(initialMethod);
   const [fields, setFields] = useState(() => ({
     ...createEmptyFields(),
-    ...initialValues
+    ...initialValues,
   }));
-  const [localError, setLocalError] = useState('');
+  const [localError, setLocalError] = useState("");
 
   if (!isOpen) {
     return null;
@@ -37,13 +37,13 @@ function PaymentMethodModal({
   const updateField = (field, value) => {
     setFields((previous) => ({
       ...previous,
-      [field]: value
+      [field]: value,
     }));
   };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    setLocalError('');
+    setLocalError("");
 
     try {
       await onSave({
@@ -51,13 +51,13 @@ function PaymentMethodModal({
         accountName: fields.accountHolderName,
         bankName: fields.bankName,
         accountNumber: fields.accountNumber,
-        eSewaId: fields.eSewaId
+        eSewaId: fields.eSewaId,
       });
     } catch (submitError) {
       setLocalError(
         submitError instanceof Error
           ? submitError.message
-          : 'Unable to save payment method.'
+          : "Unable to save payment method.",
       );
     }
   };
@@ -106,10 +106,7 @@ function PaymentMethodModal({
               className="w-full rounded-xl border border-gray-700 bg-gray-800/90 px-3 py-3 text-sm font-bold text-white outline-none transition focus:border-orange-500 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {PAYMENT_METHODS.map((paymentMethod) => (
-                <option
-                  key={paymentMethod.value}
-                  value={paymentMethod.value}
-                >
+                <option key={paymentMethod.value} value={paymentMethod.value}>
                   {paymentMethod.label}
                 </option>
               ))}
@@ -129,7 +126,7 @@ function PaymentMethodModal({
               type="text"
               value={fields.accountHolderName}
               onChange={(event) =>
-                updateField('accountHolderName', event.target.value)
+                updateField("accountHolderName", event.target.value)
               }
               autoComplete="name"
               maxLength={100}
@@ -140,7 +137,7 @@ function PaymentMethodModal({
             />
           </div>
 
-          {method === 'Bank' ? (
+          {method === "Bank" ? (
             <>
               <div>
                 <label
@@ -155,7 +152,7 @@ function PaymentMethodModal({
                   type="text"
                   value={fields.bankName}
                   onChange={(event) =>
-                    updateField('bankName', event.target.value)
+                    updateField("bankName", event.target.value)
                   }
                   autoComplete="organization"
                   maxLength={100}
@@ -179,7 +176,7 @@ function PaymentMethodModal({
                   type="text"
                   value={fields.accountNumber}
                   onChange={(event) =>
-                    updateField('accountNumber', event.target.value)
+                    updateField("accountNumber", event.target.value)
                   }
                   inputMode="numeric"
                   autoComplete="off"
@@ -204,9 +201,7 @@ function PaymentMethodModal({
                 id="esewa-mobile-number"
                 type="tel"
                 value={fields.eSewaId}
-                onChange={(event) =>
-                  updateField('eSewaId', event.target.value)
-                }
+                onChange={(event) => updateField("eSewaId", event.target.value)}
                 inputMode="tel"
                 autoComplete="tel"
                 maxLength={40}
@@ -239,13 +234,13 @@ function PaymentMethodModal({
               disabled={loading}
               className="rounded-xl bg-orange-500 px-5 py-2.5 text-xs font-black text-gray-950 transition hover:bg-orange-400 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {loading ? 'Saving...' : 'Save'}
+              {loading ? "Saving..." : "Save"}
             </button>
           </div>
         </form>
       </div>
     </div>,
-    document.body
+    document.body,
   );
 }
 

@@ -1,23 +1,23 @@
 import { Search } from "lucide-react";
 
 function SearchBar({
-    value,
-    onChange,
-    placeholder = "Search restaurants, food..."
+  value,
+  onChange,
+  placeholder = "Search restaurants, food...",
 }) {
-    return (
-        <div className="relative w-full">
-            <Search
-                size={18}
-                className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
-            />
+  return (
+    <div className="relative w-full">
+      <Search
+        size={18}
+        className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
+      />
 
-            <input
-                type="text"
-                value={value}
-                onChange={onChange}
-                placeholder={placeholder}
-                className="
+      <input
+        type="text"
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        className="
                     w-full
                     h-12
                     pl-11
@@ -33,9 +33,9 @@ function SearchBar({
                     transition-all
                     text-sm
                 "
-            />
-        </div>
-    );
+      />
+    </div>
+  );
 }
 
 export default SearchBar;

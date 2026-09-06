@@ -1,5 +1,5 @@
-const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
+const mongoose = require("mongoose");
+const bcrypt = require("bcryptjs");
 
 /**
  * @description User Schema for Food Samundar (Titanium Fintech & Logistics Edition)
@@ -7,150 +7,163 @@ const bcrypt = require('bcryptjs');
  * 💰 FINANCIALS: Wallet cache with versioning for optimistic locking.
  * 📍 LOGISTICS: GeoJSON 2dsphere indexing for finding nearby riders instantly.
  */
-const userSchema = new mongoose.Schema({
+const userSchema = new mongoose.Schema(
+  {
     // --- 👤 IDENTITY & AUTH ---
     name: {
-    type: String,
-    required: [true, 'Name is required'],
-    trim: true,
-    minlength: [2, 'Name must be at least 2 characters'],
-    maxlength: [80, 'Name cannot exceed 80 characters']
-},
-    email: {
-    type: String,
-    required: [true, 'Email is required'],
-    unique: true,
-    index: true,
-    trim: true,
-    lowercase: true,
-    match: [/^[^\s@]+@[^\s@]+\.[^\s@]+$/, 'Please provide a valid email address.']
-}, 
-   password: {
-    type: String,
-    required: [true, 'Password is required'],
-    minlength: [8, 'Password must be at least 8 characters long'],
-    select: false
-},
-    phone: {
-    type: String,
-    required: [true, 'Phone number is required'],
-    unique: true,
-    index: true,
-    trim: true,
-    validate: {
-        validator: function (value) {
-            return /^(98|97)\d{8}$/.test(value);
-        },
-        message: 'Please enter a valid Nepal mobile number.'
-    }
-}, 
-    role: { 
-        type: String, 
-        enum: ['Customer', 'Seller', 'Rider', 'Admin'], 
-        default: 'Customer',
-        index: true 
+      type: String,
+      required: [true, "Name is required"],
+      trim: true,
+      minlength: [2, "Name must be at least 2 characters"],
+      maxlength: [80, "Name cannot exceed 80 characters"],
     },
-   businessName: {
-    type: String,
-    trim: true,
-    required: [
-        function () {
-            return this.role === 'Seller';
+    email: {
+      type: String,
+      required: [true, "Email is required"],
+      unique: true,
+      index: true,
+      trim: true,
+      lowercase: true,
+      match: [
+        /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+        "Please provide a valid email address.",
+      ],
+    },
+    password: {
+      type: String,
+      required: [true, "Password is required"],
+      minlength: [8, "Password must be at least 8 characters long"],
+      select: false,
+    },
+    phone: {
+      type: String,
+      required: [true, "Phone number is required"],
+      unique: true,
+      index: true,
+      trim: true,
+      validate: {
+        validator: function (value) {
+          return /^(98|97)\d{8}$/.test(value);
         },
-        'Business name is required for sellers.'
-    ],
-    maxlength: [120, 'Business name cannot exceed 120 characters']
-},
-    
+        message: "Please enter a valid Nepal mobile number.",
+      },
+    },
+    role: {
+      type: String,
+      enum: ["Customer", "Seller", "Rider", "Admin"],
+      default: "Customer",
+      index: true,
+    },
+    businessName: {
+      type: String,
+      trim: true,
+      required: [
+        function () {
+          return this.role === "Seller";
+        },
+        "Business name is required for sellers.",
+      ],
+      maxlength: [120, "Business name cannot exceed 120 characters"],
+    },
+
     // --- 🛡️ ACCOUNT STATUS & COMPLIANCE ---
     isActive: { type: Boolean, default: true },
     isBlocked: { type: Boolean, default: false }, // For fraud control / banning
     isDeleted: { type: Boolean, default: false }, // Soft-delete (Never hard delete financial users)
-    kycStatus: { 
-        type: String, 
-        enum: ['PENDING', 'VERIFIED', 'REJECTED'], 
-        default: 'PENDING' 
+    kycStatus: {
+      type: String,
+      enum: ["PENDING", "VERIFIED", "REJECTED"],
+      default: "PENDING",
     }, // 🏦 Required for payouts
 
     // --- 💰 FINANCIAL WALLET (Cached from Ledger) ---
     // NOTE: For Riders, walletBalance > 0 means they OWE the admin (COD Collected).
-    walletBalance: { 
-        type: Number, 
-        default: 0,
-        // Removed min: 0 because some roles might have negative balances (like advances), 
-        // but kept integer validation for Paisa/Smallest Unit.
-        validate: { 
-            validator: (v) => Number.isInteger(v), 
-            message: 'Wallet balance must be an integer (Smallest Currency Unit).' 
-        }
+    walletBalance: {
+      type: Number,
+      default: 0,
+      // Removed min: 0 because some roles might have negative balances (like advances),
+      // but kept integer validation for Paisa/Smallest Unit.
+      validate: {
+        validator: (v) => Number.isInteger(v),
+        message: "Wallet balance must be an integer (Smallest Currency Unit).",
+      },
     },
     walletVersion: { type: Number, default: 0 }, // 🔄 Optimistic locking for concurrency
     lastSettlementId: { type: String, default: null }, // 🔗 Ties wallet state to the exact Ledger Entry
-    
+
     // --- 🛵 RIDER LOGISTICS & OPS ---
     totalDeliveries: { type: Number, default: 0, min: 0 },
     isOnline: { type: Boolean, default: false, index: true }, // Is rider ready for orders?
-    
+
     // 🟢 NEW: Track exactly when the shift started for the 12-hour limit
     shiftStartTime: { type: Date, default: null },
 
     // 🟢 NEW: Track current order so Cron Job doesn't kick them mid-delivery
-    currentActiveOrderId: { 
-        type: mongoose.Schema.Types.ObjectId, 
-        ref: 'Order', 
-        default: null 
+    currentActiveOrderId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Order",
+      default: null,
     },
 
     currentLocation: {
-        type: { type: String, enum: ['Point'], default: 'Point' },
-        coordinates: { 
-            type: [Number], // [longitude, latitude]
-            default: undefined,
-            validate: {
-                validator: (v) => !v || (Array.isArray(v) && v.length === 2 && Number.isFinite(v[0]) && Number.isFinite(v[1]) && v[0] >= -180 && v[0] <= 180 && v[1] >= -90 && v[1] <= 90),
-                message: 'Invalid GeoJSON coordinates'
-            }
-        }
+      type: { type: String, enum: ["Point"], default: "Point" },
+      coordinates: {
+        type: [Number], // [longitude, latitude]
+        default: undefined,
+        validate: {
+          validator: (v) =>
+            !v ||
+            (Array.isArray(v) &&
+              v.length === 2 &&
+              Number.isFinite(v[0]) &&
+              Number.isFinite(v[1]) &&
+              v[0] >= -180 &&
+              v[0] <= 180 &&
+              v[1] >= -90 &&
+              v[1] <= 90),
+          message: "Invalid GeoJSON coordinates",
+        },
+      },
     },
 
     profileImage: {
-        type: String,
-        default: null,
-        trim: true
-    }
-
-}, {
-    timestamps: true 
-});
+      type: String,
+      default: null,
+      trim: true,
+    },
+  },
+  {
+    timestamps: true,
+  },
+);
 
 // ==========================================
 // ⚡ INDEXING (For Hyper-Scale)
 // ==========================================
 
-userSchema.index({ "currentLocation": "2dsphere" }); 
-userSchema.index({ role: 1, isOnline: 1 }); 
-userSchema.index({ isDeleted: 1 }); 
+userSchema.index({ currentLocation: "2dsphere" });
+userSchema.index({ role: 1, isOnline: 1 });
+userSchema.index({ isDeleted: 1 });
 // 🟢 NEW: Index for the Shift Monitor Cron Job to query faster
 userSchema.index({ isOnline: 1, shiftStartTime: 1, currentActiveOrderId: 1 });
 
 // 🛡️ Middleware: Auto-increment wallet version on financial updates
-userSchema.pre(['findOneAndUpdate', 'updateOne', 'updateMany'], function () {
-    const update = this.getUpdate();
+userSchema.pre(["findOneAndUpdate", "updateOne", "updateMany"], function () {
+  const update = this.getUpdate();
 
-    if (update?.$inc?.walletBalance !== undefined) {
-        update.$inc.walletVersion ??= 1;
-    }
+  if (update?.$inc?.walletBalance !== undefined) {
+    update.$inc.walletVersion ??= 1;
+  }
 });
 // ==========================================
 // PASSWORD HASHING MIDDLEWARE
 // ==========================================
 
-userSchema.pre('save', async function () {
-    if (!this.isModified('password')) {
-        return;
-    }
+userSchema.pre("save", async function () {
+  if (!this.isModified("password")) {
+    return;
+  }
 
-    this.password = await bcrypt.hash(this.password, 12);
+  this.password = await bcrypt.hash(this.password, 12);
 });
-module.exports = mongoose.model('User', userSchema);
-
+module.exports = mongoose.model("User", userSchema);

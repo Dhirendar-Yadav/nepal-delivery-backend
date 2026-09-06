@@ -1,18 +1,7 @@
-﻿import { useEffect, useState } from 'react';
+﻿import { useState } from "react";
 
-export default function LogoutConfirmModal({
-  open,
-  onCancel,
-  onConfirm
-}) {
+export default function LogoutConfirmModal({ open, onCancel, onConfirm }) {
   const [isConfirming, setIsConfirming] = useState(false);
-
-  useEffect(() => {
-    if (!open) {
-      setIsConfirming(false);
-    }
-  }, [open]);
-
   if (!open) {
     return null;
   }
@@ -68,7 +57,7 @@ export default function LogoutConfirmModal({
             disabled={isConfirming}
             className="flex-1 py-2 text-sm font-black text-red-400 transition hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isConfirming ? 'Logging out...' : 'Yes'}
+            {isConfirming ? "Logging out..." : "Yes"}
           </button>
         </div>
       </div>

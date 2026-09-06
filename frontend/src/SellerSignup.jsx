@@ -26,6 +26,15 @@ function RecenterMap({ position }) {
   return null;
 }
 
+function MapEventsHandler({ onPositionChange }) {
+  useMapEvents({
+    click(e) {
+      onPositionChange([e.latlng.lat, e.latlng.lng]);
+    },
+  });
+  return null;
+}
+
 function SellerSignup() {
   const [formData, setFormData] = useState({
     fullName: '',
@@ -91,12 +100,6 @@ function SellerSignup() {
       { enableHighAccuracy: true }
     );
   };
-
-  function MapEventsHandler() {
-    useMapEvents({ click(e) { setPosition([e.latlng.lat, e.latlng.lng]); } });
-    return null;
-  }
-
   const eventHandlers = useMemo(() => ({
     dragend() {
       const marker = markerRef.current;
@@ -137,7 +140,7 @@ function SellerSignup() {
         body: data,
       });
       if (res.ok) {
-        alert("Badhai Chha! 🎉 Pasal saphalatapurvak darta bhayo. Aba login garnuhos.");
+        alert("Badhai Chha! Pasal saphalatapurvak darta bhayo. Aba login garnuhos.");
         navigate('/login');
       } else {
         const responseText = await res.text();
@@ -163,7 +166,7 @@ function SellerSignup() {
   return (
     <div className="min-h-screen bg-white flex flex-col font-sans text-gray-800 relative">
 
-      {/* ✨ Back Button Fixed (Non-Floating) */}
+      {/* Back Button Fixed (Non-Floating) */}
       <div className="w-full max-w-4xl mx-auto relative h-0">
         <button
           onClick={() => navigate(-1)}
@@ -173,7 +176,7 @@ function SellerSignup() {
         </button>
       </div>
 
-      {/* ✨ Main Wrapper: Pure Edge-to-Edge */}
+      {/* Main Wrapper: Pure Edge-to-Edge */}
       <div className="w-full min-h-screen flex flex-col items-center p-6 sm:p-12 lg:p-20">
 
         <div className="w-full max-w-4xl flex flex-col">
@@ -216,7 +219,7 @@ function SellerSignup() {
             {/* Section 2: Documents */}
             <div className="bg-gray-50 p-8 sm:p-12 rounded-[3rem] border-2 border-dashed border-gray-200 space-y-10 shadow-sm">
                <h3 className="text-xs font-black text-gray-900 uppercase tracking-widest mb-2 flex items-center gap-2">
-                 Legal KYC Verification 🛡️
+                 Legal KYC Verification
                </h3>
 
                <div className="grid md:grid-cols-2 gap-8">
@@ -243,7 +246,7 @@ function SellerSignup() {
             <div className="space-y-6">
               <div className="flex justify-between items-center ml-1">
                 <h3 className="text-sm font-black text-orange-500 uppercase tracking-widest flex items-center gap-2">
-                  Select Your Pasal Location 🎯
+                  Select Your Pasal Location
                 </h3>
                 <button type="button" onClick={findMyLocation} className="text-[10px] font-black text-blue-600 uppercase bg-blue-50 px-4 py-2 rounded-full active:scale-95 transition-all shadow-sm">
                   {isLocating ? "Syncing..." : "Auto Pin"}
@@ -252,7 +255,7 @@ function SellerSignup() {
               <div className="h-[400px] w-full rounded-[3rem] overflow-hidden border-4 border-gray-50 shadow-2xl z-0 ring-1 ring-gray-100">
                 <MapContainer center={position} zoom={18} scrollWheelZoom={true} style={{ height: '100%', width: '100%' }}>
                   <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                  <MapEventsHandler />
+                  <MapEventsHandler onPositionChange={setPosition} />
                   <RecenterMap position={position} />
                   <Marker draggable={true} eventHandlers={eventHandlers} position={position} ref={markerRef} />
                 </MapContainer>

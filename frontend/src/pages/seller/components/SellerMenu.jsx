@@ -1,5 +1,5 @@
-﻿import { createPortal } from 'react-dom';
-import UniversalImageEditor from '../../../components/UniversalImageEditor';
+﻿import { createPortal } from "react-dom";
+import UniversalImageEditor from "../../../components/UniversalImageEditor";
 
 function SellerMenu({
   myItems,
@@ -23,7 +23,7 @@ function SellerMenu({
   setMenuImageBlob,
   handleAddItem,
   handleEditMenuItem,
-  handleDeleteMenuItem
+  handleDeleteMenuItem,
 }) {
   return (
     <>
@@ -37,11 +37,11 @@ function SellerMenu({
             type="button"
             onClick={() => {
               setEditingMenuItem(null);
-              setItemName('');
-              setItemPrice('');
-              setItemDescription('');
-              setItemFoodCategory('Veg');
-              setItemTags('');
+              setItemName("");
+              setItemPrice("");
+              setItemDescription("");
+              setItemFoodCategory("Veg");
+              setItemTags("");
               setIsMenuSheetOpen(true);
             }}
             className="shrink-0 px-1 py-1 text-sm font-bold text-orange-400 transition-all duration-200 hover:scale-105 hover:text-orange-300 active:scale-95 sm:text-base"
@@ -124,7 +124,9 @@ function SellerMenu({
               <div className="mx-auto mb-2 h-1 w-8 rounded-full bg-white/20" />
 
               <h3 className="mb-3 text-center text-base font-black text-white sm:text-lg">
-                {editingMenuItem ? 'Edit menu item' : 'Add a new item to your restaurant menu'}
+                {editingMenuItem
+                  ? "Edit menu item"
+                  : "Add a new item to your restaurant menu"}
               </h3>
 
               <form
@@ -179,9 +181,7 @@ function SellerMenu({
 
                   <textarea
                     value={itemDescription}
-                    onChange={(e) =>
-                      setItemDescription(e.target.value)
-                    }
+                    onChange={(e) => setItemDescription(e.target.value)}
                     className="w-full resize-none rounded-lg bg-black/15 px-3 py-2.5 text-sm text-white outline-none ring-1 ring-white/10 placeholder:text-gray-500 focus:ring-orange-400/50"
                     rows="2"
                     placeholder="Delicious hot momos..."
@@ -199,9 +199,7 @@ function SellerMenu({
                     <input
                       type="text"
                       value={itemTags}
-                      onChange={(e) =>
-                        setItemTags(e.target.value)
-                      }
+                      onChange={(e) => setItemTags(e.target.value)}
                       className="w-full rounded-lg bg-black/15 px-3 py-2.5 text-sm text-white outline-none ring-1 ring-white/10 placeholder:text-gray-500 focus:ring-orange-400/50"
                       placeholder="spicy, popular"
                       maxLength="500"
@@ -215,15 +213,10 @@ function SellerMenu({
 
                     <select
                       value={itemFoodCategory}
-                      onChange={(e) =>
-                        setItemFoodCategory(e.target.value)
-                      }
+                      onChange={(e) => setItemFoodCategory(e.target.value)}
                       className="w-full rounded-lg bg-gray-900 px-3 py-2.5 text-sm text-white outline-none ring-1 ring-white/10 focus:ring-orange-400/50"
                     >
-                      <option
-                        value="Veg"
-                        className="bg-gray-900 text-white"
-                      >
+                      <option value="Veg" className="bg-gray-900 text-white">
                         Veg
                       </option>
                       <option
@@ -245,10 +238,10 @@ function SellerMenu({
                     className="rounded-lg px-3 py-2 text-xs font-semibold text-gray-200 ring-1 ring-white/10 transition hover:bg-white/[0.07] hover:text-white active:scale-[0.99]"
                   >
                     {menuImageBlob
-                      ? 'Change Image'
+                      ? "Change Image"
                       : editingMenuItem
-                        ? 'Change Image'
-                        : 'Add Image'}
+                        ? "Change Image"
+                        : "Add Image"}
                   </button>
 
                   <UniversalImageEditor
@@ -281,13 +274,13 @@ function SellerMenu({
                     type="submit"
                     className="rounded-lg px-3 py-2 text-xs font-semibold text-orange-300 transition hover:bg-white/[0.07] hover:text-orange-200 active:scale-[0.99]"
                   >
-                    {editingMenuItem ? 'Update Item' : 'Add Item'}
+                    {editingMenuItem ? "Update Item" : "Add Item"}
                   </button>
                 </div>
               </form>
             </div>
           </div>,
-          document.body
+          document.body,
         )}
     </>
   );

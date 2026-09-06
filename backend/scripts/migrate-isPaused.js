@@ -1,38 +1,37 @@
-require('dotenv').config();
+require("dotenv").config();
 
-const mongoose = require('mongoose');
-const Restaurant = require('../models/Restaurant');
+const mongoose = require("mongoose");
+const Restaurant = require("../models/Restaurant");
 
 async function migrate() {
-    try {
-        await mongoose.connect(process.env.MONGO_URI);
+  try {
+    await mongoose.connect(process.env.MONGO_URI);
 
-        console.log('✅ MongoDB Connected');
+    console.log("✅ MongoDB Connected");
 
-        const result = await Restaurant.updateMany(
-            {
-                isPaused: { $exists: false }
-            },
-            {
-                $set: {
-                    isPaused: false
-                }
-            }
-        );
+    const result = await Restaurant.updateMany(
+      {
+        isPaused: { $exists: false },
+      },
+      {
+        $set: {
+          isPaused: false,
+        },
+      },
+    );
 
-        console.log('--------------------------------');
-        console.log('Matched :', result.matchedCount);
-        console.log('Modified:', result.modifiedCount);
-        console.log('Migration Complete ✅');
-        console.log('--------------------------------');
+    console.log("--------------------------------");
+    console.log("Matched :", result.matchedCount);
+    console.log("Modified:", result.modifiedCount);
+    console.log("Migration Complete ✅");
+    console.log("--------------------------------");
 
-        await mongoose.disconnect();
-        process.exit(0);
-
-    } catch (err) {
-        console.error(err);
-        process.exit(1);
-    }
+    await mongoose.disconnect();
+    process.exit(0);
+  } catch (err) {
+    console.error(err);
+    process.exit(1);
+  }
 }
 
 migrate();

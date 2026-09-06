@@ -1,16 +1,16 @@
-﻿import { useCallback, useEffect, useRef, useState } from 'react';
-import Cropper from 'react-easy-crop';
-import useImageCapture from '../hooks/useImageCapture';
+﻿import { useCallback, useEffect, useRef, useState } from "react";
+import Cropper from "react-easy-crop";
+import useImageCapture from "../hooks/useImageCapture";
 
 function UniversalImageEditor({
   open,
   onClose,
   onSave,
-  ariaLabel = 'Image editor'
+  ariaLabel = "Image editor",
 }) {
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [mode, setMode] = useState(null);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const cropLastTapRef = useRef(0);
 
@@ -31,7 +31,7 @@ function UniversalImageEditor({
     selectImage,
     createCroppedBlob,
     stopCamera,
-    resetImageState
+    resetImageState,
   } = useImageCapture();
 
   const resetEditor = useCallback(() => {
@@ -42,20 +42,20 @@ function UniversalImageEditor({
     setCroppedAreaPixels(null);
     setIsEditorOpen(false);
     setMode(null);
-    setError('');
+    setError("");
     setIsSaving(false);
     cropLastTapRef.current = 0;
-  }, [
-    resetImageState,
-    setCrop,
-    setCroppedAreaPixels,
-    setZoom,
-    stopCamera
-  ]);
+  }, [resetImageState, setCrop, setCroppedAreaPixels, setZoom, stopCamera]);
 
   useEffect(() => {
     if (!open) {
-      resetEditor();
+      const resetTimeout = setTimeout(() => {
+        resetEditor();
+      }, 0);
+
+      return () => {
+        clearTimeout(resetTimeout);
+      };
     }
   }, [open, resetEditor]);
 
@@ -69,8 +69,8 @@ function UniversalImageEditor({
   };
 
   const openCameraEditor = async () => {
-    setError('');
-    setMode('camera');
+    setError("");
+    setMode("camera");
     resetImageState();
     setCrop({ x: 0, y: 0 });
     setZoom(1);
@@ -80,21 +80,19 @@ function UniversalImageEditor({
     const opened = await openCamera();
 
     if (!opened) {
-      setError('Unable to open the camera. Please try again.');
+      setError("Unable to open the camera. Please try again.");
     }
   };
 
   const openUploadEditor = async () => {
-    setError('');
-    setMode('upload');
+    setError("");
+    setMode("upload");
     resetImageState();
 
     const result = await selectImage();
 
     if (!result) {
-      setError(
-        'Unable to open the selected image. Please try again.'
-      );
+      setError("Unable to open the selected image. Please try again.");
       return;
     }
 
@@ -105,8 +103,8 @@ function UniversalImageEditor({
   };
 
   const handleRetake = async () => {
-    setError('');
-    setMode('camera');
+    setError("");
+    setMode("camera");
     resetImageState();
     setCrop({ x: 0, y: 0 });
     setZoom(1);
@@ -116,22 +114,20 @@ function UniversalImageEditor({
     const opened = await openCamera();
 
     if (!opened) {
-      setError('Unable to open the camera. Please try again.');
+      setError("Unable to open the camera. Please try again.");
     }
   };
 
   const handleReUpload = async () => {
-    setError('');
-    setMode('upload');
+    setError("");
+    setMode("upload");
     stopCamera();
     resetImageState();
 
     const result = await selectImage();
 
     if (!result) {
-      setError(
-        'Unable to open the selected image. Please try again.'
-      );
+      setError("Unable to open the selected image. Please try again.");
       return;
     }
 
@@ -158,29 +154,28 @@ function UniversalImageEditor({
     }
 
     try {
-      setError('');
+      setError("");
       setIsSaving(true);
 
       const croppedBlob = await createCroppedBlob(
         capturedImage,
         croppedAreaPixels,
-        'image/jpeg',
-        0.92
+        "image/jpeg",
+        0.92,
       );
 
       await onSave?.({
         blob: croppedBlob,
-        source: mode
+        source: mode,
       });
 
       resetEditor();
       onClose?.();
     } catch (saveError) {
-      console.error('Image save failed:', saveError);
+      console.error("Image save failed:", saveError);
 
       setError(
-        saveError?.message ||
-          'Failed to save the image. Please try again.'
+        saveError?.message || "Failed to save the image. Please try again.",
       );
     } finally {
       setIsSaving(false);
@@ -246,7 +241,7 @@ function UniversalImageEditor({
           >
             <div className="flex items-center justify-between border-b border-gray-800 px-3 py-2.5 sm:px-4 sm:py-3">
               <h2 className="text-sm font-black text-white sm:text-base">
-                {capturedImage ? 'Edit Photo' : 'Take Photo'}
+                {capturedImage ? "Edit Photo" : "Take Photo"}
               </h2>
 
               <button
@@ -271,7 +266,7 @@ function UniversalImageEditor({
                         {error || cameraError}
                       </p>
 
-                      {mode === 'camera' && (
+                      {mode === "camera" && (
                         <button
                           type="button"
                           onClick={handleRetake}
@@ -306,10 +301,7 @@ function UniversalImageEditor({
 
                     <button
                       type="button"
-                      disabled={
-                        Boolean(error || cameraError) ||
-                        !cameraOpen
-                      }
+                      disabled={Boolean(error || cameraError) || !cameraOpen}
                       onClick={handleCapture}
                       className="rounded-xl bg-orange-500 px-3 py-1.5 text-xs font-black text-white transition hover:bg-orange-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 sm:px-3 sm:py-2.5 sm:text-sm"
                     >
@@ -328,13 +320,8 @@ function UniversalImageEditor({
 
                       const now = Date.now();
 
-                      if (
-                        now - cropLastTapRef.current <
-                        300
-                      ) {
-                        setZoom((currentZoom) =>
-                          currentZoom >= 2 ? 1 : 2
-                        );
+                      if (now - cropLastTapRef.current < 300) {
+                        setZoom((currentZoom) => (currentZoom >= 2 ? 1 : 2));
                         cropLastTapRef.current = 0;
                         return;
                       }
@@ -357,9 +344,7 @@ function UniversalImageEditor({
                       }
                       onZoomChange={setZoom}
                       onDoubleClick={() => {
-                        setZoom((currentZoom) =>
-                          currentZoom >= 2 ? 1 : 2
-                        );
+                        setZoom((currentZoom) => (currentZoom >= 2 ? 1 : 2));
                       }}
                     />
                   </div>
@@ -368,15 +353,11 @@ function UniversalImageEditor({
                     <button
                       type="button"
                       onClick={
-                        mode === 'upload'
-                          ? handleReUpload
-                          : handleRetake
+                        mode === "upload" ? handleReUpload : handleRetake
                       }
                       className="w-full rounded-xl bg-gray-800 px-3 py-2 text-xs font-black text-white transition hover:bg-gray-700 active:scale-[0.98] sm:px-3 sm:py-2.5 sm:text-sm"
                     >
-                      {mode === 'upload'
-                        ? 'Re-upload'
-                        : 'Retake'}
+                      {mode === "upload" ? "Re-upload" : "Retake"}
                     </button>
 
                     <button
@@ -385,7 +366,7 @@ function UniversalImageEditor({
                       disabled={isSaving}
                       className="w-full rounded-xl bg-orange-500 px-3 py-2 text-xs font-black text-white transition hover:bg-orange-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 sm:px-3 sm:py-2.5 sm:text-sm"
                     >
-                      {isSaving ? 'Saving...' : 'Save'}
+                      {isSaving ? "Saving..." : "Save"}
                     </button>
                   </div>
 
