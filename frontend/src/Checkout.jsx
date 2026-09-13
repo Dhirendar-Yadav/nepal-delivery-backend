@@ -274,11 +274,87 @@ function Checkout() {
   const fetchAddress = async (lat, lon, signal) => {
     try {
       const response = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}`,
+        `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1&namedetails=1&accept-language=en`,
         { signal },
       );
       const data = await response.json();
-      setAddress(data.display_name || "Location Selected");
+
+      const addressParts = [
+        data.address?.house_number,
+        data.address?.road,
+        data.address?.neighbourhood,
+        data.address?.suburb,
+        data.address?.village,
+        data.address?.town,
+        data.address?.city,
+        data.address?.municipality,
+        data.address?.county,
+        data.address?.state,
+        data.address?.postcode,
+      ]
+        .map((part) => String(part || "").replace(/\s+/g, " ").trim())
+        .filter(Boolean);
+
+      const normalizeAddressPart = (part) =>
+        part
+          .toLocaleLowerCase("en")
+          .replace(/[^\p{L}\p{N}]+/gu, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+
+      const englishAddressParts = addressParts.filter(
+        (part) => !/[^\p{ASCII}]/u.test(part),
+      );
+
+      const preferredAddressParts =
+        englishAddressParts.length > 0 ? englishAddressParts : addressParts;
+
+      const uniqueAddressParts = preferredAddressParts.filter(
+        (part, index, parts) => {
+          const normalizedPart = normalizeAddressPart(part);
+
+          if (!normalizedPart) {
+            return false;
+          }
+
+          return (
+            parts.findIndex(
+              (item) =>
+                normalizeAddressPart(item) === normalizedPart,
+            ) === index
+          );
+        },
+      );
+
+      const compactAddressParts = [...uniqueAddressParts]
+        .slice(0, 3)
+        .filter(Boolean);
+
+      if (compactAddressParts.length > 1) {
+        const numericPartIndex = compactAddressParts.findIndex((part) =>
+          /^\d+$/.test(part),
+        );
+
+        if (numericPartIndex > 0) {
+          const numericPart = compactAddressParts.splice(
+            numericPartIndex,
+            1,
+          )[0];
+
+          compactAddressParts[0] = `${compactAddressParts[0]} ${numericPart}`;
+        }
+      }
+
+      const normalizedAddress =
+        compactAddressParts.join(", ") ||
+        String(data.display_name || "Location Selected")
+          .split(",")
+          .map((part) => part.replace(/\s+/g, " ").trim())
+          .filter(Boolean)
+          .slice(0, 3)
+          .join(", ");
+
+      setAddress(normalizedAddress || "Location Selected");
     } catch (error) {
       if (error.name !== "AbortError") console.error("Address Error", error);
     }

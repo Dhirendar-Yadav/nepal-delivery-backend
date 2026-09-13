@@ -22,6 +22,7 @@ const {
 const User = require("../models/User");
 
 const restaurantController = require("../controllers/restaurantController");
+const riderController = require("../controllers/riderController");
 const { VALID_ORDER_STATUSES } = require("../constants/orderConstants");
 const dispatchService = require("../services/dispatchService");
 
@@ -1594,6 +1595,20 @@ router.put(
 
     return res.status(200).json({ success: true, order });
   }),
+);
+
+router.post(
+  "/orders/:id/pickup-otp",
+  verifySeller,
+  attachRestaurantContext,
+  riderController.sendPickupOTP,
+);
+
+router.post(
+  "/orders/:id/pickup-otp/verify",
+  verifySeller,
+  attachRestaurantContext,
+  riderController.verifyPickupOTP,
 );
 // DYNAMIC ROUTES (MUST STAY AT THE BOTTOM)
 

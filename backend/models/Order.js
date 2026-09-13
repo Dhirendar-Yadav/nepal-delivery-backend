@@ -228,6 +228,10 @@ const orderSchema = new mongoose.Schema(
     // Secure OTP Infrastructure Tokens
     deliveryOTP: { type: String, default: null },
     deliveryOTPExpiresAt: { type: Date, default: null },
+    pickupOTP: { type: String, default: null },
+    pickupOTPExpiresAt: { type: Date, default: null },
+    pickupOtpUsed: { type: Boolean, default: false, index: true },
+    pickupOTPIssuedAt: { type: Date, default: null },
 
     //Logistics & Geolocation Metadata
     deliveryDetails: {

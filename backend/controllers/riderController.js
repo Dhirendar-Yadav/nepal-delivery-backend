@@ -298,7 +298,7 @@ exports.getAvailableOrders = async (req, res) => {
       assignedRiderId: null,
     })
       .select(
-        "_id orderNumber foodCost deliveryFee totalAmount status restaurantId customerId",
+        "_id orderNumber foodCost deliveryFee totalAmount status restaurantId customerId offerExpiresAt",
       )
       .populate("restaurantId", "name location latitude longitude phone")
       .populate("customerId", "name phone address")
@@ -421,11 +421,7 @@ exports.acceptOrder = async (req, res) => {
     // Rider acceptance is the atomic handoff from seller acceptance into preparation.
     const previousStatus = "Accepted";
 
-    // STEP 2: Generate cryptographically secure OTP using model's hash method
-    const generatedOTP = crypto.randomInt(100000, 1000000).toString();
-    const hashedOTP = Order.hashOTP(generatedOTP);
-
-    // STEP 3: Update order with rider assignment and OTP
+    // STEP 2: Update order with rider assignment
     const order = await Order.findOneAndUpdate(
       {
         _id: orderId,
@@ -446,9 +442,6 @@ exports.acceptOrder = async (req, res) => {
           processingStartedAt: now,
           offeredRiderId: null,
           offerExpiresAt: null,
-          deliveryOTP: hashedOTP,
-          otpUsed: false,
-          deliveryOTPExpiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000),
         },
         $push: {
           statusHistory: {
@@ -491,6 +484,7 @@ exports.acceptOrder = async (req, res) => {
       if (io && order.restaurantId && riderLocked) {
         io.to(order.restaurantId.toString()).emit("orderAssignedToRider", {
           orderId: order._id,
+          riderId,
           riderName: riderLocked.name || "Rider",
           riderPhone: riderLocked.phone || "N/A",
           riderBike: riderLocked.bikeNumber || "N/A",
@@ -514,7 +508,6 @@ exports.acceptOrder = async (req, res) => {
       success: true,
       message: "Order accepted successfully",
       order: populatedOrder,
-      deliveryOTP: generatedOTP,
     });
   } catch (err) {
     try {
@@ -539,6 +532,167 @@ exports.acceptOrder = async (req, res) => {
       success: false,
       message: "Failed to accept order",
     });
+  }
+};
+
+exports.sendPickupOTP = async (req, res) => {
+  try {
+    if (!req.user?.id || !mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ success: false, message: "Invalid request parameters" });
+    }
+
+    const order = await Order.findOne({
+      _id: req.params.id,
+      restaurantId: req.restaurant._id,
+      status: "Ready for Pickup",
+      assignedRiderId: { $ne: null },
+    }).select("_id assignedRiderId pickupOTPIssuedAt");
+
+    if (!order) {
+      return res.status(409).json({ success: false, message: "Order is not ready for pickup" });
+    }
+
+    const otp = crypto.randomInt(100000, 1000000).toString();
+    const issuedAt = new Date();
+    if (
+      order.pickupOTPIssuedAt &&
+      issuedAt.getTime() - new Date(order.pickupOTPIssuedAt).getTime() < 10000
+    ) {
+      return res.status(429).json({
+        success: false,
+        message: "Please wait before requesting another pickup OTP",
+      });
+    }
+    const expiresAt = new Date(issuedAt.getTime() + 5 * 60 * 1000);
+    const updatedOrder = await Order.findOneAndUpdate(
+      {
+        _id: order._id,
+        restaurantId: req.restaurant._id,
+        status: "Ready for Pickup",
+        assignedRiderId: order.assignedRiderId,
+      },
+      {
+        $set: {
+          pickupOTP: Order.hashOTP(otp),
+          pickupOTPExpiresAt: expiresAt,
+          pickupOtpUsed: false,
+          pickupOTPIssuedAt: issuedAt,
+        },
+      },
+      { new: true, runValidators: true },
+    ).select("_id assignedRiderId");
+
+    if (!updatedOrder) {
+      return res.status(409).json({ success: false, message: "Pickup OTP could not be issued" });
+    }
+
+    const io = req.app.get("io");
+    if (io) {
+      io.to(updatedOrder.assignedRiderId.toString()).emit("pickupOtpIssued", {
+        otp,
+        timestamp: issuedAt,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      issuedAt,
+      expiresAt,
+    });
+  } catch (err) {
+    console.error("Send pickup OTP error:", err);
+    return res.status(500).json({ success: false, message: "Failed to issue pickup OTP" });
+  }
+};
+
+exports.verifyPickupOTP = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const { otp } = req.body;
+    if (!req.user?.id || !mongoose.Types.ObjectId.isValid(req.params.id) || !/^\d{6}$/.test(String(otp || ""))) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({ success: false, message: "Invalid OTP format" });
+    }
+
+    const order = await Order.findOne({
+      _id: req.params.id,
+      restaurantId: req.restaurant._id,
+      status: "Ready for Pickup",
+      assignedRiderId: { $ne: null },
+      pickupOtpUsed: false,
+    }).session(session);
+
+    if (!order || !Order.verifyTimingSafeOTP(otp, order.pickupOTP, order.pickupOTPExpiresAt, order.pickupOtpUsed)) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(401).json({ success: false, message: "Invalid or expired OTP" });
+    }
+
+    const now = new Date();
+    const updatedOrder = await Order.findOneAndUpdate(
+      {
+        _id: order._id,
+        restaurantId: req.restaurant._id,
+        status: "Ready for Pickup",
+        assignedRiderId: order.assignedRiderId,
+        pickupOtpUsed: false,
+        pickupOTP: order.pickupOTP,
+        pickupOTPExpiresAt: order.pickupOTPExpiresAt,
+      },
+      {
+        $set: {
+          status: "Out for Delivery",
+          statusUpdatedAt: now,
+          pickupOtpUsed: true,
+          pickupOTP: null,
+          pickupOTPExpiresAt: null,
+          pickupOTPIssuedAt: null,
+        },
+        $push: {
+          statusHistory: {
+            from: "Ready for Pickup",
+            to: "Out for Delivery",
+            actorType: "SELLER",
+            actorId: new mongoose.Types.ObjectId(req.user.id),
+            changedAt: now,
+          },
+        },
+      },
+      { new: true, runValidators: true, session },
+    ).select("_id status assignedRiderId");
+
+    if (!updatedOrder) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(409).json({ success: false, message: "Order status changed before verification" });
+    }
+
+    await session.commitTransaction();
+    session.endSession();
+
+    const io = req.app.get("io");
+    if (io) {
+      io.to(req.restaurant._id.toString()).emit("pickupOtpVerified", {
+        orderId: updatedOrder._id,
+        status: updatedOrder.status,
+      });
+      io.to(updatedOrder.assignedRiderId.toString()).emit("pickupVerified", {
+        orderId: updatedOrder._id,
+        status: updatedOrder.status,
+      });
+    }
+
+    return res.status(200).json({ success: true, message: "OTP Verified", order: updatedOrder });
+  } catch (err) {
+    if (session.inTransaction()) {
+      await session.abortTransaction();
+    }
+    session.endSession();
+    console.error("Verify pickup OTP error:", err);
+    return res.status(500).json({ success: false, message: "Failed to verify pickup OTP" });
   }
 };
 

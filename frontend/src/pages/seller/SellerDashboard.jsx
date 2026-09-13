@@ -245,6 +245,19 @@ function Dashboard() {
     onBack: handleSellerNavigationBack,
   });
 
+  const selectedOrder = selectedOrderId
+    ? orders.find((order) => order._id === selectedOrderId) || null
+    : null;
+
+  const closeOrderDetail = useCallback(() => {
+    if (selectedOrderId) {
+      goBackBrowserHistory();
+      return;
+    }
+
+    setSelectedOrderId(null);
+  }, [selectedOrderId, goBackBrowserHistory]);
+
   const navigateToTab = (nextTab) => {
     if (nextTab === activeTab) {
       if (isMobileMenuOpen) {
@@ -360,7 +373,7 @@ function Dashboard() {
       )}
 
       {/*  Top Navbar */}
-      <nav className="bg-gray-800 border-b border-gray-700 py-2.5 px-3 sm:py-4 sm:px-6 lg:px-8 flex justify-between items-center sticky top-0 z-50">
+      <nav className="bg-gray-800 border-b border-gray-700 py-2.5 px-3 sm:py-4 sm:px-6 lg:px-8 flex justify-between items-center sticky top-0 z-[103]">
         <div className="min-w-0 flex-1">
           <div className="min-w-0 border-l border-gray-700 pl-3 sm:pl-6">
             <h1 className="max-w-full truncate text-base font-black tracking-tight text-orange-500 sm:text-2xl">
@@ -644,6 +657,8 @@ function Dashboard() {
             orderSection={orderSection}
             visibleOrders={visibleOrders}
             openOrderDetail={openOrderDetail}
+            selectedOrder={selectedOrder}
+            closeOrderDetail={closeOrderDetail}
             rejectingOrderId={rejectingOrderId}
             setRejectReasonType={setRejectReasonType}
             setRejectReason={setRejectReason}

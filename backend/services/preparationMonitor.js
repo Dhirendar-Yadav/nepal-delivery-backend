@@ -1,5 +1,6 @@
 ﻿const cron = require("node-cron");
 const Order = require("../models/Order");
+const Restaurant = require("../models/Restaurant");
 const { emitToUser } = require("./socketService");
 
 const PREPARATION_WINDOW_MS = 5 * 60 * 1000;
@@ -61,6 +62,19 @@ const startPreparationMonitor = () => {
             emitToUser(order.assignedRiderId, "foodReadyForPickup", {
               orderId: order._id,
               restaurantId: order.restaurantId,
+              status: order.status,
+              readyAt: order.statusUpdatedAt,
+            });
+          }
+
+          const restaurant = await Restaurant.findById(order.restaurantId)
+            .select("ownerId")
+            .lean();
+          if (restaurant?.ownerId) {
+            emitToUser(restaurant.ownerId, "sellerOrderReadyForPickup", {
+              orderId: order._id,
+              restaurantId: order.restaurantId,
+              assignedRiderId: order.assignedRiderId,
               status: order.status,
               readyAt: order.statusUpdatedAt,
             });

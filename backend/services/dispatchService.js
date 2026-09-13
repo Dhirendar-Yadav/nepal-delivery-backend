@@ -42,6 +42,26 @@ const dispatchService = {
         .lean();
 
       if (closestRiders.length === 0) {
+        const fallbackRider = await User.findOne({
+          role: "Rider",
+          isActive: true,
+          isDeleted: false,
+          kycStatus: "VERIFIED",
+          isOnline: true,
+          $or: [
+            { currentActiveOrderId: null },
+            { currentActiveOrderId: { $exists: false } },
+          ],
+        })
+          .select("_id name phone")
+          .lean();
+
+        if (fallbackRider) {
+          closestRiders.push(fallbackRider);
+        }
+      }
+
+      if (closestRiders.length === 0) {
         return null;
       }
 
@@ -73,7 +93,7 @@ const dispatchService = {
             dispatchQueue: riderQueueIds,
             currentDispatchIndex: 0,
             offeredRiderId: firstRiderId,
-            offerExpiresAt: new Date(Date.now() + 60 * 1000),
+            offerExpiresAt: new Date(Date.now() + 5 * 60 * 1000),
           },
           $push: {
             dispatchHistory: {

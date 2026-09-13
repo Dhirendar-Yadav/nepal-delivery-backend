@@ -1,5 +1,6 @@
 {
   "files.associations": {
     ".dockerignore": "ignore"
-  }
+  },
+  "workbench.editor.enablePreview": true
 }

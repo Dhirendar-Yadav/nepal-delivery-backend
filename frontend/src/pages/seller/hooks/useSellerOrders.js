@@ -123,6 +123,7 @@ export default function useSellerOrders({
             ...order,
             status: 'Preparing',
             assignedRiderId: {
+              _id: data.riderId,
               name: data.riderName,
               phone: data.riderPhone,
               bikeNumber: data.riderBike,
@@ -148,6 +149,29 @@ export default function useSellerOrders({
       } catch {
         console.log("Sound play blocked by browser");
       }
+    });
+
+    socket.on('pickupOtpVerified', (data) => {
+      setOrders((prevOrders) => prevOrders.map(order =>
+        order._id === data.orderId
+          ? { ...order, status: data.status || 'Out for Delivery' }
+          : order
+      ));
+    });
+
+    socket.on('sellerOrderReadyForPickup', (data) => {
+      setOrders((prevOrders) => prevOrders.map(order =>
+        order._id === data.orderId
+          ? {
+              ...order,
+              status: 'Ready for Pickup',
+              assignedRiderId: data.assignedRiderId
+                ? { _id: data.assignedRiderId }
+                : order.assignedRiderId
+            }
+          : order
+      ));
+      fetchOrders();
     });
 
     socket.on('riderOnTheWay', (data) => {
@@ -181,6 +205,8 @@ export default function useSellerOrders({
         socketRef.current.off('newLiveOrder');
         socketRef.current.off('orderAssignedToRider');
         socketRef.current.off('riderOnTheWay');
+        socketRef.current.off('pickupOtpVerified');
+        socketRef.current.off('sellerOrderReadyForPickup');
         socketRef.current.disconnect();
       }
 

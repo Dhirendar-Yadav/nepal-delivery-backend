@@ -54,6 +54,7 @@ function RiderDashboard() {
 
   const [newOrderToast, setNewOrderToast] = useState(null);
 const [foodReadyToast, setFoodReadyToast] = useState(null);
+  const [pickupOtpToast, setPickupOtpToast] = useState(null);
 
   const [isToggling, setIsToggling] = useState(false);
   const controllerRef = useRef(null);
@@ -381,16 +382,27 @@ const [foodReadyToast, setFoodReadyToast] = useState(null);
       fetchActiveOrder();
     };
 
+    const handlePickupOtpIssued = (orderData) => {
+      if (!isOnlineRef.current) return;
+
+      setPickupOtpToast(orderData);
+      setTimeout(() => {
+        setPickupOtpToast(null);
+      }, 5 * 60 * 1000);
+    };
+
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
     socket.on('newOrderOffer', handleNewOrder);
     socket.on('foodReadyForPickup', handleFoodReady);
+    socket.on('pickupOtpIssued', handlePickupOtpIssued);
 
     return () => {
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
       socket.off('newOrderOffer', handleNewOrder);
       socket.off('foodReadyForPickup', handleFoodReady);
+      socket.off('pickupOtpIssued', handlePickupOtpIssued);
       socket.disconnect();
     };
   }, [authLoading, isAuthenticated, fetchAvailableOrders, fetchActiveOrder, fetchProfile]);
@@ -611,6 +623,23 @@ const [foodReadyToast, setFoodReadyToast] = useState(null);
             onClick={() => setFoodReadyToast(null)}
             className="w-8 h-8 flex items-center justify-center rounded-full bg-green-700/70 text-green-50 hover:bg-green-700 transition"
             aria-label="Dismiss food ready notification"
+          >
+            Close
+          </button>
+        </div>
+      )}
+
+      {pickupOtpToast && (
+        <div className="fixed top-36 left-1/2 z-[198] w-[90%] min-w-[300px] -translate-x-1/2 rounded-2xl bg-blue-600 px-4 py-3 text-white shadow-2xl">
+          <p className="text-sm font-black uppercase tracking-wide">Pickup OTP</p>
+          <p className="mt-1 text-2xl font-black tracking-[0.35em]">{pickupOtpToast.otp}</p>
+          <p className="mt-1 text-xs font-medium opacity-90">
+            Issued {new Date(pickupOtpToast.timestamp).toLocaleTimeString()}. Give this OTP to the seller.
+          </p>
+          <button
+            onClick={() => setPickupOtpToast(null)}
+            className="mt-2 rounded-lg bg-blue-700 px-3 py-1 text-xs font-bold"
+            aria-label="Dismiss pickup OTP"
           >
             Close
           </button>
